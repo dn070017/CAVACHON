@@ -242,9 +242,9 @@ class Workflow():
     # change the training states to False
     for component in self.model.components.values():
       component.trainable = False
-      progressive_scaler = component.hierarchical_encoder.progressive_scaler
-      progressive_scaler.total_iterations.assign(1.0)
-      progressive_scaler.current_iteration.assign(1.0)
+      component.set_progressive_scaler_iteration(
+          current_iteration = 1.0,
+          total_iterations = 1.0)
       self.model.compile()
     
     return
