@@ -1,6 +1,8 @@
 from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.distributions.MultivariateNormalDiag import MultivariateNormalDiag
 from cavachon.distributions.MixtureMultivariateNormalDiag import MixtureMultivariateNormalDiag
+from sklearn.metrics.cluster import contingency_matrix
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 from typing import Sequence, Union
 
@@ -167,4 +169,109 @@ class ClusterAnalysis:
         'Number of Neighbors': np.concatenate(n_neighbors_series),
         'Cluster': clusters_series,
         '% of KNN Cells with the Same Cluster': np.concatenate(proportions_series)})
-      
+  
+  def compute_contigency_matrix(
+      self,
+      modality: str,
+      cluster_colname_a: str,
+      cluster_colname_b: str) -> pd.DataFrame:
+    """Compute the contigency matrix of two clustering results.
+
+    Parameters
+    ----------
+    modality: str
+        the modality to used.
+
+    cluster_colname_a: str
+        column name for the first clustering assignments in var.
+    
+    cluster_colname_b: str
+        column name for the second clustering assignments in var.
+
+    Returns
+    -------
+    pd.DataFrame
+        contigency matrix where the indices are the cluster names in 
+        the first clustering assignment, the column names are the 
+        second clustering assignment.
+    
+    """
+    encoder_cluster_a = LabelEncoder()
+    encoder_cluster_b = LabelEncoder()
+
+    encoded_array_a = encoder_cluster_a.fit_transform(self.mdata[modality].obs[cluster_colname_a])
+    encoded_array_b = encoder_cluster_b.fit_transform(self.mdata[modality].obs[cluster_colname_b])
+
+    contigency_matrix = pd.DataFrame(contingency_matrix(encoded_array_a, encoded_array_b))
+    contigency_matrix.index = encoder_cluster_a.classes_
+    contigency_matrix.columns = encoder_cluster_b.classes_
+
+    return contigency_matrix
+
+  def compute_classification_metrics(
+      self,
+      modality: str,
+      cluster_colname_a: str,
+      cluster_colname_b: str) -> pd.DataFrame:
+    """Compute the classification metrics if using the second 
+    clustering assignment to predict the first cluster assigment.
+
+    Parameters
+    ----------
+    modality: str
+        the modality to used.
+
+    cluster_colname_a: str
+        column name for the first clustering assignments in var.
+    
+    cluster_colname_b: str
+        column name for the second clustering assignments in var.
+
+    Returns
+    -------
+    pd.DataFrame
+        classification metrics where the column names are:
+        1. Cluster A
+        2. Cluster B
+        3. F1 Score
+        4. Accuracy
+        5. Sensitivity
+        6. Specificity
+        7. Precision
+    
+    """
+    contigency_matrix = self.compute_contigency_matrix(
+        modality,
+        cluster_colname_a,
+        cluster_colname_b)
+    
+    result = []
+    for target_a in contigency_matrix.index:
+      for target_b in contigency_matrix.columns:
+        FP = contigency_matrix[target_b].sum() - contigency_matrix[target_b][target_a]
+        TP = contigency_matrix[target_b][target_a]
+        FN = contigency_matrix.loc[target_a].sum() - contigency_matrix[target_b][target_a]
+        TN = (np.sum(contigency_matrix.values) - 
+            contigency_matrix[target_b].sum() - 
+            contigency_matrix.loc[target_a].sum() + 
+            contigency_matrix[target_b][target_a])
+
+        sensitivity = TP / (TP + FN)
+        specificity = TN / (TN + FP)
+        precision = TP / (TP + FP)
+        accuracy = (TP + TN) / (TP + TN + FP + FN)
+        f1 = 2 * precision * sensitivity / (precision + sensitivity + 1e-3)
+
+        result.append([target_a, target_b, f1, accuracy, sensitivity, specificity, precision])
+    
+    colnames = [
+        'Cluster A',
+        'Cluster B',
+        'F1 Score',
+        'Accuracy',
+        'Sensitivity',
+        'Specificity',
+        'Precision'
+    ]
+
+    return pd.DataFrame(result, columns = colnames)
