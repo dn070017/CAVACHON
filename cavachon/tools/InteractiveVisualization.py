@@ -462,12 +462,13 @@ class InteractiveVisualization:
   
   @staticmethod
   def differential_volcano_plot(
-      mdata: mu.MuData,
-      model: tf.keras.Model,
-      group_a_index: Union[pd.Index, Sequence[str]],
-      group_b_index: Union[pd.Index, Sequence[str]],
-      component: str,
-      modality: str,
+      differential_results: pd.DataFrame = None,
+      mdata: mu.MuData = None,
+      model: tf.keras.Model = None,
+      group_a_index: Union[pd.Index, Sequence[str]] = None,
+      group_b_index: Union[pd.Index, Sequence[str]] = None,
+      component: str = None,
+      modality: str = None,
       significant_threshold: float = 3.2,
       filename: Optional[str] = None,
       title: str = 'Volcano Plot for Differential Analysis',
@@ -477,6 +478,9 @@ class InteractiveVisualization:
 
     Parameters
     ----------
+    differential_results: pd.DataFrame
+        result for the differential analysis.
+
     mdata: mu.MuData
         the MuData used for the generative process.
     
@@ -517,20 +521,24 @@ class InteractiveVisualization:
         interactive figure objects.
 
     """
-    obs = mdata[modality].obs
-    analysis = DifferentialAnalysis(mdata=mdata, model=model)
-    degs = analysis.between_two_groups(
-        group_a_index=group_a_index,
-        group_b_index=group_b_index, 
-        component=component,
-        modality=modality)
+    if differential_results is None:
+      analysis = DifferentialAnalysis(mdata=mdata, model=model)
+      differential_results = analysis.between_two_groups(
+          group_a_index=group_a_index,
+          group_b_index=group_b_index, 
+          component=component,
+          modality=modality)
         
-    degs['LogFC(A/B)'] = np.log(degs['Mean(A)']/degs['Mean(B)'])
-    degs['K(A!=B|Z)'] = degs[['K(A>B|Z)', 'K(B>A|Z)']].abs().max(axis=1)
-    degs['Significant'] = degs['K(A!=B|Z)'].apply(lambda x: 'Significant' if x > 3.2 else 'Non-significant')
-    degs['Target'] = degs.index
+    differential_results['LogFC(A/B)'] = np.log(differential_results['Mean(A)']/differential_results['Mean(B)'])
+    differential_results['K(A>B|Z)'].index = differential_results.index
+    differential_results['K(A!=B|Z)'] = (
+        (differential_results['LogFC(A/B)'] >= 0).astype(int) * differential_results['K(A>B|Z)'] - 
+        (differential_results['LogFC(A/B)'] < 0).astype(int) * differential_results['K(A>B|Z)']
+    )#differential_results[['K(A>B|Z)', 'K(B>A|Z)']].abs().max(axis=1)
+    differential_results['Significant'] = differential_results['K(A!=B|Z)'].apply(lambda x: 'Significant' if x > significant_threshold else 'Non-significant')
+    differential_results['Target'] = differential_results.index
     fig = InteractiveVisualization.scatter(
-        degs,
+        differential_results,
         x='LogFC(A/B)',
         y='K(A!=B|Z)',
         color='Significant', 
@@ -604,7 +612,7 @@ class InteractiveVisualization:
       color=f'log(1/{metric})',
       color_continuous_scale='rdpu',
       labels={'x': 'Normalized Enrichment Score', 'y': 'Term'},
-      width=min(35 * len(data), 1024), height=35 * len(data),
+      width=800, height=35 * len(data) + 150,
       title=title)
     
     # add ring
@@ -706,14 +714,14 @@ class InteractiveVisualization:
             text=data['Target'],
             showlegend=False,
             name='',
-            marker_color='blueviolet',
+            marker_color='royalblue',
             hovertemplate=hover_template),
         row=1,
         col=1)
 
     hover_template = ''.join((
         'Target: %{text}<br>Rank in Ordered Dataset: %{x}'))
-    marker_color = ['salmon' if x else 'blueviolet' for x in hit_indices <= zero_score_index]
+    marker_color = ['salmon' if x else 'royalblue' for x in hit_indices <= zero_score_index]
     fig.add_trace(
         go.Scatter(
             x=hit_indices,
@@ -745,7 +753,7 @@ class InteractiveVisualization:
             marker_colorscale=[
                 (0.0, "salmon"),
                 (mid, "white"),
-                (1.0, "blueviolet")]),
+                (1.0, "royalblue")]),
         row=3,
         col=1)
 
@@ -769,7 +777,7 @@ class InteractiveVisualization:
             x=data.loc[indices >= zero_score_index]['Rank in Ordered Dataset'],
             y=data.loc[indices >= zero_score_index]['Rank List Metric'],
             text=data['Target'],
-            marker_color='blueviolet',
+            marker_color='royalblue',
             fill='tozeroy',
             showlegend=False,
             name='',

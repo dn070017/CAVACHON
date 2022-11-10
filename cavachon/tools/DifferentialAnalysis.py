@@ -1,13 +1,14 @@
 from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.environment.Constants import Constants
 from cavachon.utils.ReflectionHandler import ReflectionHandler
-from typing import Sequence, Union
+from typing import Mapping, Sequence, Union
 from tqdm import tqdm
 
 import muon as mu
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import warnings
 
 class DifferentialAnalysis:
   """DifferentialAnalysis
@@ -47,8 +48,8 @@ class DifferentialAnalysis:
       group_b_index: Union[pd.Index, Sequence[str]],
       component: str,
       modality: str,
-      z_sampling_size: int = 100,
-      x_sampling_size: int = 1000,
+      z_sampling_size: int = 10,
+      x_sampling_size: int = 2500,
       batch_size: int = 128):
     """Perform the differential analysis between two groups.
 
@@ -70,10 +71,10 @@ class DifferentialAnalysis:
         `component`.
     
     z_sampling_size: int, optional
-        how many z to sample, by default 100
+        how many z to sample, by default 10.
     
     x_sampling_size: int, optional
-        how many x to sample, by default 1000
+        how many x to sample, by default 2500.
 
     batch_size: int, optional
         batch size used for the forward pass. Defaults to 128
@@ -82,15 +83,31 @@ class DifferentialAnalysis:
     -------
     pd.DataFrame
         analysis result for differential analysis. The DataFrame 
-        contains 4 columns, the first column specify the probability
-        P(A>B|Z), the second column specify the probability P(B>A|Z),
-        the third column specify the Bayesian factor of K(A>B|Z), the
-        fourth column specify the Bayesian factor of K(B>A|Z).
+        contains 6 columns:
+        1. expected values of groups A
+        2. expected values of groups B
+        3. the probability P(A>B|Z)
+        4. the probability P(B>A|Z),
+        5. the Bayesian factor of K(A>B|Z)
+        6. the Bayesian factor of K(B>A|Z).
 
     """
     x_means_a = []
     x_means_b = []
-    x_sampling_size = min(len(group_a_index), len(group_b_index), x_sampling_size)
+    #x_sampling_size = min(len(group_a_index), len(group_b_index), x_sampling_size)
+    modality_names = self.mdata.mod.keys()
+    
+    batch_effect = dict()
+    for batch in DataLoader(self.mdata).dataset.batch(batch_size):
+      for modality_name in modality_names:
+        if modality_name not in batch_effect:
+          batch_effect.setdefault(modality_name, [])
+        batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+        batch_effect[modality_name].append(batch.get(batch_effect_key))
+
+    for modality_name in batch_effect.keys():
+      batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
+
     for _ in tqdm(range(z_sampling_size)):
       mdata_group_a = self.sample_mdata_x(
           index=group_a_index,
@@ -105,11 +122,13 @@ class DifferentialAnalysis:
           dataset=dataloader_group_a.dataset,
           component=component,
           modality=modality,
+          batch_effect=batch_effect,
           batch_size=batch_size))
       x_means_b.append(self.compute_x_means(
           dataset=dataloader_group_b.dataset,
           component=component,
           modality=modality,
+          batch_effect=batch_effect,
           batch_size=batch_size))
     
     x_means_a = np.vstack(x_means_a)
@@ -121,7 +140,7 @@ class DifferentialAnalysis:
   def sample_mdata_x(
       self,
       index: Union[pd.Index, Sequence[str]],
-      x_sampling_size: int = 1000) -> mu.MuData:
+      x_sampling_size: int = 2500) -> mu.MuData:
     """sample x from the mdata of samples with provided index.
 
     Parameters
@@ -130,7 +149,7 @@ class DifferentialAnalysis:
         the samples to be sampled from.
 
     x_sampling_size: int, optional
-        how many x to sample, by default 1000
+        how many x to sample, by default 2500
 
     Returns
     -------
@@ -138,8 +157,16 @@ class DifferentialAnalysis:
         MuData with sampled data.
 
     """
-    index_sampled = np.random.choice(index, x_sampling_size, replace=False)
-    adata_dict = {mod: adata[index_sampled] for mod, adata in self.mdata.mod.items()}
+    index_sampled = np.random.choice(index, x_sampling_size, replace=True)
+    
+    adata_dict = dict()
+    with warnings.catch_warnings():
+      warnings.simplefilter(action='ignore', category=FutureWarning)
+      warnings.simplefilter(action='ignore', category=UserWarning)
+      for mod, adata in self.mdata.mod.items():
+        adata_sampled = adata[index_sampled].copy()
+        adata_sampled.obs_names_make_unique()
+        adata_dict[mod] = adata_sampled
 
     return mu.MuData(adata_dict)
 
@@ -148,6 +175,7 @@ class DifferentialAnalysis:
       dataset: tf.data.Dataset,
       component: str,
       modality: str,
+      batch_effect: Mapping[str, tf.Tensor],
       training: bool = True,
       batch_size: int = 128) -> np.ndarray:
     """Compute the means of generative data.
@@ -164,6 +192,11 @@ class DifferentialAnalysis:
         which modality to used from the generative result of 
         `component`.
     
+    batch_effect: Mapping[str, tf.Tensor]
+        the batch effect tensors. The keys for the mapping are the 
+        modality names, the values are the corresponding batch effect
+        tensors.
+
     training: bool
         if True, the forward pass will perform sampling with 
         reparameterization. Otherwise, the mean value of the latent
@@ -180,10 +213,23 @@ class DifferentialAnalysis:
         distribution of the variables.
 
     """
+    modality_names = self.mdata.mod.keys()
     dist_x_z_name = self.model.components.get(component).distribution_names.get(modality)
     dist_x_z_class = ReflectionHandler.get_class_by_name(dist_x_z_name, 'distributions')
+
     x_means = []
     for batch in dataset.batch(batch_size):
+      for modality_name in modality_names:
+        batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+        n_obs_batch = batch[batch_effect_key].shape[0]
+      
+      random_batch_index = np.random.choice(np.arange(self.mdata.n_obs), n_obs_batch)
+      for modality_name in modality_names:
+        batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+        batch[batch_effect_key] = tf.gather(
+            batch_effect[modality_name],
+            random_batch_index,
+            axis=0)
       result = self.model(batch, training=training)
       x_parameters = result.get(
           f"{component}/{modality}/{Constants.MODEL_OUTPUTS_X_PARAMS}")
