@@ -42,6 +42,7 @@ class Parameterizer(tf.keras.Model):
       self,
       inputs: Mapping[str, tf.Tensor],
       outputs: tf.Tensor,
+      layer: tf.keras.layers.Layer,
       name: str = 'parameterizer',
       libsize_scaling: bool = False,
       exp_transform: bool = False,
@@ -62,6 +63,9 @@ class Parameterizer(tf.keras.Model):
     name: str, optional
         Name for the tensorflow model. Defaults to  'parameterizer'.
     
+    layer: tf.keras.layers.Layer
+        Parameterizer layer.
+
     libsize_scaling: bool, optional
         whether to perform scaling by libsize. Defaults to False.
     
@@ -75,9 +79,14 @@ class Parameterizer(tf.keras.Model):
 
     """
     super().__init__(inputs=inputs, outputs=outputs, name=name)
+    self.layer = layer
     self.libsize_scaling = libsize_scaling
     self.exp_transform = exp_transform
   
+  def compute_attribution_target(self, inputs: tf.Tensor):
+    outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+    return outputs
+
   @classmethod
   def setup_inputs(
       cls,
@@ -214,6 +223,7 @@ class Parameterizer(tf.keras.Model):
         inputs=inputs,
         outputs=outputs,
         name=name,
+        layer=layer,
         libsize_scaling=libsize_scaling,
         exp_transform=exp_transform)
 

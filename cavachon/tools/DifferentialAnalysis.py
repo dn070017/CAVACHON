@@ -154,13 +154,13 @@ class DifferentialAnalysis:
 
     Parameters
     ----------
-    dataset : tf.data.Dataset
+    dataset: tf.data.Dataset
         input dataset.
 
-    component : str
+    component: str
         generative result of `modality` from which component to used.
     
-    modality : str
+    modality: str
         which modality to used from the generative result of 
         `component`.
     

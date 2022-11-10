@@ -1,4 +1,6 @@
 from cavachon.modules.parameterizers.Parameterizer import Parameterizer
+from cavachon.environment.Constants import Constants
+import tensorflow as tf
 
 class IndependentBernoulli(Parameterizer):
   """IndependentBernoulli
@@ -45,6 +47,11 @@ class IndependentBernoulli(Parameterizer):
 
     """
     super().__init__(*args, **kwargs)
+  
+  def compute_attribution_target(self, inputs: tf.Tensor):
+    outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+    
+    return tf.keras.activations.sigmoid(outputs)
 
   @classmethod
   def make(

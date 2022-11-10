@@ -62,6 +62,12 @@ class IndependentZeroInflatedNegativeBinomial(Parameterizer):
     """
     super().__init__(*args, **kwargs)
 
+  def compute_attribution_target(self, inputs: tf.Tensor):
+    outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+    probs, means, dispersion = tf.split(outputs, 3, axis=-1)
+    probs = tf.keras.activations.sigmoid(probs)
+    return tf.concat([probs, means, dispersion], axis=-1)
+
   @classmethod
   def modify_outputs(
       cls,
