@@ -27,7 +27,7 @@ class Component(tf.keras.Model):
 
   Attributes
   ----------
-  modality_names: str
+  modality_names: List[str]
       names of the modalities used in the component. 
 
   distribution_names: Mapping[str, str]
@@ -886,6 +886,24 @@ class Component(tf.keras.Model):
   def prepare_preprocessor_inputs(
       batch: Mapping[str, tf.Tensor],
       modality_names: List[str]) -> Mapping[str, tf.Tensor]:
+    """Prepare the inputs for the preprocessor. The function removes 
+    batch_effect, z_conditional and z_hat_conditional from batch inputs 
+    to prevent warning messages.
+
+    Parameters
+    ----------
+    batch: Mapping[str, tf.Tensor]
+      batch inputs.
+
+    modality_names: List[str]
+      names of the modalities used in the component. 
+
+    Returns
+    -------
+    Mapping[str, tf.Tensor]
+        keys are `modality_name`/matrix, values are the corresponding
+        tensors.
+    """
     preprocessor_inputs = dict()
     preprocessor_inputs.update(batch)
     preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z, None)
@@ -901,6 +919,25 @@ class Component(tf.keras.Model):
   def prepare_hierarchical_encoder_inputs(
       batch: Mapping[str, tf.Tensor],
       z: tf.Tensor) -> Mapping[str, tf.Tensor]:
+    """Prepare inputs for hierarchical encoder. The function puts z,
+    z_conditional and z_hat_conditional together in a dictionary as the
+    inputs for hierarchical encoder.
+
+    Parameters
+    ----------
+    batch: Mapping[str, tf.Tensor]
+      batch inputs.
+
+    z: tf.Tensor
+      outputs of z_sampler.
+
+    Returns
+    -------
+    Mapping[str, tf.Tensor]
+        keys are `z`, `z_conditional` (if applicable), 
+        `z_hat_conditional` (if applicable). values are the 
+        corresponding tensors.
+    """
     hierarchical_encoder_inputs = dict()
     hierarchical_encoder_inputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
     if Constants.MODULE_INPUTS_CONDITIONED_Z in batch:
@@ -920,6 +957,34 @@ class Component(tf.keras.Model):
       modality_name: str,
       z_hat: tf.Tensor,
       preprocessor_outputs: Mapping[str, tf.Tensor] = dict()) -> Mapping[str, tf.Tensor]:
+    """Prepare inputs for decoder of `modality_name`. The function 
+    concatenates z_hat and `modality_name`/batch_effect into 'matrix',
+    and combined with 'libsize' (if applicable) into a dictionary as 
+    the inputs for decoder.
+
+    Parameters
+    ----------
+    batch: Mapping[str, tf.Tensor]
+        batch inputs.
+
+    modality_name : str
+        name of the target modality.
+    
+    z_hat: tf.Tensor
+        outputs of hierarchical_encoder.
+    
+    preprocessor_outputs : Mapping[str, tf.Tensor], optional
+        outputs of preprocessor, Defaults to dict().
+
+    Returns
+    -------
+    Mapping[str, tf.Tensor]
+        keys are 'matrix' and 'libsize', values are the concatenation
+        of z_hat and `modality_name`/batch_effect, and library size 
+        tensor.
+
+    """
+    
     decoder_inputs = dict()
     modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
     decoder_inputs.setdefault(

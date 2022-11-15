@@ -527,8 +527,13 @@ class Model(tf.keras.Model):
     Returns
     -------
     Iterable
-        if `for_dims=True`, return zip(config_keys, dims_key), else
-        return zip(input_keys, config_keys, tensor_mapping)
+        if `for_dims=True`, return zip(
+          ['conditioned_on_z', 'conditioned_on_z_hat'],
+          ['z_conditional_dims', 'z_hat_conditonal_dims'])
+        else, return zip(
+          ['z_conditional', 'z_hat_conditional'],
+          ['conditioned_on_z', 'conditioned_on_z_hat'],
+          [{`modality_names`: z}, {`modality_names`: z_hat}])
 
     """
     
