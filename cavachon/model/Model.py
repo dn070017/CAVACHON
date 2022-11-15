@@ -8,7 +8,7 @@ from cavachon.modules.components.Component import Component
 from cavachon.utils.GeneralUtils import GeneralUtils
 from cavachon.utils.TensorUtils import TensorUtils
 from tqdm import tqdm
-from typing import Any, List, Mapping, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
 
 import numpy as np
 import muon as mu
@@ -23,8 +23,8 @@ class Model(tf.keras.Model):
 
   Attibutes
   ---------
-  components: List[Component]
-      list of components which makes up the model.
+  components: Mapping[str, Component]
+      the components which makes up the model.
 
   component_configs: List[ComponentConfig]
       the config used to create the components in the model.
@@ -34,7 +34,7 @@ class Model(tf.keras.Model):
       self,
       inputs: Mapping[Any, tf.keras.Input],
       outputs: Mapping[Any, tf.Tensor],
-      components: List[Component],
+      components: Mapping[str, Component],
       component_configs: List[ComponentConfig],
       name: str = 'model',
       **kwargs):
@@ -57,8 +57,8 @@ class Model(tf.keras.Model):
         `component_names`_z_parameters and 
         `component_names`_`modality_nanes`_x_parameters.
     
-    components: List[Component]
-      list of components which makes up the model.
+    components: Mapping[str, Component]
+      the components which makes up the model.
 
     component_configs: List[ComponentConfig]
       the config used to create the components in the model.
@@ -148,13 +148,16 @@ class Model(tf.keras.Model):
     Returns
     -------
     Tuple
-        the first element is the list of created components, the second
-        element is the component configs but reordered based on the
-        number of breadth first search successors in the dependency
-        direct acyclic graph. The third element is the list of names of
-        all modalities used in the model. The last element is the 
-        Mapping of number of variables for each modality, where the 
-        keys are the modality names.
+        1. The first element is the mapping of created components, 
+           where the keys are the component names, values are the 
+           created components.
+        2. The second element is the component configs but reordered 
+           based on the number of breadth first search successors 
+           (topological sort) in the dependency direct acyclic graph.
+        3. The third element is the list of names of all modalities 
+           used in the model. The last element is the Mapping of number 
+           of variables for each modality, where the keys are the 
+           modality names.
 
     """
     component_configs = GeneralUtils.order_components(component_configs)
@@ -170,29 +173,11 @@ class Model(tf.keras.Model):
           component_config.get(Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES))
       n_vars.update(component_config.get(Constants.CONFIG_FIELD_COMPONENT_N_VARS))
       n_vars_batch_effect.update(component_config.get('n_vars_batch_effect'))
+      
       component_name = component_config.get('name')
+      conditional_dims_config = Model.prepare_conditional_dims_config(component_config, components)
+      component_config.update(conditional_dims_config)
 
-      conditioned_on_keys = [
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z,
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT
-      ]
-      conditioned_on_dims_keys = [
-        Constants.MODEL_INPUTS_Z_CONDITIONAL_DIMS,
-        Constants.MODEL_INPUTS_Z_HAT_CONDITIONAL_DIMS
-      ]
-      conditioned_on_keys = zip(conditioned_on_keys, conditioned_on_dims_keys)
-      for conditioned_on_key, conditioned_on_dims_key in conditioned_on_keys:
-        conditioned_on = component_config.get(conditioned_on_key, [])
-        if len(conditioned_on) == 0:
-          component_config.setdefault(conditioned_on_dims_key, None)
-        else:
-          conditional_dims = 0
-          for conditioned_on_component_name in conditioned_on:
-            component = components.get(conditioned_on_component_name)
-            conditional_dims += component.z_prior_parameterizer.event_dims
-          component_config.setdefault(
-              conditioned_on_dims_key,
-              conditional_dims)
       components.setdefault(component_name, Component.make(**component_config))
   
     return components, component_configs, modality_names, n_vars, n_vars_batch_effect
@@ -212,7 +197,7 @@ class Model(tf.keras.Model):
     inputs: Mapping[Any, tf.keras.Input]
         inputs created using setup_inputs()
     
-    components: List[Component]
+    components: Mapping[str, Component]
       components created by setup_components().
 
     component_configs: List[ComponentConfig]
@@ -232,41 +217,15 @@ class Model(tf.keras.Model):
     z_hat_conditional = dict()
     outputs = dict()
     for component_config in component_configs:
-      component_inputs = dict()
       component_name = component_config.get('name')
       component = components.get(component_name)
-      for modality_name in component.modality_names:
-        modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-        modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
-        component_inputs.setdefault(modality_matrix_key, inputs.get(modality_matrix_key))
-        component_inputs.setdefault(modality_batch_key, inputs.get(modality_batch_key))
-
-      conditioned_on_keys = [
-        Constants.MODULE_INPUTS_CONDITIONED_Z,
-        Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
-      ]
-      conditioned_on_config_keys = [
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z,
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT
-      ]
-      conditioned_on_dict = [
-        z_conditional,
-        z_hat_conditional
-      ]
-      conditioned_on_keys = zip(
-          conditioned_on_keys, 
-          conditioned_on_config_keys, 
-          conditioned_on_dict)
-      for conditioned_on_key, conditioned_on_config_key, conditioned_on_d in conditioned_on_keys:
-        conditional = []
-        conditioned_on = component_config.get(conditioned_on_config_key, [])
-        if len(conditioned_on) != 0:
-          for conditioned_on_component_name in conditioned_on:
-            conditional.append(conditioned_on_d.get(conditioned_on_component_name))
-          conditional = tf.concat(conditional, axis=-1)
-          component_inputs.setdefault(
-              conditioned_on_key,
-              conditional)
+      component_inputs = Model.prepare_component_inputs(
+          inputs,
+          component_config,
+          component_name,
+          components,
+          z_conditional,
+          z_hat_conditional)
 
       results = component(component_inputs)
       for key, result in results.items():
@@ -275,7 +234,6 @@ class Model(tf.keras.Model):
       z_conditional.setdefault(
           component_name, 
           results.get(Constants.MODEL_OUTPUTS_Z))
-
       z_hat_conditional.setdefault(
           component_name,
           results.get(Constants.MODEL_OUTPUTS_Z_HAT))
@@ -538,3 +496,173 @@ class Model(tf.keras.Model):
       if not value:
         for component_name in self.components.keys():
           self.components[component_name].trainable = value
+  
+  @staticmethod
+  def prepare_conditionals(
+      for_dims: bool = True,
+      z_conditional: Mapping[str, tf.Tensor] = None,
+      z_hat_conditional: Mapping[str, tf.Tensor] = None) -> Iterable:
+    """Prepare interable conditionals used in 
+    `prepare_conditional_dims_config` and `prepare_component_inputs`.
+    This function should not be used directly by the user.
+
+    Parameters
+    ----------
+    for_dims: bool, optional
+        whether the function is called by 
+        `repare_conditional_dims_config`. Defaults to True.
+    
+    z_conditional: Mapping[str, tf.Tensor], optional
+        Tensor of z_conditional, keys should be the component names 
+        that the current component condition on (z), value is the 
+        corresponding z Tensor. Ignored if `for_dims=True`. Default 
+        to None.
+    
+    z_hat_conditional: Mapping[str, tf.Tensor], optional
+        Tensor of z_hat_conditional, keys should be the component names 
+        that the current component condition on (z_hat), value is the 
+        corresponding z_hat Tensor. Ignored if `for_dims=True`. Default 
+        to None.
+
+    Returns
+    -------
+    Iterable
+        if `for_dims=True`, return zip(config_keys, dims_key), else
+        return zip(input_keys, config_keys, tensor_mapping)
+
+    """
+    
+    conditional_input_keys = [
+      Constants.MODULE_INPUTS_CONDITIONED_Z,
+      Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
+    ]
+
+    conditional_config_keys = [
+      Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z,
+      Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT
+    ]
+
+    conditional_dims_keys = [
+      Constants.MODEL_INPUTS_Z_CONDITIONAL_DIMS,
+      Constants.MODEL_INPUTS_Z_HAT_CONDITIONAL_DIMS
+    ]
+
+    conditional_tensor_dicts = [
+      z_conditional,
+      z_hat_conditional
+    ]
+    if for_dims:
+      conditionals = zip(
+          conditional_config_keys, 
+          conditional_dims_keys)
+    else:
+      conditionals = zip(
+          conditional_input_keys, 
+          conditional_config_keys, 
+          conditional_tensor_dicts)
+    
+    return conditionals
+
+  @staticmethod
+  def prepare_conditional_dims_config(
+      component_config: ComponentConfig,
+      components: Mapping[str, Component]) -> Dict[str, int]:
+    """Prepare the config for conditional dimensions used in 
+    `setup_components`. This function should not be used directly by 
+    the user.
+
+    Parameters
+    ----------
+    component_config: List[ComponentConfig]
+      the config used to create the current component.
+  
+    components: Mapping[str, Component]
+      the components which makes up the model.
+
+    Returns
+    -------
+    Dict[str, int]
+        keys are the `z_conditonal_dims` and `z_hat_conditional_dims`,
+        values are the corresponding Tensor dimensions.
+
+    """
+    conditional_dims_config = dict()
+
+    conditionals = Model.prepare_conditionals()
+    for config_key, dims_key in conditionals:
+      conditional_component_names = component_config.get(config_key, [])
+      if len(conditional_component_names) == 0:
+        conditional_dims_config.setdefault(dims_key, None)
+      else:
+        conditional_dims = 0
+        for conditional_component_name in conditional_component_names:
+          component = components.get(conditional_component_name)
+          conditional_dims += component.z_prior_parameterizer.event_dims
+        conditional_dims_config.setdefault(
+            dims_key,
+            conditional_dims)
+
+    return conditional_dims_config
+
+  @staticmethod
+  def prepare_component_inputs(
+      batch: Mapping[str, tf.Tensor], 
+      component_config: ComponentConfig,
+      target_component: str,
+      components: Mapping[str, Component],
+      z_conditional: Mapping[str, tf.Tensor] = dict(),
+      z_hat_conditional: Mapping[str, tf.Tensor] = dict()) -> Dict[str, tf.Tensor]:
+    """Prepare the inputs for the component used in `setup_outputs`.
+
+    Parameters
+    ----------
+    batch: Mapping[str, tf.Tensor]
+      batch inputs.
+
+    component_config: List[ComponentConfig]
+      the config used to create the current component.
+  
+    target_component: str
+      the target component name.
+
+    components: Mapping[str, Component]
+      the components which makes up the model.
+
+    z_conditional: Mapping[str, tf.Tensor], optional
+      the keys are the name of the conditioned component (z), the 
+      values are the corresponding z Tensor. Defaults to {}.
+
+    z_hat_conditional: Mapping[str, tf.Tensor], optional
+      the keys are the name of the conditioned component (z_hat), the 
+      values are the corresponding z_hat Tensor. Defaults to {}.
+
+    Returns
+    -------
+    Dict[str, tf.Tensors]
+        keys are the `{modality_name}/matrix`, 
+        `{modality_name}/batch_effect`, `z_conditional`, 
+        `z_hat_conditional`, values are the corresponding Tensors.
+
+    """
+    component_inputs = dict()
+    for modality_name in components.get(target_component).modality_names:
+      modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
+      modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
+      component_inputs.setdefault(modality_matrix_key, batch.get(modality_matrix_key))
+      component_inputs.setdefault(modality_batch_key, batch.get(modality_batch_key))
+
+    conditionals = Model.prepare_conditionals(False, z_conditional, z_hat_conditional)
+
+    for input_key, config_key, tensor_dict in conditionals:
+      conditional_tensor = []
+      conditional_component_names = component_config.get(config_key, [])
+      if len(conditional_component_names) != 0:
+        for conditional_component_name in conditional_component_names:
+          conditional_tensor.append(tensor_dict.get(conditional_component_name))
+        conditional_tensor = tf.concat(conditional_tensor, axis=-1)
+        component_inputs.setdefault(
+            input_key,
+            conditional_tensor)
+    
+    return component_inputs
+
