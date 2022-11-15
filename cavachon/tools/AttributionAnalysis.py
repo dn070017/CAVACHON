@@ -2,6 +2,8 @@ from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.distributions.Distribution import Distribution
 from cavachon.environment.Constants import Constants
 from cavachon.layers.parameterizers.MultivariateNormalDiagSampler import MultivariateNormalDiagSampler
+from cavachon.model.Model import Model
+from cavachon.modules.components.Component import Component
 from cavachon.utils.ReflectionHandler import ReflectionHandler
 from cavachon.utils.TensorUtils import TensorUtils
 from copy import deepcopy
@@ -95,7 +97,7 @@ class AttributionAnalysis:
     progress_message = "Computing delta x"
     for batch in tqdm(dataloader.dataset.batch(batch_size), desc=progress_message):
       x_means_null_batch = self.compute_attribution_target_batch(
-          batch_inputs=batch,
+          batch=batch,
           component=component,
           modality=modality,
           target_component=exclude_component,
@@ -103,7 +105,7 @@ class AttributionAnalysis:
           alpha=0.0)
       
       x_means_full_batch = self.compute_attribution_target_batch(
-          batch_inputs=batch,
+          batch=batch,
           component=component,
           modality=modality,
           target_component=exclude_component,
@@ -171,7 +173,7 @@ class AttributionAnalysis:
           z_variable = tf.Variable(outputs.get(f'{target_component}/{Constants.MODEL_OUTPUTS_Z}'))
           n_latent_dims = z_variable.shape[-1]
           x_means = self.compute_attribution_target_batch(
-              batch_inputs=batch,
+              batch=batch,
               component=component,
               modality=modality,
               target_component=target_component,
@@ -190,7 +192,7 @@ class AttributionAnalysis:
   
   def compute_attribution_target_batch(
       self,
-      batch_inputs: Mapping[str, tf.Tensor],
+      batch: Mapping[str, tf.Tensor],
       component: str,
       modality: str,
       target_component: str,
@@ -202,8 +204,8 @@ class AttributionAnalysis:
 
     Parameters
     ----------
-    batch_inputs: Mapping[str, tf.Tensor]
-        input batched data from Dataloader.
+    batch: Mapping[str, tf.Tensor]
+        batch inputs.
     
     component: str
         generative result of `modality` from which component to used.
@@ -230,156 +232,42 @@ class AttributionAnalysis:
     z_conditional = dict()
     z_hat_conditional = dict()
     for component_config in self.model.component_configs:
-      component_inputs = dict()
       component_name = component_config.get('name')
       component_network = self.model.components.get(component_name)
       modality_names = component_config.get(Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES)
-      for modality_name in modality_names:
-        modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-        modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
-        component_inputs.setdefault(modality_matrix_key, batch_inputs.get(modality_matrix_key))
-        component_inputs.setdefault(modality_batch_key, batch_inputs.get(modality_batch_key))
-      
-      conditioned_on_keys = [
-        Constants.MODULE_INPUTS_CONDITIONED_Z,
-        Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
-      ]
-      conditioned_on_config_keys = [
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z,
-        Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT
-      ]
-      conditioned_on_dict = [
-        z_conditional,
-        z_hat_conditional
-      ]
-      conditioned_on_keys = zip(
-          conditioned_on_keys, 
-          conditioned_on_config_keys, 
-          conditioned_on_dict)
-      for conditioned_on_key, conditioned_on_config_key, conditioned_on_d in conditioned_on_keys:
-        conditional = []
-        conditioned_on = component_config.get(conditioned_on_config_key, [])
-        if len(conditioned_on) != 0:
-          for conditioned_on_component_name in conditioned_on:
-            conditional.append(conditioned_on_d.get(conditioned_on_component_name))
-          conditional = tf.concat(conditional, axis=-1)
-          component_inputs.setdefault(
-              conditioned_on_key,
-              conditional)
-      
-      component_outputs = dict()
-      hierarchical_encoder_inputs = dict()
-      preprocessor_inputs = dict()
-      preprocessor_inputs.update(component_inputs)
-      preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z, None)
-      preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT, None)
-
-      for modality_name in modality_names:
-        modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
-        preprocessor_inputs.pop(modality_batch_key, None)
-
+      component_inputs = Model.prepare_component_inputs(
+        batch=batch,
+        component_config=component_config,
+        target_component=component_name,
+        components=self.model.components,
+        z_conditional=z_conditional,
+        z_hat_conditional=z_hat_conditional
+      )
+            
+      preprocessor_inputs = Component.prepare_preprocessor_inputs(component_inputs, modality_names)
       preprocessor_outputs = component_network.preprocessor(preprocessor_inputs, training=False)
       z_parameters = component_network.encoder(
           preprocessor_outputs.get(component_network.preprocessor.matrix_key),
           training=False)
-      
       if component_name == target_component and z_variable is not None:
         z = alpha * z_variable
       else:
         z_sampler = MultivariateNormalDiagSampler()
         z = alpha * z_sampler(z_parameters, training=False)
 
-      hierarchical_encoder_inputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
-      if Constants.MODULE_INPUTS_CONDITIONED_Z in component_inputs:
-          hierarchical_encoder_inputs.setdefault(
-              Constants.MODULE_INPUTS_CONDITIONED_Z,
-              component_inputs.get(Constants.MODULE_INPUTS_CONDITIONED_Z))
-      if Constants.MODULE_INPUTS_CONDITIONED_Z_HAT in component_inputs:
-          hierarchical_encoder_inputs.setdefault(
-              Constants.MODULE_INPUTS_CONDITIONED_Z_HAT,
-              component_inputs.get(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT))
+      hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(component_inputs, z)
       z_hat = component_network.hierarchical_encoder(hierarchical_encoder_inputs)
-
-      component_outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
-      component_outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
-      component_outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PARAMS, z_parameters)
       
-      z_conditional.setdefault(
-          component_name, 
-          component_outputs.get(Constants.MODEL_OUTPUTS_Z))
-
-      z_hat_conditional.setdefault(
-          component_name,
-          component_outputs.get(Constants.MODEL_OUTPUTS_Z_HAT))
+      z_conditional.setdefault(component_name, z)
+      z_hat_conditional.setdefault(component_name, z_hat)
 
       if component_name == component:
-        modality_batch_key = f'{modality}/{Constants.TENSOR_NAME_BATCH}'
-        decoder_inputs = dict()
-        decoder_inputs.setdefault(
-            Constants.TENSOR_NAME_X,
-            tf.concat([z_hat, component_inputs.get(modality_batch_key)], axis=-1))
+        decoder_inputs = Component.prepare_decoder_inputs(
+            batch=batch,
+            modality_name=modality,
+            z_hat=z_hat,
+            preprocessor_outputs=dict())
         decoder = component_network.decoders.get(modality)
         attribution_target = decoder.compute_attribution_target(decoder_inputs)
         
         return attribution_target
-  
-  """def setup_hierarchical_encoder_inputs(
-      self,
-      batch_outputs: Mapping[str, tf.Tensor],
-      component: str,
-      z_variable: tf.Variable,
-      alpha: float):
-
-    component_network = self.model.components[component]
-
-    hierarchical_encoder_inputs = dict()
-    hierarchical_encoder_inputs.setdefault(
-        Constants.MODEL_OUTPUTS_Z,
-        alpha * z_variable)
-
-    cond_on_keys = [
-      Constants.MODEL_OUTPUTS_Z,
-      Constants.MODEL_OUTPUTS_Z_HAT
-    ]
-    cond_on_inputs_keys = [
-      Constants.MODULE_INPUTS_CONDITIONED_Z,
-      Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
-    ]
-    cond_on_components = [
-      component_network.conditioned_on_z,
-      component_network.conditioned_on_z_hat
-    ]
-    cond_on_iter = zip(cond_on_keys, cond_on_inputs_keys, cond_on_components)
-    for cond_on_key, cond_on_inputs_key, cond_on_component_list in cond_on_iter:
-      cond_on_tensor = list()
-      for cond_on_component in cond_on_component_list:
-        cond_on_tensor.append(batch_outputs.get(f'{cond_on_component}/{cond_on_key}'))
-      if len(cond_on_tensor) != 0:
-        hierarchical_encoder_inputs.setdefault(
-            cond_on_inputs_key,
-            tf.concat(cond_on_tensor, axis=-1))
-    
-    return hierarchical_encoder_inputs
-
-  def compute_preprocessor_outputs_batch(
-      self,
-      batch: Mapping[str, tf.Tensor],
-      component: str,
-      modality: str) -> tf.Tensor:
-    
-    component_network = self.model.components[component]
-    modality_names = self.mdata.mod.keys()
-    
-    preprocessor_inputs = dict()
-    preprocessor_inputs.update(batch)
-    preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z, None)
-    preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT, None)
-    for modality_name in modality_names:
-      modality_batch_key = f'{modality_name}/{Constants.TENSOR_NAME_BATCH}'
-      modality_matrix_key = f'{modality_name}/{Constants.TENSOR_NAME_X}'
-      preprocessor_inputs.pop(modality_batch_key, None)
-      if modality_name != modality:
-        preprocessor_inputs.pop(modality_matrix_key, None)
-    preprocessor_outputs = component_network.preprocessor(preprocessor_inputs)
-  
-    return preprocessor_outputs"""
