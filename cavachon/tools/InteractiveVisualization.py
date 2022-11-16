@@ -373,6 +373,7 @@ class InteractiveVisualization:
       target_component: str,
       use_cluster: str,
       steps: int = 10,
+      selected_variables: Optional[Sequence[str]] = None,    
       batch_size: int = 128,
       color_discrete_map: Mapping[str, str] = dict(),
       filename: Optional[str] = None,
@@ -403,6 +404,11 @@ class InteractiveVisualization:
     steps: int, optional
         steps in integrated gradients. Defaults to 10.
 
+    selected_variables: Optional[Sequence[str]], optional
+        the variables to used. The provided variables needs to match
+        the indices of mdata[modality].var. All variables will be used 
+        if provided with None. Defaults to None.
+
     batch_size: int, optional
         batch size used for the forward pass. Defaults to 128.
 
@@ -432,6 +438,7 @@ class InteractiveVisualization:
         modality=modality,
         target_component=target_component,
         steps=steps,
+        selected_variables=selected_variables,
         batch_size=batch_size)
 
     data = pd.DataFrame({

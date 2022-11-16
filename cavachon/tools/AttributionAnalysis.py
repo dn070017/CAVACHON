@@ -53,7 +53,7 @@ class AttributionAnalysis:
       component: str,
       modality: str,
       exclude_component: str,
-      selected_variables: Optional[Sequence[str]] = None,
+      selected_indices: Optional[Sequence[int]] = None,
       batch_size: int = 128
   ) -> np.ndarray:
     """Compute the x - x_baseline in the integrated gradients. The 
@@ -72,10 +72,9 @@ class AttributionAnalysis:
         which component to exclude (the latent representation z will 
         not be used in the forward pass)
     
-    selected_variables: Optional[Sequence[int]], optional
-        the variables to used. The provided variables needs to match
-        the indices of mdata[modality].var. All variables will be used 
-        if provided with None. Defaults to None.
+    selected_indices: Optional[Sequence[int]], optional
+        the integer indices for which variables to used. All variables
+        will be used if provided with None. Defaults to None.
 
     batch_size : int, optional
         batch size used for the forward pass. Defaults to 128
@@ -88,10 +87,6 @@ class AttributionAnalysis:
     """
     dist_x_z_name = self.model.components.get(component).distribution_names.get(modality)
     dist_x_z_class = ReflectionHandler.get_class_by_name(dist_x_z_name, 'distributions')
-    if selected_variables is not None:
-      selected_indices = [self.mdata[modality].var.index.get_loc(var) for var in selected_variables]
-    else:
-      selected_indices = None
     delta_x = []
     dataloader = DataLoader(self.mdata, batch_size=batch_size)
     progress_message = "Computing delta x"
@@ -127,6 +122,7 @@ class AttributionAnalysis:
       modality: str,
       target_component: str, 
       steps: int = 10,
+      selected_variables: Optional[Sequence[str]] = None,
       batch_size: int = 128) -> np.ndarray:
     """Compute the integrated gradients of ∂rho_m/∂z_m.
 
@@ -143,6 +139,11 @@ class AttributionAnalysis:
 
     steps: int, optional
         steps in integrated gradients. Defaults to 10.
+    
+    selected_variables: Optional[Sequence[str]], optional
+        the variables to used. The provided variables needs to match
+        the indices of mdata[modality].var. All variables will be used 
+        if provided with None. Defaults to None.
 
     batch_size: int, optional
         batch size used for the forward pass. Defaults to 128
@@ -153,11 +154,16 @@ class AttributionAnalysis:
         integrated gradients of ∂rho_m/∂z_m.
 
     """    
+    if selected_variables is not None:
+      selected_indices = [self.mdata[modality].var.index.get_loc(var) for var in selected_variables]
+    else:
+      selected_indices = None
+
     delta_x = self.compute_delta_x(
         component = component,
         modality = modality,
         exclude_component = target_component,
-        selected_variables = None,
+        selected_indices = selected_indices,
         batch_size = batch_size)
     
     dataloader = DataLoader(self.mdata, batch_size=batch_size)
@@ -173,12 +179,13 @@ class AttributionAnalysis:
           z_variable = tf.Variable(outputs.get(f'{target_component}/{Constants.MODEL_OUTPUTS_Z}'))
           n_latent_dims = z_variable.shape[-1]
           x_means = self.compute_attribution_target_batch(
-              batch=batch,
-              component=component,
-              modality=modality,
-              target_component=target_component,
-              z_variable=z_variable,
-              alpha=alpha)
+              batch = batch,
+              component = component,
+              modality = modality,
+              target_component = target_component,
+              selected_indices = selected_indices,
+              z_variable = z_variable,
+              alpha = alpha)
           gradients = tape.gradient(x_means ** 2, z_variable)
           unintegrated_gradients_batch.append(1 / (steps + 1) * batch_delta_x * gradients)
         
@@ -269,5 +276,7 @@ class AttributionAnalysis:
             preprocessor_outputs=dict())
         decoder = component_network.decoders.get(modality)
         attribution_target = decoder.compute_attribution_target(decoder_inputs)
+        if selected_indices is not None:
+          attribution_target = tf.gather(attribution_target, selected_indices, axis=-1)
         
         return attribution_target
