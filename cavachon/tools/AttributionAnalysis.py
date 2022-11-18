@@ -95,7 +95,7 @@ class AttributionAnalysis:
           batch=batch,
           component=component,
           modality=modality,
-          target_component=exclude_component,
+          with_respect_to=exclude_component,
           selected_indices=selected_indices,
           alpha=0.0)
       
@@ -103,7 +103,7 @@ class AttributionAnalysis:
           batch=batch,
           component=component,
           modality=modality,
-          target_component=exclude_component,
+          with_respect_to=exclude_component,
           selected_indices=selected_indices,
           alpha=1.0)
 
@@ -120,7 +120,7 @@ class AttributionAnalysis:
       self,
       component: str,
       modality: str,
-      target_component: str, 
+      with_respect_to: str, 
       steps: int = 10,
       selected_variables: Optional[Sequence[str]] = None,
       batch_size: int = 128) -> np.ndarray:
@@ -134,8 +134,9 @@ class AttributionAnalysis:
     modality: str
         which modality of the outputs of the component to used.
 
-    target_component: str
-        the latent representation of which component to used.
+    with_respect_to: str
+        compute integrated gradietn with respect to the latent 
+        representation of which component.
 
     steps: int, optional
         steps in integrated gradients. Defaults to 10.
@@ -162,7 +163,7 @@ class AttributionAnalysis:
     delta_x = self.compute_delta_x(
         component = component,
         modality = modality,
-        exclude_component = target_component,
+        exclude_component = with_respect_to,
         selected_indices = selected_indices,
         batch_size = batch_size)
     
@@ -176,13 +177,13 @@ class AttributionAnalysis:
       unintegrated_gradients_batch = [] 
       for alpha in [x / steps for x in range(steps + 1)]:
         with tf.GradientTape() as tape:
-          z_variable = tf.Variable(outputs.get(f'{target_component}/{Constants.MODEL_OUTPUTS_Z}'))
+          z_variable = tf.Variable(outputs.get(f'{with_respect_to}/{Constants.MODEL_OUTPUTS_Z}'))
           n_latent_dims = z_variable.shape[-1]
           x_means = self.compute_attribution_target_batch(
               batch = batch,
               component = component,
               modality = modality,
-              target_component = target_component,
+              with_respect_to = with_respect_to,
               selected_indices = selected_indices,
               z_variable = z_variable,
               alpha = alpha)
@@ -202,9 +203,9 @@ class AttributionAnalysis:
       batch: Mapping[str, tf.Tensor],
       component: str,
       modality: str,
-      target_component: str,
+      with_respect_to: str,
       selected_indices: Optional[Sequence[int]] = None,
-      z_variable: tf.Variable = None,
+      z_variable: Union[tf.Tensor, tf.Variable, None] = None,
       alpha: float = 1.0) -> np.ndarray:
     """Compute the means of generative data in each batch with selected 
     indices.
@@ -221,12 +222,20 @@ class AttributionAnalysis:
         which modality to used from the generative result of 
         `component`.
     
-    dist_x_z_class: Distribution
-        the class for the data distribution of `modality`.
+    with_respect_to: str
+        compute integrated gradietn with respect to the latent 
+        representation of which component.
 
     selected_indices: Optional[Sequence[int]], optional
         the integer indices for which variables to used. All variables
         will be used if provided with None. Defaults to None.
+    
+    z_variable: Union[tf.Tensor, tf.Variable, None], optional
+        replace z with provided z_variable. Use the original z if 
+        provided with None. Defaults to None.
+
+    alpha: float, optional
+        scaling factor of z. Defaults to 1.0.
 
     Returns
     -------
@@ -256,7 +265,7 @@ class AttributionAnalysis:
       z_parameters = component_network.encoder(
           preprocessor_outputs.get(component_network.preprocessor.matrix_key),
           training=False)
-      if component_name == target_component and z_variable is not None:
+      if component_name == with_respect_to and z_variable is not None:
         z = alpha * z_variable
       else:
         z_sampler = MultivariateNormalDiagSampler()

@@ -370,7 +370,7 @@ class InteractiveVisualization:
       model: tf.keras.Model,
       component: str,
       modality: str,
-      target_component: str,
+      with_respect_to: str,
       use_cluster: str,
       steps: int = 10,
       selected_variables: Optional[Sequence[str]] = None,    
@@ -395,8 +395,9 @@ class InteractiveVisualization:
     modality: str
         which modality of the outputs of the component to used.
 
-    target_component: str
-        the latent representation of which component to used.
+    with_respect_to: str
+        compute integrated gradietn with respect to the latent 
+        representation of which component.
 
     use_cluster: str
         the column name of the clusters in the obs of modality.
@@ -436,7 +437,7 @@ class InteractiveVisualization:
     attribution_score = analysis.compute_integrated_gradient(
         component=component,
         modality=modality,
-        target_component=target_component,
+        with_respect_to=with_respect_to,
         steps=steps,
         selected_variables=selected_variables,
         batch_size=batch_size)
