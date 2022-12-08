@@ -1,6 +1,7 @@
 from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.environment.Constants import Constants
 from cavachon.utils.ReflectionHandler import ReflectionHandler
+from itertools import combinations
 from typing import Mapping, Sequence, Union
 from tqdm import tqdm
 
@@ -42,6 +43,36 @@ class DifferentialAnalysis:
     self.mdata = mdata
     self.model = model
 
+  def across_clusters_pairwise(
+      self,
+      component: str,
+      modality: str,
+      use_cluster: str,
+      z_sampling_size: int = 10,
+      x_sampling_size: int = 2500,
+      batch_size: int = 128) -> Mapping[str, pd.DataFrame]:
+    
+    results = dict()
+    obs = self.mdata[modality].obs
+    unique_clusters = obs[use_cluster].unique()
+    for cluster_a, cluster_b  in combinations(unique_clusters, r=2):
+      index_a = obs[obs[use_cluster] == cluster_a].index
+      index_b = obs[obs[use_cluster] == cluster_b].index
+      results.setdefault(
+          f"{cluster_a}/{cluster_b}",
+          self.between_two_groups(
+              group_a_index = index_a,
+              group_b_index = index_b,
+              component = component,
+              modality = modality,
+              z_sampling_size = z_sampling_size,
+              x_sampling_size = x_sampling_size,
+              batch_size = batch_size,
+              desc=f"Between {cluster_a} and {cluster_b}"))
+    
+    return results
+
+
   def between_two_groups(
       self, 
       group_a_index: Union[pd.Index, Sequence[str]],
@@ -50,7 +81,8 @@ class DifferentialAnalysis:
       modality: str,
       z_sampling_size: int = 10,
       x_sampling_size: int = 2500,
-      batch_size: int = 128):
+      batch_size: int = 128,
+      desc: str = '') -> pd.DataFrame:
     """Perform the differential analysis between two groups.
 
     Parameters
@@ -108,7 +140,7 @@ class DifferentialAnalysis:
     for modality_name in batch_effect.keys():
       batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
 
-    for _ in tqdm(range(z_sampling_size)):
+    for _ in tqdm(range(z_sampling_size), desc=desc):
       mdata_group_a = self.sample_mdata_x(
           index=group_a_index,
           x_sampling_size=x_sampling_size)
