@@ -28,7 +28,8 @@ class ConfigMapping(MutableMapping):
     super().__init__()
     self.__keys = set(fields) if fields is not None else set(config.keys())
     for key, value in config.items():
-      setattr(self, key, value)
+      if key in self.__keys:
+        setattr(self, key, value)
     for key in set(config.keys()) - self.__keys:
       message = ''.join((
         f'Unexpected field {key} in {self.__class__.__name__}. ',
