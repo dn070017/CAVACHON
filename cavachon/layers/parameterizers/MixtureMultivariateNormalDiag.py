@@ -12,7 +12,7 @@ class MixtureMultivariateNormalDiag(tf.keras.layers.Layer):
       self,
       event_dims: int,
       n_components: int,
-      unit_variance: bool = True,
+      unit_variance: bool = False,
       name: str = 'mixture_multivariate_normal_diag_parameterizer'):
     """Constructor for MultivariateNormalDiag
 
@@ -26,7 +26,7 @@ class MixtureMultivariateNormalDiag(tf.keras.layers.Layer):
         number of components in the mixture distributions.
 
     unit_variance: bool, optional
-        use unit variance. Defaults to True.
+        use unit variance. Defaults to False.
 
     name: str, optional
         Name for the tensorflow layer. Defaults to 
@@ -131,3 +131,22 @@ class MixtureMultivariateNormalDiag(tf.keras.layers.Layer):
 
     # shape: (batch, n_components, event_dims * 2 + 1)
     return tf.concat([logits, means, scale_diag], axis=-1)
+
+  @property
+  def parameters(self) -> tf.Tensor:
+    """Getter function for parameters, return the parameters of the 
+    priors. Used when the parameterizer is trained without the use of
+    observed data (each parameter is itself a trainable parameters)
+    
+    Returns
+    -------
+    tf.Tensor
+        logits, loc and scale_diag for normal distributions with 
+        diagonal covariance matrix, with shape 
+        (n_components, event_dims * 2 + 1), where
+        1. results[n_components, 0] are the logits
+        2. results[n_components, 1:event_dims+1] are the loc (mean)
+        3. results[n_components, event_dims+1:] are the scale_diag (std)
+
+    """
+    return tf.squeeze(self(tf.ones((1, 1))))
