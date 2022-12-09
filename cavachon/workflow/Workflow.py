@@ -2,6 +2,7 @@ from cavachon.config.Config import Config
 from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.environment.Constants import Constants
 from cavachon.filter.AnnDataFilterHandler import AnnDataFilterHandler
+from cavachon.tools.InteractiveVisualization import InteractiveVisualization
 from cavachon.io.FileReader import FileReader
 from cavachon.modality.Modality import Modality
 from cavachon.modality.MultiModality import MultiModality
@@ -70,7 +71,6 @@ class Workflow():
     """Run the specified workflow configured in self.config"""
     self.setup_mdata()
     self.setup_dataloader()
-
     self.model = Model.make(component_configs=self.config.components, name=self.config.model.name)
     
     self.setup_train_scheduler()
@@ -78,8 +78,10 @@ class Workflow():
       self.load_model_weights()
     if self.config.training.train:
       self.train_model()
-    
     self.predict()
+    self.compute_embedding()
+    #self.perform_differential_analysis()
+    #self.compute_conditional_attribution_scores()
 
     return
   
@@ -257,3 +259,31 @@ class Workflow():
     self.outputs = self.model.predict(self.mdata, batch_size=batch_size)
     
     return
+  
+  def compute_embedding(self) -> None:
+    outdir = os.path.join(self.config.io.outdir, 'embeddings')
+    os.makedirs(outdir, exist_ok=True)
+    embedding_methods = self.config.analysis.embedding_methods
+    colors = self.config.analysis.annotation_colnames
+    targets = list()
+    for embedding_method in embedding_methods:
+      for color in colors:
+        for modality_name in self.mdata.mod.keys():
+          adata = self.mdata[modality_name]
+          for latent_representation in adata.obsm.keys():
+            if latent_representation.startswith('z_'):
+              targets.append((embedding_method, modality_name, latent_representation))
+    
+    # to void dictionary changed during iteration
+    for target in targets:
+      embedding_method, modality_name, latent_representation = target
+      adata = self.mdata[modality_name]
+      title = f"{latent_representation} of {modality_name}"
+      fig = InteractiveVisualization.embedding(
+          adata=adata,
+          title=title,
+          method=embedding_method,
+          use_rep=latent_representation,
+          color=color,
+          width=800, height=760,
+          filename=f"{outdir}/{title}.html".lower().replace(' ', '_'))

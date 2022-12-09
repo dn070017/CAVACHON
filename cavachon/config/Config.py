@@ -1,3 +1,4 @@
+from cavachon.config.config_mapping.AnalysisConfig import AnalysisConfig
 from cavachon.config.config_mapping.ComponentConfig import ComponentConfig
 from cavachon.config.config_mapping.DatasetConfig import DatasetConfig
 from cavachon.config.config_mapping.FilterConfig import FilterConfig
@@ -24,6 +25,9 @@ class Config:
   ----------
   filename: str
       filename of the config in YAML format.
+
+  analysis: AnalysisConfig
+      Analysis related config.
 
   io: IOConfig
       IO related config.
@@ -78,6 +82,7 @@ class Config:
     See Also
     --------
     setup_io: setup the io config and datadir.
+    setup_analysis: setup analysis related config.
     setup_modality: setup modality related config.
     setup_sample: setup sample related config.
     setup_training: setup training related config.
@@ -90,6 +95,7 @@ class Config:
       self.yaml: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
 
     # initializations
+    self.analysis: AnalysisConfig = None
     self.io: IOConfig = None
     self.sample: OrderedDict[str, SampleConfig] = OrderedDict()
     self.modality: Dict[str, ModalityConfig] = dict()
@@ -107,6 +113,7 @@ class Config:
     self.setup_training()
     self.setup_dataset()
     self.setup_model()
+    self.setup_analysis()
 
     return
 
@@ -163,6 +170,7 @@ class Config:
     return all_required_keys_are_there
   
   def setup_io(self) -> None:
+    """Setup IO related config."""
     self.io = IOConfig(**self.yaml.get(Constants.CONFIG_FIELD_IO))
  
   def setup_modality(self) -> None:
@@ -319,6 +327,9 @@ class Config:
           'modalities config')
         modality_name = modality_config.get('name')
         modality_name = GeneralUtils.tensorflow_compatible_str(modality_name)
+        if modality_name not in self.modality:
+          message = f"'{modality_name}' is not in the config of modality."
+          raise KeyError(message)
         modality_dist = self.modality.get(modality_name).get(Constants.CONFIG_FIELD_MODALITY_DIST)
         modality_config[Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES] = modality_dist
       
@@ -327,7 +338,7 @@ class Config:
     
     # Sort the components based on the BFS order
     self.components = GeneralUtils.order_components(component_config_mapping)
-    
+
     model_fields = [
         'name',
         Constants.CONFIG_FIELD_MODEL_LOAD_WEIGHTS,
@@ -338,3 +349,46 @@ class Config:
     ]
 
     self.model = ModelConfig(**{field: model_config.get(field) for field in model_fields})
+
+  def setup_analysis(self) -> None:
+    """Setup analysis related config.
+    
+    Raises
+    ------
+    KeyError
+        if 
+        1. `modality` is not in the config of component `component`.
+        2. `component` is not in the config of components.
+        3. `with_respect_to` is not in the config of components.
+
+    """
+    self.analysis = AnalysisConfig(**self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS))
+    for attribution_config in self.analysis.conditional_attribution_scores:
+      modality = attribution_config.modality
+      component = attribution_config.component
+      with_respect_to = attribution_config.with_respect_to
+      has_component1 = False
+      has_component2 = False
+      has_modality = False
+      for component_config in self.components:
+        if with_respect_to == component_config.name:
+          has_component2 = True
+        if component == component_config.name:
+          has_component1 = True
+          for modality_in_component in component_config.modality_names:
+            if modality == modality_in_component:
+              has_modality = True
+              break
+        if has_modality and has_component1 and has_component2:
+          break
+          
+      if not has_modality:
+        message = f"'{modality}' is not in the config of component '{component}'."
+        raise KeyError(message)
+      if not has_component1:
+        message = f"'{component}' (modality) is not in the config of components."
+        raise KeyError(message)
+      if not has_component2:
+        message = f"'{with_respect_to}' (with_respect_to) is not in the config of components."
+        raise KeyError(message)
+
