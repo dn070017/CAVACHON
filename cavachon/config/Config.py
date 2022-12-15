@@ -363,6 +363,25 @@ class Config:
 
     """
     self.analysis = AnalysisConfig(**self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS))
+    for modality, component in self.analysis.clustering.items():
+      has_component = False
+      has_modality = False
+      for component_config in self.components:
+        if component == component_config.name:
+          has_component = True
+          for modality_in_component in component_config.modality_names:
+            if modality == modality_in_component:
+              has_modality = True
+              break
+        if has_modality and has_component:
+          break
+      if not has_modality:
+        message = f"'{modality}' is not in the config of component '{component}'."
+        raise KeyError(message)
+      if not has_component:
+        message = f"'{component}' is not in the config of components."
+        raise KeyError(message)
+      
     for attribution_config in self.analysis.conditional_attribution_scores:
       modality = attribution_config.modality
       component = attribution_config.component
