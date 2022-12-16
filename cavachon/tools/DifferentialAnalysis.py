@@ -72,6 +72,34 @@ class DifferentialAnalysis:
     
     return results
 
+  def across_clusters(
+      self,
+      component: str,
+      modality: str,
+      use_cluster: str,
+      z_sampling_size: int = 10,
+      x_sampling_size: int = 2500,
+      batch_size: int = 128) -> Mapping[str, pd.DataFrame]:
+    
+    results = dict()
+    obs = self.mdata[modality].obs
+    unique_clusters = obs[use_cluster].unique()
+    for cluster in unique_clusters:
+      index_a = obs[obs[use_cluster] == cluster].index
+      index_b = obs[obs[use_cluster] != cluster].index
+      results.setdefault(
+          cluster,
+          self.between_two_groups(
+              group_a_index = index_a,
+              group_b_index = index_b,
+              component = component,
+              modality = modality,
+              z_sampling_size = z_sampling_size,
+              x_sampling_size = x_sampling_size,
+              batch_size = batch_size,
+              desc=f"Between {cluster} and others"))
+    
+    return results
 
   def between_two_groups(
       self, 
