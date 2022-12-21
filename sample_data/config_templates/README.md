@@ -32,7 +32,8 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
   * `io`: [Inputs and Outputs](#inputs-and-outputs).
   * `analysis`: [Analysis](#analysis)
     * `clustering`: list of [Clustering](#clustering)
-    * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
+    * `conditional_attribution_scores`: list of [Conditional Attribution Scores]    (#conditional-attribution-scores)
+    * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -75,6 +76,10 @@ The configs for analysis and visualization are specified under the field `analys
   * required: `False`.
   * type: `List[AnalysisClusteringConfig]`
   * description: the config for clustering. See [Clustering](#clustering) for more details.
+* `differential_analysis`:
+  * required: `False`.
+  * type: `List[AnalysisDifferentialAnalysisConfig]`
+  * description: the config for differential analysis. See [Differential Analysis](#differential-analysis) for more details.
 * `embedding_methods`:
   * required: `False`.
   * defaults: `[]`
@@ -90,6 +95,20 @@ The configs for analysis and visualization are specified under the field `analys
   * defaults: `[]`
   * type: the config for the attribution scores. See [Conditional Attribution Scores](#conditional-attribution-scores) for more details.
 ## Clustering
+The config for clustering.
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+
+[back to top](#config-hierarchy)
+&nbsp;
+
+## Differential Analysis
 The config for clustering.
 * `modality`:
   * required: `True`

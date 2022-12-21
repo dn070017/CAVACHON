@@ -11,6 +11,7 @@ from cavachon.config.config_mapping.TrainingConfig import TrainingConfig
 from cavachon.environment.Constants import Constants
 from cavachon.utils.GeneralUtils import GeneralUtils
 from collections import OrderedDict
+from itertools import chain
 from typing import Any, Dict, List, Mapping
 
 import os
@@ -363,7 +364,7 @@ class Config:
 
     """
     self.analysis = AnalysisConfig(**self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS))
-    for modality, component in self.analysis.clustering.items():
+    for modality, component in chain(self.analysis.clustering.items(), self.analysis.differential_analysis.items()):
       has_component = False
       has_modality = False
       for component_config in self.components:

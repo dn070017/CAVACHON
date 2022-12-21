@@ -3,6 +3,7 @@ from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.environment.Constants import Constants
 from cavachon.filter.AnnDataFilterHandler import AnnDataFilterHandler
 from cavachon.tools.ClusterAnalysis import ClusterAnalysis
+from cavachon.tools.DifferentialAnalysis import DifferentialAnalysis
 from cavachon.tools.InteractiveVisualization import InteractiveVisualization
 from cavachon.io.FileReader import FileReader
 from cavachon.modality.Modality import Modality
@@ -10,11 +11,12 @@ from cavachon.modality.MultiModality import MultiModality
 from cavachon.model.Model import Model
 from cavachon.scheduler.SequentialTrainingScheduler import SequentialTrainingScheduler
 from copy import deepcopy
-from typing import List, MutableMapping, Optional
+from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
 import os
+import pandas as pd
 import tensorflow as tf
 import warnings
 
@@ -65,6 +67,7 @@ class Workflow():
     self.train_scheduler: Optional[SequentialTrainingScheduler] = None
     self.train_history: List[tf.keras.callbacks.History] = list()
     self.outputs: MutableMapping[str, tf.Tensor] = dict()
+    self.differential_analysis_results: MutableMapping[Tuple[str], Dict[str, pd.DataFrame]] = dict()
 
     return
 
@@ -81,11 +84,10 @@ class Workflow():
       self.train_model()
     self.predict()
     
-    self.clustering_analysis()
-    self.conditional_attribution_scores()
-    self.embedding()
-    #self.perform_differential_analysis()
-    #self.compute_conditional_attribution_scores()
+    self.perform_clustering_analysis()
+    self.visualize_conditional_attribution_scores()
+    self.visualize_embedding()
+    self.perform_differential_analysis()
 
     return
   
@@ -264,7 +266,7 @@ class Workflow():
     
     return
   
-  def clustering_analysis(self) -> None:
+  def perform_clustering_analysis(self) -> None:
     """Perform clustering analsis of each modality"""
     batch_size = self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE)
     analysis = ClusterAnalysis(self.mdata, self.model)
@@ -276,7 +278,7 @@ class Workflow():
     
     return
   
-  def embedding(self) -> None:
+  def visualize_embedding(self) -> None:
     """Create visualization of posterior distribution"""
     outdir = os.path.join(self.config.io.outdir, 'embeddings')
     os.makedirs(outdir, exist_ok=True)
@@ -306,8 +308,34 @@ class Workflow():
           color=color,
           width=800, height=760,
           filename=f"{outdir}/{title}.html".lower().replace(' ', '_'))
-      
-  def conditional_attribution_scores(self) -> None:
+    
+  def perform_differential_analysis(self) -> None:
+    """Perform differential analysis across clusters"""
+    targets = list()
+    outdir = os.path.join(self.config.io.outdir, 'differential_analysis')
+    os.makedirs(outdir, exist_ok=True)
+    for modality_name, component in self.config.analysis.differential_analysis.items():
+      colors = deepcopy(self.config.analysis.annotation_colnames)
+      #colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
+      for color in colors:
+        targets.append((modality_name, component, color))
+    
+    analysis = DifferentialAnalysis(self.mdata, self.model)
+    for target in targets:
+      modality_name, component, use_cluster = target
+      results = analysis.across_clusters(component, modality_name, use_cluster)
+      self.differential_analysis_results[target] = results
+    
+    for target in self.differential_analysis_results.keys():
+      for cluster, degs in self.differential_analysis_results[target].items():
+        cluster = cluster.lower().replace('/', '_')
+        degs.to_csv(
+          f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{cluster}.tsv",
+          sep='\t')
+    
+    return
+
+  def visualize_conditional_attribution_scores(self) -> None:
     """Create visualization of conditional attribution score"""
     outdir = os.path.join(self.config.io.outdir, 'attribution')
     os.makedirs(outdir, exist_ok=True)
