@@ -48,9 +48,10 @@ class DifferentialAnalysis:
       component: str,
       modality: str,
       use_cluster: str,
-      z_sampling_size: int = 10,
-      x_sampling_size: int = 2500,
-      batch_size: int = 128) -> Mapping[str, pd.DataFrame]:
+      z_sampling_size: int = 5,
+      x_sampling_size: int = 1000,
+      batch_size: int = 128,
+      keep_only_significant: bool = False) -> Mapping[str, pd.DataFrame]:
     
     results = dict()
     obs = self.mdata[modality].obs
@@ -58,18 +59,22 @@ class DifferentialAnalysis:
     for cluster_a, cluster_b  in combinations(unique_clusters, r=2):
       index_a = obs[obs[use_cluster] == cluster_a].index
       index_b = obs[obs[use_cluster] == cluster_b].index
+      deg = self.between_two_groups(
+            group_a_index = index_a,
+            group_b_index = index_b,
+            component = component,
+            modality = modality,
+            z_sampling_size = z_sampling_size,
+            x_sampling_size = x_sampling_size,
+            batch_size = batch_size,
+            desc=f"Between {cluster_a} and {cluster_b}")
+      if keep_only_significant:
+        deg = deg.loc[(deg['K(A>B|Z)'].abs() >= 3.2) | (deg['K(B>A|Z)'].abs() >= 3.2)]
+      
       results.setdefault(
           f"{cluster_a}/{cluster_b}",
-          self.between_two_groups(
-              group_a_index = index_a,
-              group_b_index = index_b,
-              component = component,
-              modality = modality,
-              z_sampling_size = z_sampling_size,
-              x_sampling_size = x_sampling_size,
-              batch_size = batch_size,
-              desc=f"Between {cluster_a} and {cluster_b}"))
-    
+          deg)
+
     return results
 
   def across_clusters(
@@ -77,9 +82,10 @@ class DifferentialAnalysis:
       component: str,
       modality: str,
       use_cluster: str,
-      z_sampling_size: int = 10,
-      x_sampling_size: int = 2500,
-      batch_size: int = 128) -> Mapping[str, pd.DataFrame]:
+      z_sampling_size: int = 5,
+      x_sampling_size: int = 1000,
+      batch_size: int = 128,
+      keep_only_significant: bool = False) -> Mapping[str, pd.DataFrame]:
     
     results = dict()
     obs = self.mdata[modality].obs
@@ -87,17 +93,22 @@ class DifferentialAnalysis:
     for cluster in unique_clusters:
       index_a = obs[obs[use_cluster] == cluster].index
       index_b = obs[obs[use_cluster] != cluster].index
+    
+      deg = self.between_two_groups(
+            group_a_index = index_a,
+            group_b_index = index_b,
+            component = component,
+            modality = modality,
+            z_sampling_size = z_sampling_size,
+            x_sampling_size = x_sampling_size,
+            batch_size = batch_size,
+            desc=f"Between {cluster} and others")
+      if keep_only_significant:
+        deg = deg.loc[(deg['K(A>B|Z)'].abs() >= 3.2) | (deg['K(B>A|Z)'].abs() >= 3.2)]
+      
       results.setdefault(
           cluster,
-          self.between_two_groups(
-              group_a_index = index_a,
-              group_b_index = index_b,
-              component = component,
-              modality = modality,
-              z_sampling_size = z_sampling_size,
-              x_sampling_size = x_sampling_size,
-              batch_size = batch_size,
-              desc=f"Between {cluster} and others"))
+          deg)
     
     return results
 
