@@ -29,5 +29,10 @@ setup(
     "Topic :: Scientific/Engineering :: Bio-Informatics",
   ],
   zip_safe=False,
+  entry_points={
+    'console_scripts': [
+      'cavachon = cavachon.app.CavachonApplication:main'
+    ],
+  },
   python_requires='>=3.8.0',
 )

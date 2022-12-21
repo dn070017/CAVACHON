@@ -31,6 +31,10 @@ class Constants:
       ('rna', 'IndependentZeroInflatedNegativeBinomial')
   ])
 
+  CONFIG_FIELD_ANALYSIS = 'analysis'
+  CONFIG_FIELD_ANALYSIS_EMBEDDING_METHODS = 'embedding_methods'
+  CONFIG_FIELD_ANALYSIS_ANNOTATION_COLNAMES = 'annotation_colnames'
+
   CONFIG_FIELD_IO = 'io'
   CONFIG_FIELD_IO_CHECKPOINTDIR = 'checkpointdir'
   CONFIG_FIELD_IO_DATADIR = 'datadir'

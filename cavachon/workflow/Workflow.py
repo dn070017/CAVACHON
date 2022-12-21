@@ -2,17 +2,21 @@ from cavachon.config.Config import Config
 from cavachon.dataloader.DataLoader import DataLoader
 from cavachon.environment.Constants import Constants
 from cavachon.filter.AnnDataFilterHandler import AnnDataFilterHandler
+from cavachon.tools.ClusterAnalysis import ClusterAnalysis
+from cavachon.tools.DifferentialAnalysis import DifferentialAnalysis
+from cavachon.tools.InteractiveVisualization import InteractiveVisualization
 from cavachon.io.FileReader import FileReader
 from cavachon.modality.Modality import Modality
 from cavachon.modality.MultiModality import MultiModality
 from cavachon.model.Model import Model
 from cavachon.scheduler.SequentialTrainingScheduler import SequentialTrainingScheduler
-
-from typing import List, MutableMapping, Optional
+from copy import deepcopy
+from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
 import os
+import pandas as pd
 import tensorflow as tf
 import warnings
 
@@ -63,6 +67,7 @@ class Workflow():
     self.train_scheduler: Optional[SequentialTrainingScheduler] = None
     self.train_history: List[tf.keras.callbacks.History] = list()
     self.outputs: MutableMapping[str, tf.Tensor] = dict()
+    self.differential_analysis_results: MutableMapping[Tuple[str], Dict[str, pd.DataFrame]] = dict()
 
     return
 
@@ -70,7 +75,6 @@ class Workflow():
     """Run the specified workflow configured in self.config"""
     self.setup_mdata()
     self.setup_dataloader()
-
     self.model = Model.make(component_configs=self.config.components, name=self.config.model.name)
     
     self.setup_train_scheduler()
@@ -78,8 +82,12 @@ class Workflow():
       self.load_model_weights()
     if self.config.training.train:
       self.train_model()
-    
     self.predict()
+    
+    self.perform_clustering_analysis()
+    self.visualize_conditional_attribution_scores()
+    self.visualize_embedding()
+    self.perform_differential_analysis()
 
     return
   
@@ -242,9 +250,9 @@ class Workflow():
     # change the training states to False
     for component in self.model.components.values():
       component.trainable = False
-      progressive_scaler = component.hierarchical_encoder.progressive_scaler
-      progressive_scaler.total_iterations.assign(1.0)
-      progressive_scaler.current_iteration.assign(1.0)
+      component.set_progressive_scaler_iteration(
+          current_iteration = 1.0,
+          total_iterations = 1.0)
       self.model.compile()
     
     return
@@ -257,3 +265,107 @@ class Workflow():
     self.outputs = self.model.predict(self.mdata, batch_size=batch_size)
     
     return
+  
+  def perform_clustering_analysis(self) -> None:
+    """Perform clustering analsis of each modality"""
+    batch_size = self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE)
+    analysis = ClusterAnalysis(self.mdata, self.model)
+    for modality, component in self.config.analysis.clustering.items():
+      analysis.compute_cluster_log_probability(
+          modality=modality,
+          component=component,
+          batch_size=batch_size)
+    
+    return
+  
+  def visualize_embedding(self) -> None:
+    """Create visualization of posterior distribution"""
+    outdir = os.path.join(self.config.io.outdir, 'embeddings')
+    os.makedirs(outdir, exist_ok=True)
+    embedding_methods = self.config.analysis.embedding_methods
+    
+    targets = list()
+    for embedding_method in embedding_methods:
+      for modality_name in self.mdata.mod.keys():
+        colors = deepcopy(self.config.analysis.annotation_colnames)
+        colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
+        for color in colors:
+          adata = self.mdata[modality_name]
+          for latent_representation in adata.obsm.keys():
+            if latent_representation.startswith('z_'):
+              targets.append((embedding_method, color, modality_name, latent_representation))
+    
+    # to void dictionary changed during iteration
+    for target in targets:
+      embedding_method, color, modality_name, latent_representation = target
+      adata = self.mdata[modality_name]
+      title = f"{latent_representation} of {modality_name} colored with {color}"
+      fig = InteractiveVisualization.embedding(
+          adata=adata,
+          title=title,
+          method=embedding_method,
+          use_rep=latent_representation,
+          color=color,
+          width=800, height=760,
+          filename=f"{outdir}/{title}.html".lower().replace(' ', '_'))
+    
+  def perform_differential_analysis(self) -> None:
+    """Perform differential analysis across clusters"""
+    targets = list()
+    outdir = os.path.join(self.config.io.outdir, 'differential_analysis')
+    os.makedirs(outdir, exist_ok=True)
+    for modality_name, component in self.config.analysis.differential_analysis.items():
+      colors = deepcopy(self.config.analysis.annotation_colnames)
+      #colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
+      for color in colors:
+        targets.append((modality_name, component, color))
+    
+    analysis = DifferentialAnalysis(self.mdata, self.model)
+    for target in targets:
+      modality_name, component, use_cluster = target
+      results = analysis.across_clusters(component, modality_name, use_cluster)
+      self.differential_analysis_results[target] = results
+    
+    for target in self.differential_analysis_results.keys():
+      for cluster, degs in self.differential_analysis_results[target].items():
+        cluster = cluster.lower().replace('/', '_')
+        degs.to_csv(
+          f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{cluster}.tsv",
+          sep='\t')
+    
+    return
+
+  def visualize_conditional_attribution_scores(self) -> None:
+    """Create visualization of conditional attribution score"""
+    outdir = os.path.join(self.config.io.outdir, 'attribution')
+    os.makedirs(outdir, exist_ok=True)
+    batch_size = self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE)
+
+    targets = list()
+    for attribution_config in self.config.analysis.conditional_attribution_scores:
+      modality_name = attribution_config.modality
+      component = attribution_config.component
+      with_respect_to = attribution_config.with_respect_to
+      colors = deepcopy(self.config.analysis.annotation_colnames)
+      colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
+      for color in colors:
+        targets.append((modality_name, component, with_respect_to, color))
+    
+    # to void dictionary changed during iteration
+    for target in targets:
+      modality_name, component, with_respect_to, color = target
+      title = "".join((
+        f"{component} {modality_name} with respect to {with_respect_to} colored with {color}"
+      ))
+      fig = InteractiveVisualization.attribution_score(
+          mdata=self.mdata,
+          model=self.model,
+          component=component,
+          modality=modality_name,
+          with_respect_to=with_respect_to,
+          use_cluster=color,
+          batch_size=batch_size,
+          title=title,
+          width=800, height=760,
+          filename=f"{outdir}/{title}.html".lower().replace(' ', '_'))
+      

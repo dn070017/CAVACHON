@@ -370,9 +370,10 @@ class InteractiveVisualization:
       model: tf.keras.Model,
       component: str,
       modality: str,
-      target_component: str,
+      with_respect_to: str,
       use_cluster: str,
       steps: int = 10,
+      selected_variables: Optional[Sequence[str]] = None,    
       batch_size: int = 128,
       color_discrete_map: Mapping[str, str] = dict(),
       filename: Optional[str] = None,
@@ -394,14 +395,20 @@ class InteractiveVisualization:
     modality: str
         which modality of the outputs of the component to used.
 
-    target_component: str
-        the latent representation of which component to used.
+    with_respect_to: str
+        compute integrated gradietn with respect to the latent 
+        representation of which component.
 
     use_cluster: str
         the column name of the clusters in the obs of modality.
 
     steps: int, optional
         steps in integrated gradients. Defaults to 10.
+
+    selected_variables: Optional[Sequence[str]], optional
+        the variables to used. The provided variables needs to match
+        the indices of mdata[modality].var. All variables will be used 
+        if provided with None. Defaults to None.
 
     batch_size: int, optional
         batch size used for the forward pass. Defaults to 128.
@@ -430,8 +437,9 @@ class InteractiveVisualization:
     attribution_score = analysis.compute_integrated_gradient(
         component=component,
         modality=modality,
-        target_component=target_component,
+        with_respect_to=with_respect_to,
         steps=steps,
+        selected_variables=selected_variables,
         batch_size=batch_size)
 
     data = pd.DataFrame({
@@ -462,12 +470,13 @@ class InteractiveVisualization:
   
   @staticmethod
   def differential_volcano_plot(
-      mdata: mu.MuData,
-      model: tf.keras.Model,
-      group_a_index: Union[pd.Index, Sequence[str]],
-      group_b_index: Union[pd.Index, Sequence[str]],
-      component: str,
-      modality: str,
+      differential_results: pd.DataFrame = None,
+      mdata: mu.MuData = None,
+      model: tf.keras.Model = None,
+      group_a_index: Union[pd.Index, Sequence[str]] = None,
+      group_b_index: Union[pd.Index, Sequence[str]] = None,
+      component: str = None,
+      modality: str = None,
       significant_threshold: float = 3.2,
       filename: Optional[str] = None,
       title: str = 'Volcano Plot for Differential Analysis',
@@ -477,6 +486,9 @@ class InteractiveVisualization:
 
     Parameters
     ----------
+    differential_results: pd.DataFrame
+        result for the differential analysis.
+
     mdata: mu.MuData
         the MuData used for the generative process.
     
@@ -517,20 +529,24 @@ class InteractiveVisualization:
         interactive figure objects.
 
     """
-    obs = mdata[modality].obs
-    analysis = DifferentialAnalysis(mdata=mdata, model=model)
-    degs = analysis.between_two_groups(
-        group_a_index=group_a_index,
-        group_b_index=group_b_index, 
-        component=component,
-        modality=modality)
+    if differential_results is None:
+      analysis = DifferentialAnalysis(mdata=mdata, model=model)
+      differential_results = analysis.between_two_groups(
+          group_a_index=group_a_index,
+          group_b_index=group_b_index, 
+          component=component,
+          modality=modality)
         
-    degs['LogFC(A/B)'] = np.log(degs['Mean(A)']/degs['Mean(B)'])
-    degs['K(A!=B|Z)'] = degs[['K(A>B|Z)', 'K(B>A|Z)']].abs().max(axis=1)
-    degs['Significant'] = degs['K(A!=B|Z)'].apply(lambda x: 'Significant' if x > 3.2 else 'Non-significant')
-    degs['Target'] = degs.index
+    differential_results['LogFC(A/B)'] = np.log(differential_results['Mean(A)']/differential_results['Mean(B)'])
+    differential_results['K(A>B|Z)'].index = differential_results.index
+    differential_results['K(A!=B|Z)'] = (
+        (differential_results['LogFC(A/B)'] >= 0).astype(int) * differential_results['K(A>B|Z)'] - 
+        (differential_results['LogFC(A/B)'] < 0).astype(int) * differential_results['K(A>B|Z)']
+    )#differential_results[['K(A>B|Z)', 'K(B>A|Z)']].abs().max(axis=1)
+    differential_results['Significant'] = differential_results['K(A!=B|Z)'].apply(lambda x: 'Significant' if x > significant_threshold else 'Non-significant')
+    differential_results['Target'] = differential_results.index
     fig = InteractiveVisualization.scatter(
-        degs,
+        differential_results,
         x='LogFC(A/B)',
         y='K(A!=B|Z)',
         color='Significant', 
@@ -604,7 +620,7 @@ class InteractiveVisualization:
       color=f'log(1/{metric})',
       color_continuous_scale='rdpu',
       labels={'x': 'Normalized Enrichment Score', 'y': 'Term'},
-      width=min(35 * len(data), 1024), height=35 * len(data),
+      width=800, height=35 * len(data) + 150,
       title=title)
     
     # add ring
@@ -706,14 +722,14 @@ class InteractiveVisualization:
             text=data['Target'],
             showlegend=False,
             name='',
-            marker_color='blueviolet',
+            marker_color='royalblue',
             hovertemplate=hover_template),
         row=1,
         col=1)
 
     hover_template = ''.join((
         'Target: %{text}<br>Rank in Ordered Dataset: %{x}'))
-    marker_color = ['salmon' if x else 'blueviolet' for x in hit_indices <= zero_score_index]
+    marker_color = ['salmon' if x else 'royalblue' for x in hit_indices <= zero_score_index]
     fig.add_trace(
         go.Scatter(
             x=hit_indices,
@@ -745,7 +761,7 @@ class InteractiveVisualization:
             marker_colorscale=[
                 (0.0, "salmon"),
                 (mid, "white"),
-                (1.0, "blueviolet")]),
+                (1.0, "royalblue")]),
         row=3,
         col=1)
 
@@ -769,7 +785,7 @@ class InteractiveVisualization:
             x=data.loc[indices >= zero_score_index]['Rank in Ordered Dataset'],
             y=data.loc[indices >= zero_score_index]['Rank List Metric'],
             text=data['Target'],
-            marker_color='blueviolet',
+            marker_color='royalblue',
             fill='tozeroy',
             showlegend=False,
             name='',

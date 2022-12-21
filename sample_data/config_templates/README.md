@@ -30,6 +30,10 @@ Some other example templates can be found in `sample_data/config_templates`. To 
 The config sould be prepared in a hierarchical structure using [YAML](https://en.wikipedia.org/wiki/YAML) format.
 ## Configuration Hierarchy
   * `io`: [Inputs and Outputs](#inputs-and-outputs).
+  * `analysis`: [Analysis](#analysis)
+    * `clustering`: list of [Clustering](#clustering)
+    * `conditional_attribution_scores`: list of [Conditional Attribution Scores]    (#conditional-attribution-scores)
+    * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -51,15 +55,86 @@ The configs for inputs and outputs are specified under the field `io`:
 * `checkpointdir`:
   * required: `False`.
   * defaults: `./`
+  * type: `str`
   * description: the directory for the pretrained checkpoint and the save model weights.
 * `datadir`:
   * required: `False`.
   * defaults: `./`
+  * type: `str`
   * description: the directory of the input datasets.
 * `outdir`:
   * required: `False`.
   * defaults: `./`
+  * type: `str`
   * description: the output directory.
+
+[back to top](#config-hierarchy)
+&nbsp;
+## Analysis
+The configs for analysis and visualization are specified under the field `analysis`:
+* `clustering`:
+  * required: `False`.
+  * type: `List[AnalysisClusteringConfig]`
+  * description: the config for clustering. See [Clustering](#clustering) for more details.
+* `differential_analysis`:
+  * required: `False`.
+  * type: `List[AnalysisDifferentialAnalysisConfig]`
+  * description: the config for differential analysis. See [Differential Analysis](#differential-analysis) for more details.
+* `embedding_methods`:
+  * required: `False`.
+  * defaults: `[]`
+  * type: `List[str]`
+  * description: the embedding methods used for the visualization of latent representation. Should be a list of elements `'pca'`, `'umap'` or `'tsne'`.
+* `annotation_colnames`:
+  * required: `False`.
+  * defaults: `[]`
+  * type: `List[str]`
+  * description: the annotation of cells used to group and color the embeddings and attribution scores.
+* `conditional_attribution_scores`:
+  * required: `False`.
+  * defaults: `[]`
+  * type: the config for the attribution scores. See [Conditional Attribution Scores](#conditional-attribution-scores) for more details.
+## Clustering
+The config for clustering.
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+
+[back to top](#config-hierarchy)
+&nbsp;
+
+## Differential Analysis
+The config for clustering.
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+
+[back to top](#config-hierarchy)
+&nbsp;
+## Conditional Attribution Scores
+The config for conditional attribution scores
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+* `with_respect_to`:
+  * required: `True`
+  * type: `str`
+  * description: compute integrated gradietn with respect to the latent representation of which component.
 
 [back to top](#config-hierarchy)
 &nbsp;

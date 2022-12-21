@@ -65,6 +65,13 @@ class DecoderDataParameterizer(tf.keras.Model):
         event_dims = n_vars,
         name=Constants.MODULE_X_PARAMETERIZER)
 
+  def compute_attribution_target(self, inputs: tf.Tensor):
+    result = self.backbone_network(inputs.get(Constants.TENSOR_NAME_X), training=False)
+    x_parameterizer_inputs = dict()
+    x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
+    
+    return self.x_parameterizer.compute_attribution_target(x_parameterizer_inputs)
+
   def call(
       self,
       inputs: tf.Tensor,

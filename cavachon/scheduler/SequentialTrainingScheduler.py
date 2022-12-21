@@ -268,6 +268,9 @@ class SequentialTrainingScheduler:
             total_iterations = progressive_iterations)
       else:
         component.trainable = False
+        component.set_progressive_scaler_iteration(
+            current_iteration = 1.0,
+            total_iterations = 1.0)
         
       loss_weights.setdefault(
           f"{component_name}/{Constants.MODEL_LOSS_KL_POSTFIX}",
