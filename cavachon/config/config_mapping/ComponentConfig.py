@@ -30,7 +30,7 @@ class ComponentConfig(ConfigMapping):
   
   save_x: Mapping[str, bool]
       names of the distributions for each modality. The keys are the
-      names of the modalities, and the values are wheather or not the
+      names of the modalities, and the values are whether or not the
       predicted x_parameters is save to the obsm of modality (with key 
       'x_parameters_`name`').  Note that `x_parameters` will not be 
       predicted by defaults if none of the modalities in the component 
@@ -38,7 +38,7 @@ class ComponentConfig(ConfigMapping):
 
   save_z: Mapping[str, bool]
       names of the distributions for each modality. The keys are the
-      names of the modalities, and the values are wheather or not the
+      names of the modalities, and the values are whether or not the
       predicted z is save to the obsm of modality (with key 
       'z_`name`').
 
@@ -81,7 +81,7 @@ class ComponentConfig(ConfigMapping):
         name of the component.
     
     modalities: List[Mapping[str, Any]]
-        mappings configured the modalities. Each elemeet inside the 
+        mappings configured the modalities. Each element inside the 
         provided list should be a mapping, where the data structure 
         should be:
         1. name: str

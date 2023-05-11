@@ -319,7 +319,7 @@ The configs for the components in the model. See also [Modalities (in Component)
   * defaults: `5`.
   * type: `int`.
   * description: the dimensionality of the latent space.
-* `n_priors`:
+* `n_latent_priors`:
   * required: `False`.
   * defaults: `n_latent_dims * 2 + 1`
   * type: `int`.
