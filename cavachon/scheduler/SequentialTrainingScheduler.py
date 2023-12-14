@@ -1,12 +1,13 @@
-from cavachon.environment.Constants import Constants
+import itertools
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import mlflow
-
-import itertools
 import tensorflow as tf
+
+from cavachon.environment.Constants import Constants
+
 
 class SequentialTrainingScheduler:
   """SequentialTrainingScheduler

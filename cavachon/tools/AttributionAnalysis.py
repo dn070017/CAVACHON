@@ -135,7 +135,7 @@ class AttributionAnalysis:
         which modality of the outputs of the component to used.
 
     with_respect_to: str
-        compute integrated gradietn with respect to the latent 
+        compute integrated gradients with respect to the latent 
         representation of which component.
 
     steps: int, optional

@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 class ProgressiveScaler(tf.keras.layers.Layer):
   """ProgressiveScaler
 

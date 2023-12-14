@@ -1,10 +1,12 @@
+import functools
+
+import tensorflow as tf
+
 from cavachon.environment.Constants import Constants
 from cavachon.layers.modifiers.LogTransform import LogTransform
 from cavachon.layers.modifiers.NormalizeLibrarySize import NormalizeLibrarySize
 from cavachon.layers.modifiers.ToDense import ToDense
 
-import functools
-import tensorflow as tf
 
 class IndependentZeroInflatedNegativeBinomial(tf.keras.Model):
   """IndependentZeroInflatedNegativeBinomial

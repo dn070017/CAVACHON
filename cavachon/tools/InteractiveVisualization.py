@@ -396,7 +396,7 @@ class InteractiveVisualization:
         which modality of the outputs of the component to used.
 
     with_respect_to: str
-        compute integrated gradietn with respect to the latent 
+        compute integrated gradient with respect to the latent 
         representation of which component.
 
     use_cluster: str
