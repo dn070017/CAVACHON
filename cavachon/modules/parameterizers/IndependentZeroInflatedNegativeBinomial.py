@@ -1,8 +1,10 @@
-from cavachon.environment.Constants import Constants
-from cavachon.modules.parameterizers.Parameterizer import Parameterizer
 from typing import Mapping
 
 import tensorflow as tf
+
+from cavachon.environment.Constants import Constants
+from cavachon.modules.parameterizers.Parameterizer import Parameterizer
+
 
 class IndependentZeroInflatedNegativeBinomial(Parameterizer):
   """IndependentZeroInflatedNegativeBinomial
@@ -66,7 +68,7 @@ class IndependentZeroInflatedNegativeBinomial(Parameterizer):
     outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
     probs, means, dispersion = tf.split(outputs, 3, axis=-1)
     probs = tf.keras.activations.sigmoid(probs)
-    return tf.concat([probs, means, dispersion], axis=-1)
+    return means
 
   @classmethod
   def modify_outputs(
