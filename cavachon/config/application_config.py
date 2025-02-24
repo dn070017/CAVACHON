@@ -5,15 +5,17 @@ from typing import Any, Dict, List, Mapping
 
 import yaml
 
-from cavachon.config.config_mapping.AnalysisConfig import AnalysisConfig
-from cavachon.config.config_mapping.ComponentConfig import ComponentConfig
-from cavachon.config.config_mapping.DatasetConfig import DatasetConfig
-from cavachon.config.config_mapping.FilterConfig import FilterConfig
-from cavachon.config.config_mapping.IOConfig import IOConfig
-from cavachon.config.config_mapping.ModalityConfig import ModalityConfig
-from cavachon.config.config_mapping.ModelConfig import ModelConfig
-from cavachon.config.config_mapping.SampleConfig import SampleConfig
-from cavachon.config.config_mapping.TrainingConfig import TrainingConfig
+from cavachon.config.config_mapping.analysis_config_mapping import AnalysisConfigMapping
+from cavachon.config.config_mapping.component_config_mapping import (
+    ComponentConfigMapping,
+)
+from cavachon.config.config_mapping.dataset_config_mapping import DatasetConfigMapping
+from cavachon.config.config_mapping.filter_config_mapping import FilterConfigMapping
+from cavachon.config.config_mapping.io_config_mapping import IOConfigMapping
+from cavachon.config.config_mapping.modality_config_mapping import ModalityConfigMapping
+from cavachon.config.config_mapping.model_config_mapping import ModelConfigMapping
+from cavachon.config.config_mapping.sample_config_mapping import SampleConfigMapping
+from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
 from cavachon.environment.Constants import Constants
 from cavachon.utils.GeneralUtils import GeneralUtils
 
@@ -28,38 +30,38 @@ class ApplicationConfig:
     filename: str
         filename of the config in YAML format.
 
-    analysis: AnalysisConfig
+    analysis: AnalysisConfigMapping
         Analysis related config.
 
-    io: IOConfig
+    io: IOConfigMapping
         IO related config.
 
-    sample: OrderedDict[str, SampleConfig]
+    sample: OrderedDict[str, SampleConfigMapping]
         sample related config, where the key is the sample name, the
-        value is the corresponding SampleConfig.
+        value is the corresponding SampleConfigMapping.
 
-    modality: Dict[str, ModalityConfig]
+    modality: Dict[str, ModalityConfigMapping]
         modality related config, where the key is the modality name,
-        the value is the corresponding ModalityConfig.
+        the value is the corresponding ModalityConfigMapping.
 
     modality_names: List[str]
         all used modality names.
 
-    filter: Dict[str, List[FilterConfig]]
+    filter: Dict[str, List[FilterConfigMapping]]
         modality filter steps related config, where the key is the name
         of the modality to filter, the value is a list of config for
         filtering steps.
 
-    model: ModelConfig
+    model: ModelConfigMapping
         model related config.
 
-    training: TrainingConfig
+    training: TrainingConfigMapping
         training related config.
 
-    dataset: DatasetConfig
+    dataset: DatasetConfigMapping
         dataset related config.
 
-    components: List[ComponentConfig]
+    components: List[ComponentConfigMapping]
         the topological sorted (based on dependency graph) list of
         components related config.
 
@@ -97,16 +99,16 @@ class ApplicationConfig:
             self.yaml: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
 
         # initializations
-        self.analysis: AnalysisConfig = None
-        self.io: IOConfig = None
-        self.sample: OrderedDict[str, SampleConfig] = OrderedDict()
-        self.modality: Dict[str, ModalityConfig] = dict()
+        self.analysis: AnalysisConfigMapping = None
+        self.io: IOConfigMapping = None
+        self.sample: OrderedDict[str, SampleConfigMapping] = OrderedDict()
+        self.modality: Dict[str, ModalityConfigMapping] = dict()
         self.modality_names: List[str] = list()
-        self.model: ModelConfig = None
-        self.filter: Dict[str, List[FilterConfig]] = dict()
-        self.training: TrainingConfig = None
-        self.components: List[ComponentConfig] = list()
-        self.dataset: DatasetConfig = None
+        self.model: ModelConfigMapping = None
+        self.filter: Dict[str, List[FilterConfigMapping]] = dict()
+        self.training: TrainingConfigMapping = None
+        self.components: List[ComponentConfigMapping] = list()
+        self.dataset: DatasetConfigMapping = None
 
         # set defaults values, preprocessing the configs
         self.setup_io()
@@ -173,7 +175,7 @@ class ApplicationConfig:
 
     def setup_io(self) -> None:
         """Setup IO related config."""
-        self.io = IOConfig(**self.yaml.get(Constants.CONFIG_FIELD_IO))
+        self.io = IOConfigMapping(**self.yaml.get(Constants.CONFIG_FIELD_IO))
 
     def setup_modality(self) -> None:
         """Setup modality related config and modality names. This
@@ -208,8 +210,8 @@ class ApplicationConfig:
                 Constants.CONFIG_FIELD_MODALITY,
             )
 
-            # Create the ModalityConfig instance
-            modality_config = ModalityConfig(**modality_config)
+            # Create the ModalityConfigMapping instance
+            modality_config = ModalityConfigMapping(**modality_config)
 
             # Save the processed result to self.modality and self.filter
             modality_name = modality_config.name
@@ -284,7 +286,7 @@ class ApplicationConfig:
                     raise KeyError(message)
 
         for i, sample_config in enumerate(sample_config_list):
-            self.sample.setdefault(sample_name, SampleConfig(**sample_config))
+            self.sample.setdefault(sample_name, SampleConfigMapping(**sample_config))
 
         return
 
@@ -292,13 +294,13 @@ class ApplicationConfig:
         """Setup training related config."""
         model_config = self.yaml.get(Constants.CONFIG_FIELD_MODEL, {})
         training_config = model_config.get(Constants.CONFIG_FIELD_MODEL_TRAINING, {})
-        self.training = TrainingConfig(**training_config)
+        self.training = TrainingConfigMapping(**training_config)
 
     def setup_dataset(self) -> None:
         """Setup dataset related config."""
         model_config = self.yaml.get(Constants.CONFIG_FIELD_MODEL, {})
         dataset_config = model_config.get(Constants.CONFIG_FIELD_MODEL_DATASET, {})
-        self.dataset = DatasetConfig(**dataset_config)
+        self.dataset = DatasetConfigMapping(**dataset_config)
 
     def setup_model(self) -> None:
         """Setup model and component related config.
@@ -352,7 +354,7 @@ class ApplicationConfig:
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
                 ] = modality_dist
 
-            component_config = ComponentConfig(**component_config)
+            component_config = ComponentConfigMapping(**component_config)
             component_config_mapping.setdefault(component_name, component_config)
 
         # Sort the components based on the BFS order
@@ -367,7 +369,7 @@ class ApplicationConfig:
             Constants.CONFIG_FIELD_MODEL_DATASET,
         ]
 
-        self.model = ModelConfig(
+        self.model = ModelConfigMapping(
             **{field: model_config.get(field) for field in model_fields}
         )
 
@@ -382,7 +384,9 @@ class ApplicationConfig:
             2. `component` is not in the config of components.
             3. `with_respect_to` is not in the config of components.
         """
-        self.analysis = AnalysisConfig(**self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS))
+        self.analysis = AnalysisConfigMapping(
+            **self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS)
+        )
         for modality, component in chain(
             self.analysis.clustering.items(),
             self.analysis.differential_analysis.items(),

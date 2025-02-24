@@ -3,10 +3,10 @@ from typing import Any, List, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class ModalityFileFeatureConfig(ConfigMapping):
-    """ModalityFileFeatureConfig
+class ModalityFileFeatureConfigMapping(ConfigMapping):
+    """ModalityFileFeatureConfigMapping
 
-    Config for modality files (var and obs).
+    Config mapping for modality files (var and obs).
 
     Attributes
     ----------
@@ -22,7 +22,7 @@ class ModalityFileFeatureConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModalityFileFeatureConfig
+        """Constructor for ModalityFileFeatureConfigMapping
 
         Parameters
         ----------

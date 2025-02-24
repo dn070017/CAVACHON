@@ -5,10 +5,10 @@ from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class ComponentConfig(ConfigMapping):
-    """ComponentConfig
+class ComponentConfigMapping(ConfigMapping):
+    """ComponentConfigMapping
 
-    Config for component.
+    Config mapping for component.
 
     Attributes
     ----------
@@ -75,7 +75,7 @@ class ComponentConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ComponentConfig.
+        """Constructor for ComponentConfigMapping.
 
         Parameters
         ----------

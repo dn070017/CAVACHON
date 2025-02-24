@@ -3,10 +3,10 @@ from typing import Any, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class FilterConfig(ConfigMapping):
-    """FilterConfig
+class FilterConfigMapping(ConfigMapping):
+    """FilterConfigMapping
 
-    Config for Dataset.
+    Config mapping for Dataset.
 
     Attributes
     ----------
@@ -19,7 +19,7 @@ class FilterConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for FilterConfig.
+        """Constructor for FilterConfigMapping.
 
         Parameters
         ----------

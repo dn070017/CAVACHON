@@ -1,29 +1,31 @@
 from typing import Any, List, Mapping
 
-from cavachon.config.config_mapping.component_config import ComponentConfig
+from cavachon.config.config_mapping.component_config_mapping import (
+    ComponentConfigMapping,
+)
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.dataset_config import DatasetConfig
-from cavachon.config.config_mapping.training_config import TrainingConfig
+from cavachon.config.config_mapping.dataset_config_mapping import DatasetConfigMapping
+from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class ModelConfig(ConfigMapping):
-    """ModelConfig
+class ModelConfigMapping(ConfigMapping):
+    """ModelConfigMapping
 
-    Config for model.
+    Config mapping for model.
 
     Attributes
     ----------
     name: str
         name of the model.
 
-    components: List[ComponentConfig]
+    components: List[ComponentConfigMapping]
         list of component configs.
 
-    training: TrainingConfig
+    training: TrainingConfigMapping
         training config.
 
-    dataset: DatasetConfig
+    dataset: DatasetConfigMapping
         dataset config
 
     load_weights: bool
@@ -34,20 +36,20 @@ class ModelConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModelConfig.
+        """Constructor for ModelConfigMapping.
 
         Parameters
         ----------
         name: str
             name of the model.
 
-        components: List[ComponentConfig]
+        components: List[ComponentConfigMapping]
             list of component configs.
 
-        training: Union[Mapping[str, Any], TrainingConfig]
+        training: Union[Mapping[str, Any], TrainingConfigMapping]
             training config.
 
-        dataset: Union[Mapping[str, Any], DatasetConfig]
+        dataset: Union[Mapping[str, Any], DatasetConfigMapping]
             dataset config
 
         load_weights: bool, optional
@@ -61,9 +63,9 @@ class ModelConfig(ConfigMapping):
         """
         # change default values here
         self.name: str = "cavachon"
-        self.components: List[ComponentConfig] = list()
-        self.training: TrainingConfig
-        self.dataset: DatasetConfig
+        self.components: List[ComponentConfigMapping] = list()
+        self.training: TrainingConfigMapping
+        self.dataset: DatasetConfigMapping
         self.load_weights: bool = False
         self.save_weights: bool = True
 
@@ -81,7 +83,7 @@ class ModelConfig(ConfigMapping):
 
         # postprocessing
         self.name = GeneralUtils.tensorflow_compatible_str(self.name)
-        if not isinstance(self.training, TrainingConfig):
-            self.training = TrainingConfig(**self.training)
-        if not isinstance(self.dataset, DatasetConfig):
-            self.dataset = DatasetConfig(**self.dataset)
+        if not isinstance(self.training, TrainingConfigMapping):
+            self.training = TrainingConfigMapping(**self.training)
+        if not isinstance(self.dataset, DatasetConfigMapping):
+            self.dataset = DatasetConfigMapping(**self.dataset)

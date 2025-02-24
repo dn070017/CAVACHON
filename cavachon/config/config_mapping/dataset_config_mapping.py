@@ -3,10 +3,10 @@ from typing import Any, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class DatasetConfig(ConfigMapping):
-    """DatasetConfig
+class DatasetConfigMapping(ConfigMapping):
+    """DatasetConfigMapping
 
-    Config for Dataset.
+    Config mapping for Dataset.
 
     Attributes
     ----------
@@ -16,7 +16,7 @@ class DatasetConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for DatasetConfig.
+        """Constructor for DatasetConfigMapping.
 
         Parameters
         ----------

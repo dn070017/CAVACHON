@@ -4,10 +4,10 @@ from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class AnalysisAttributionScoreConfig(ConfigMapping):
-    """AnalysisAttributionScoreConfig
+class AnalysisAttributionScoreConfigMapping(ConfigMapping):
+    """AnalysisAttributionScoreConfigMapping
 
-    Config for attribution score analysis.
+    Config mapping for attribution score analysis.
 
     Attributes
     ----------
@@ -24,7 +24,7 @@ class AnalysisAttributionScoreConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisAttributionScoreConfig.
+        """Constructor for AnalysisAttributionScoreConfigMapping.
 
         Parameters
         ----------

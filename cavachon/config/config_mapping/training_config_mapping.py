@@ -1,17 +1,19 @@
 from typing import Any, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.optimizer_config import OptimizerConfig
+from cavachon.config.config_mapping.optimizer_config_mapping import (
+    OptimizerConfigMapping,
+)
 
 
-class TrainingConfig(ConfigMapping):
-    """TrainingConfig
+class TrainingConfigMapping(ConfigMapping):
+    """TrainingConfigMapping
 
-    Config for training.
+    Config mapping for training.
 
     Attributes
     ----------
-    optimizer: OptimizerConfig
+    optimizer: OptimizerConfigMapping
         config for optimizer.
 
     max_n_epochs: int
@@ -26,12 +28,12 @@ class TrainingConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for TrainingConfig.
+        """Constructor for TrainingConfigMapping.
 
         Parameters
         ----------
-        optimizer: MutableMapping[str, Any]
-            config for optimizer in MutableMapping format.
+        optimizer: OptimizerConfigMapping
+            optimizer config.
 
         max_n_epochs: int, optional
             maximum number of epochs for training. Defaults to 500.
@@ -45,7 +47,7 @@ class TrainingConfig(ConfigMapping):
             Ignored if `train=False`. Defaults to True.
         """
         # change default values here
-        self.optimizer: OptimizerConfig
+        self.optimizer: OptimizerConfigMapping
         self.max_n_epochs: int = 500
         self.train: bool = True
         self.early_stopping: bool = True
@@ -55,4 +57,4 @@ class TrainingConfig(ConfigMapping):
 
         # postprocessing
         self.setdefault("optimizer", {"name": "adam", "learning_rate": 1e-4})
-        self.optimizer = OptimizerConfig(**self.optimizer)
+        self.optimizer = OptimizerConfigMapping(**self.optimizer)

@@ -6,9 +6,11 @@ from typing import Any, Iterator, List, Mapping, Optional
 class ConfigMapping(MutableMapping):
     """ConfigMapping
 
-    Parent class for configs of ComponentConfig, IOConfig,
-    ModalityConfig, ModalityFileConfig, OptimizerConfig, SampleConfig,
-    TrainingConfig and etc. This class defines the basic interface.
+    Parent class for configs of AnalysisConfigMapping,
+    ComponentConfigMapping, DatasetConfigMapping, FilterConfigMapping,
+    IOConfigMapping, ModalityConfigMapping, ModalityFileConfigMapping,
+    OptimizerConfigMapping, SampleConfigMapping, TrainingConfigMapping
+    and etc. This class defines the basic interface.
 
     """
 

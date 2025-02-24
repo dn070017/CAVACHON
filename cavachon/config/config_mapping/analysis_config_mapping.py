@@ -1,17 +1,17 @@
 from collections import defaultdict
 from typing import Any, List, Mapping
 
-from cavachon.config.config_mapping.analysis_attribution_score_config import (
-    AnalysisAttributionScoreConfig,
+from cavachon.config.config_mapping.analysis_attribution_score_config_mapping import (
+    AnalysisAttributionScoreConfigMapping,
 )
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class AnalysisConfig(ConfigMapping):
-    """AnalysisConfig
+class AnalysisConfigMapping(ConfigMapping):
+    """AnalysisConfigMapping
 
-    Config for analysis.
+    Config mapping for analysis.
 
     Attributes
     ----------
@@ -32,13 +32,13 @@ class AnalysisConfig(ConfigMapping):
         column names for the annotated cluster that needs to be
         included in the clustering analysis.
 
-    conditional_attribution_scores: List[AnalysisAttributionScoreConfig]
+    conditional_attribution_scores: List[AnalysisAttributionScoreConfigMapping]
         config for the conditional attribution score analysis.
 
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisConfig.
+        """Constructor for AnalysisConfigMapping.
 
         Parameters
         ----------
@@ -56,7 +56,7 @@ class AnalysisConfig(ConfigMapping):
             included in the clustering analysis. Needs to match the
             column names in adata.obs. Defaults to [].
 
-        conditional_attribution_scores: List[AnalysisAttributionScoreConfig], optional
+        conditional_attribution_scores: List[AnalysisAttributionScoreConfigMapping], optional
             config for the conditional attribution score analysis.
             Defaults to [].
 
@@ -66,7 +66,9 @@ class AnalysisConfig(ConfigMapping):
         self.differential_analysis: Mapping[str, str] = dict()
         self.embedding_methods: List[str] = ["tsne"]
         self.annotation_colnames: List[str] = []
-        self.conditional_attribution_scores: List[AnalysisAttributionScoreConfig] = []
+        self.conditional_attribution_scores: List[
+            AnalysisAttributionScoreConfigMapping
+        ] = []
 
         super().__init__(
             kwargs,
@@ -94,6 +96,6 @@ class AnalysisConfig(ConfigMapping):
         }
 
         self.conditional_attribution_scores = [
-            AnalysisAttributionScoreConfig(**x)
+            AnalysisAttributionScoreConfigMapping(**x)
             for x in self.conditional_attribution_scores
         ]

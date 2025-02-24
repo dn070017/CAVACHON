@@ -1,13 +1,15 @@
 from typing import Any, List, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.ModalityFileConfig import ModalityFileConfig
+from cavachon.config.config_mapping.modality_config_mapping import (
+    ModalityFileConfigMapping,
+)
 
 
-class SampleConfig(ConfigMapping):
-    """SampleConfig
+class SampleConfigMapping(ConfigMapping):
+    """SampleConfigMapping
 
-    Config for sample.
+    Config mapping for sample.
 
     Attributes
     ----------
@@ -17,13 +19,13 @@ class SampleConfig(ConfigMapping):
     description: List[str]
         description of the samples.
 
-    modalities: List[ModalityFileConfig]
+    modalities: List[ModalityFileConfigMapping]
         list of modality file configs associated with the sample.
 
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for SampleConfig.
+        """Constructor for SampleConfigMapping.
 
         Parameters
         ----------
@@ -34,10 +36,10 @@ class SampleConfig(ConfigMapping):
         # change default values here
         self.name: str
         self.description: str = ""
-        self.modalities: List[ModalityFileConfig] = list()
+        self.modalities: List[ModalityFileConfigMapping] = list()
 
         super().__init__(kwargs, ["name", "description", "modalities"])
 
         # postprocessing
         for i in range(len(self.modalities)):
-            self.modalities[i] = ModalityFileConfig(**self.modalities[i])
+            self.modalities[i] = ModalityFileConfigMapping(**self.modalities[i])

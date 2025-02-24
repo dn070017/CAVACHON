@@ -3,10 +3,10 @@ from typing import Any, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class OptimizerConfig(ConfigMapping):
-    """OptimizerConfig
+class OptimizerConfigMapping(ConfigMapping):
+    """OptimizerConfigMapping
 
-    Config for optimizer.
+    Config mapping for optimizer.
 
     Attributes
     ----------
@@ -19,7 +19,7 @@ class OptimizerConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for OptimizerConfig.
+        """Constructor for OptimizerConfigMapping.
 
         Parameters
         ----------

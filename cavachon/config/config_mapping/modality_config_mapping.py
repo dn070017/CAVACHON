@@ -2,15 +2,15 @@ from copy import deepcopy
 from typing import Any, List, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.filter_config import FilterConfig
+from cavachon.config.config_mapping.filter_config_mapping import FilterConfigMapping
 from cavachon.environment.Constants import Constants
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class ModalityConfig(ConfigMapping):
-    """ModalityConfig
+class ModalityConfigMapping(ConfigMapping):
+    """ModalityConfigMapping
 
-    Config for modality.
+    Config mapping for modality.
 
     Attributes
     ----------
@@ -29,13 +29,13 @@ class ModalityConfig(ConfigMapping):
     h5ad: str
         filename to the h5ad (if not provided with samples)
 
-    filters: List[FilterConfig]
+    filters: List[FilterConfigMapping]
         filter step configs for the modality.
 
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModalityConfig.
+        """Constructor for ModalityConfigMapping.
 
         Parameters
         ----------
@@ -61,7 +61,7 @@ class ModalityConfig(ConfigMapping):
         h5ad: str, optional
             filename to the h5ad (if not provided with samples)
 
-        filters: List[FilterConfig]
+        filters: List[FilterConfigMapping]
             filter step configs for the modality.
 
         batch_effect_colnames: List[str]
@@ -75,7 +75,7 @@ class ModalityConfig(ConfigMapping):
         self.dist: str
         self.samples: List[str] = list()
         self.h5ad: str = ""
-        self.filters: List[FilterConfig] = list()
+        self.filters: List[FilterConfigMapping] = list()
         self.batch_effect_colnames: List[str] = list()
 
         # preprocess
@@ -91,7 +91,7 @@ class ModalityConfig(ConfigMapping):
         ## filters
         if Constants.CONFIG_FIELD_MODALITY_FILTER in kwargs:
             filter_configs = kwargs.get(Constants.CONFIG_FIELD_MODALITY_FILTER)
-            filter_configs = [FilterConfig(**x) for x in filter_configs]
+            filter_configs = [FilterConfigMapping(**x) for x in filter_configs]
             kwargs[Constants.CONFIG_FIELD_MODALITY_FILTER] = filter_configs
 
         ## dist

@@ -5,10 +5,10 @@ from typing import Any, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class IOConfig(ConfigMapping):
-    """ComponentConfig
+class IOConfigMapping(ConfigMapping):
+    """ComponentConfigMapping
 
-    Config for inputs and outputs.
+    Config mapping for inputs and outputs.
 
     Attributes
     ----------
@@ -24,7 +24,7 @@ class IOConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for IOConfig.
+        """Constructor for IOConfigMapping.
 
         Parameters
         ----------

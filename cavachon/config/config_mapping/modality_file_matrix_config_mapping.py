@@ -4,9 +4,9 @@ from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
 class ModalityFileMatrixConfig(ConfigMapping):
-    """ModalityFileMatrixConfig
+    """ModalityFileMatrixConfigMapping
 
-    Config for modality matrix.
+    Config mapping for modality matrix.
 
     Attributes
     ----------
@@ -20,7 +20,7 @@ class ModalityFileMatrixConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModalityFileMatrixConfig
+        """Constructor for ModalityFileMatrixConfigMapping
 
         Parameters
         ----------

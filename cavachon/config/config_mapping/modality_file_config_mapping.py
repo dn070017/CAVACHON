@@ -1,19 +1,19 @@
 from typing import Any, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.modality_file_feature_config import (
-    ModalityFileFeatureConfig,
+from cavachon.config.config_mapping.modality_file_feature_config_mapping import (
+    ModalityFileFeatureConfigMapping,
 )
-from cavachon.config.config_mapping.modality_file_matrix_config import (
-    ModalityFileMatrixConfig,
+from cavachon.config.config_mapping.modality_file_matrix_config_mapping import (
+    ModalityFileMatrixConfigMapping,
 )
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 
-class ModalityFileConfig(ConfigMapping):
-    """ModalityFileConfig
+class ModalityFileConfigMapping(ConfigMapping):
+    """ModalityFileConfigMapping
 
-    Config for modality.
+    Config mapping for modality.
 
     Attributes
     ----------
@@ -32,7 +32,7 @@ class ModalityFileConfig(ConfigMapping):
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModalityFileConfig
+        """Constructor for ModalityFileConfigMapping
 
         Parameters
         ----------
@@ -50,14 +50,14 @@ class ModalityFileConfig(ConfigMapping):
 
         """
         self.name: str
-        self.matrix: ModalityFileMatrixConfig
-        self.barcodes: ModalityFileFeatureConfig
-        self.features: ModalityFileFeatureConfig
+        self.matrix: ModalityFileMatrixConfigMapping
+        self.barcodes: ModalityFileFeatureConfigMapping
+        self.features: ModalityFileFeatureConfigMapping
 
         super().__init__(kwargs, ["name", "matrix", "barcodes", "features"])
 
         # postprocessing
         self.name = GeneralUtils.tensorflow_compatible_str(self.name)
-        self.matrix = ModalityFileMatrixConfig(**self.matrix)
-        self.barcodes = ModalityFileFeatureConfig(**self.barcodes)
-        self.features = ModalityFileFeatureConfig(**self.features)
+        self.matrix = ModalityFileMatrixConfigMapping(**self.matrix)
+        self.barcodes = ModalityFileFeatureConfigMapping(**self.barcodes)
+        self.features = ModalityFileFeatureConfigMapping(**self.features)
