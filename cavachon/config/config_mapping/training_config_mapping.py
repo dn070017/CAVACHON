@@ -43,8 +43,8 @@ class TrainingConfigMapping(ConfigMapping):
             True.
 
         early_stopping: bool, optional
-            whether or not to use early stopping when training the model.
-            Ignored if `train=False`. Defaults to True.
+            whether or not to use early stopping when training the
+            model. Ignored if `train=False`. Defaults to True.
         """
         # change default values here
         self.optimizer: OptimizerConfigMapping

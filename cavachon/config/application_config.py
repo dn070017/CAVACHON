@@ -16,7 +16,7 @@ from cavachon.config.config_mapping.modality_config_mapping import ModalityConfi
 from cavachon.config.config_mapping.model_config_mapping import ModelConfigMapping
 from cavachon.config.config_mapping.sample_config_mapping import SampleConfigMapping
 from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
-from cavachon.environment.Constants import Constants
+from cavachon.environment.constants import Constants
 from cavachon.utils.GeneralUtils import GeneralUtils
 
 

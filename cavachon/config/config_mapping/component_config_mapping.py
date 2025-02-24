@@ -96,7 +96,8 @@ class ComponentConfigMapping(ConfigMapping):
             names of the conditioned components (of z). Defaults to [].
 
         conditioned_on_z_hat: List[str], optional
-            names of the conditioned components (of z_hat). Defaults to [].
+            names of the conditioned components (of z_hat). Defaults to
+            [].
 
         n_latent_dims: int, optional
             number of latent dimensions. Defaults to 5.
