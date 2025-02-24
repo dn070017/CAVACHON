@@ -4,8 +4,8 @@ from typing import Any, Mapping
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.modifiers.Binarize import Binarize
-from cavachon.layers.modifiers.ToDense import ToDense
+from cavachon.layers.modifiers.binarize import Binarize
+from cavachon.layers.modifiers.to_dense import ToDense
 
 
 class IndependentBernoulliModifier(tf.keras.Model):

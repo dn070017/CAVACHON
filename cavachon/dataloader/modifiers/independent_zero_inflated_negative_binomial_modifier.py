@@ -4,7 +4,7 @@ from typing import Any, Mapping
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.modifiers.ToDense import ToDense
+from cavachon.layers.modifiers.to_dense import ToDense
 
 
 class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
