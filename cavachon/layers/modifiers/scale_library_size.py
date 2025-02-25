@@ -7,7 +7,16 @@ from cavachon.environment.constants import Constants
 
 
 class ScaleLibrarySize(tf.keras.layers.Layer):
-    """TODO"""
+    """ScaleLibrarySize
+
+    Modifier used to scale (read × library size) the tf.Tensor with
+    library size (the sum of values in the last dimension).
+
+    Attributes
+    ----------
+    key: Any
+        key to access the data needed to be normalized.
+    """
 
     def __init__(self, key: Any, *args, **kwargs):
         super().__init__(*args, **kwargs)

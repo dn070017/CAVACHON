@@ -20,7 +20,7 @@ class Modality(anndata.AnnData):
     Attributes
     ----------
     uns: Any
-        same as the unstructure annotations from anndata.AnnData, but
+        same as the unstructured annotations from anndata.AnnData, but
         with additional config annotations specifically for CAVACHON,
         which is stored as a dictionary in uns['cavcachon']. The
         additional information includes the 'name', 'modality_type',

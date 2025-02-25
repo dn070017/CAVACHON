@@ -12,7 +12,7 @@ class MultiModality(muon.MuData):
     """MultiModality
 
     Data structure for (single-cell) multi-omics data. Inherit from
-    muon.MuData and is comptatible with muon and other APIs that expect
+    muon.MuData and is compatible with muon and other APIs that expect
     muon.MuData as inputs. The adata in each modality will be sorted so
     the order of the cells will be the same after initialization.
 

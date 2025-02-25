@@ -12,7 +12,8 @@ class ToDense(tf.keras.layers.Layer):
     Attributes
     ----------
     key: Any
-        key to access the data needed to be transform to dense tf.Tensor.
+        key to access the data needed to be transform to dense
+        tf.Tensor.
 
     """
 

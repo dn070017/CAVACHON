@@ -8,8 +8,8 @@ from cavachon.environment.constants import Constants
 class NormalizeLibrarySize(tf.keras.layers.Layer):
     """NormalizedLibrarySize
 
-    Modifier used to normalize the tf.Tensor with library size (the sum
-    of values in the last dimension)
+    Modifier used to normalize (read / library size) the tf.Tensor with
+    library size (the sum of values in the last dimension)
 
     Attributes
     ----------

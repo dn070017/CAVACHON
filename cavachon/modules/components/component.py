@@ -53,7 +53,7 @@ class Component(tf.keras.Model):
         parameterizer used for the priors in latent distributions. Used
         when computing the KLDivergence.
 
-    hierarchical_encoder: tf.karas.Model
+    hierarchical_encoder: tf.keras.Model
         hierarchical encoder used to encode z_hat hierarchically
         through the dependency between components.
 
@@ -91,7 +91,7 @@ class Component(tf.keras.Model):
             functional API. By defaults, expect to have keys
             `modality_name`/matrix, 'z_conditional' (if applicable),
             'z_hat_conditional' (if applicable) and
-            `modality_name`/libsize (if appplicable).
+            `modality_name`/libsize (if applicable).
 
         outputs: Mapping[Any, tf.Tensor]
             outputs for building tf.keras.Model using Tensorflow
@@ -117,7 +117,7 @@ class Component(tf.keras.Model):
             parameterizer used for the priors in latent distributions.
             Used when computing the KLDivergence.
 
-        hierarchical_encoder: tf.karas.Model
+        hierarchical_encoder: tf.keras.Model
             hierarchical encoder used to encode z_hat hierarchically
             through the dependency between components.
 
@@ -415,7 +415,7 @@ class Component(tf.keras.Model):
         is_conditioned_on_z: bool = False,
         is_conditioned_on_z_hat: bool = False,
         progressive_iterations: int = 5000,
-        name: str = "hiearchical_encoder",
+        name: str = "hierarchical_encoder",
         **kwargs,
     ) -> tf.keras.Model:
         """Builder function for setting up hierarchical encoder.
@@ -436,7 +436,7 @@ class Component(tf.keras.Model):
             of all ancestor of conditioned components) from the
             conditioned components. Defaults to False.
 
-        prorgressive_iterations: int, optional
+        progressive_iterations: int, optional
             total iterations for progressive training. Defaults to
             5000.
 
@@ -561,7 +561,7 @@ class Component(tf.keras.Model):
             encoder created using setup_encoder()
 
         hierarchical_encoder (tf.keras.Model)
-            hierarhical encoder created using
+            hierarchical encoder created using
             setup_hierarchical_encoder()
 
         z_sampler: Union[tf.keras.Model, tf.keras.layers.Layer]
@@ -693,7 +693,7 @@ class Component(tf.keras.Model):
             conditional independent relationships between components
             needs to be a directed acyclic graph. Defaults to [].
 
-        prorgressive_iterations: int, optional
+        progressive_iterations: int, optional
             total iterations for progressive training. Defaults to 5000.
 
         name: str, optional:
@@ -789,7 +789,7 @@ class Component(tf.keras.Model):
 
     def compile(self, **kwargs) -> None:
         """Compile the model before training. Note that the 'metrics'
-        will be ignored in Model becaus of the incompatibility with
+        will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
         provided.
 
@@ -852,7 +852,7 @@ class Component(tf.keras.Model):
         Parameters
         ----------
         data: Mapping[Any, tf.Tensor]
-            input data with stucture specified with self.inputs.
+            input data with structure specified with self.inputs.
 
         Returns
         -------
@@ -901,7 +901,7 @@ class Component(tf.keras.Model):
         return {name: m.result() for name, m in zip(names, self.metrics)}
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Overwrite __setattr__ function, so that everytime setting
+        """Overwrite __setattr__ function, so that every time setting
         trainable to False, it automatically set alpha in the
         progressive_scaler to 1.0.
 
@@ -933,7 +933,7 @@ class Component(tf.keras.Model):
             current iteration. Defaults to 1.
 
         total_iterations: int, optional
-            total iteartions, Defaults to 1.
+            total iterations, Defaults to 1.
         """
         total_iterations = float(total_iterations)
         current_iteration = float(current_iteration)

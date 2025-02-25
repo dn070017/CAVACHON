@@ -11,7 +11,7 @@ class MultivariateNormalDiagDistribution(
 ):
     """MultivariateNormalDiagDistribution
 
-    Distribution for multivarate normal distributions with
+    Distribution for multivariate normal distributions with
     diagonal covariance matrix (mainly used for latent distributions).
 
     """
@@ -24,7 +24,7 @@ class MultivariateNormalDiagDistribution(
     def from_parameterizer_output(
         cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
     ):
-        """Create multivarate normal distributions with diagonal
+        """Create multivariate normal distributions with diagonal
         covariance matrix from the outputs of
         modules.parameterizers.MultivariateNormalDiag.
 

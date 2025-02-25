@@ -16,9 +16,9 @@ class FilterQC(AnnDataFilter):
     Filter for AnnData. Used as an adaptor between the
     scanpy.pp.calculate_qc_metrics() and the configs. After the quality
     metrics is computed, the filtering will be performed based on the
-    proprotion of controlled genes. Note that FilterQC will not be
+    proportion of controlled genes. Note that FilterQC will not be
     performed inplace regardless the value of kwargs['inplace']
-    (as assignment is needed for the the subsetting).
+    (as assignment is needed for the subset).
 
     Attributes
     ----------

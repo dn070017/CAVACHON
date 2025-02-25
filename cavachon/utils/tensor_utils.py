@@ -116,7 +116,7 @@ class TensorUtils:
 
         rate: int, optional
             increasing rate of number of neurons (see description of
-            the function for more details). DTensorUtilsefaults to 2.
+            the function for more details). Defaults to 2.
 
         activation: str, optional
             activation functions in tf.keras.layers.Dense layer.
@@ -157,7 +157,7 @@ class TensorUtils:
         """Create a Tensorflow Tensor from column data (specified with
         `colnames`) in the provided DataFrame. If the column data is a
         categorical variable, transform it with one-hot encoded Tensor.
-        If it is a continous variable, simply transform it into a
+        If it is a continuous variable, simply transform it into a
         Tensorflow Tensor. If no valid column data is provided, return
         Tensor which is a zero vector.
 
@@ -176,10 +176,10 @@ class TensorUtils:
         Tuple[tf.Tensor, Dict[str, LabelEncoder]]
             the first element is the one-hot encoded Tensor. The second
             element is the dictionary of LabelEncoder used to map the
-            categorical variable into scalarvrepresentation, where the
+            categorical variable into scalar representation, where the
             keys are the column names and the values are the
-            correponding LabelEncoder. The value will be None if the
-            column data is not a continous variable.
+            corresponding LabelEncoder. The value will be None if the
+            column data is not a continuous variable.
         """
         # if no valid batch effect column is provided, use zero vector for batch effect
         n_obs, n_features = df.shape

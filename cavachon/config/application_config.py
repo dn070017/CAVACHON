@@ -203,7 +203,7 @@ class ApplicationConfig:
             raise KeyError(f"No modality found in the config file {self.filename}.")
 
         for i, modality_config in enumerate(modality_config_list):
-            # Check if all required keys are in the modalilty config.
+            # Check if all required keys are in the modality config.
             self.are_all_fields_in_mapping(
                 Constants.CONFIG_FIELD_MODALITY_REQUIRED,
                 modality_config,
@@ -260,7 +260,7 @@ class ApplicationConfig:
             for i, sample_modality_config in enumerate(
                 sample_config.get(Constants.CONFIG_FIELD_MODALITY)
             ):
-                # Check if all required keys are in the modalilty of the sample.
+                # Check if all required keys are in the modality of the sample.
                 self.are_all_fields_in_mapping(
                     Constants.CONFIG_FIELD_SAMPLE_MODALITY_REQUIRED,
                     sample_modality_config,

@@ -12,7 +12,7 @@ try:
     physical_devices = tf.config.list_physical_devices("GPU")
     for i, d in enumerate(physical_devices):
         tf.config.experimental.set_memory_growth(physical_devices[i], True)
-except:
+except Exception:
     print("No GPU detected. Use CPU instead")
 
 

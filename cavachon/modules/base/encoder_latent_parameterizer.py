@@ -68,7 +68,7 @@ class EncoderLatentParameterizer(tf.keras.Model):
         """
 
         result = self.backbone_network(inputs, training=training, mask=mask)
-        result = self.z_parameterizer(result, trainin=training, mask=mask)
+        result = self.z_parameterizer(result, training=training, mask=mask)
 
         return result
 

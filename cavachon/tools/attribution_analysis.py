@@ -256,7 +256,7 @@ class AttributionAnalysis:
             `component`.
 
         with_respect_to: str
-            compute integrated gradietn with respect to the latent
+            compute integrated gradient with respect to the latent
             representation of which component.
 
         z_variable: Union[tf.Tensor, tf.Variable, None], optional

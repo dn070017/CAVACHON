@@ -31,7 +31,7 @@ class DataFrameUtils:
         Returns
         -------
         bool:
-            Ture if the series is a categorical variable, otherwise
+            True if the series is a categorical variable, otherwise
             False.
         """
         n_obs = data.size

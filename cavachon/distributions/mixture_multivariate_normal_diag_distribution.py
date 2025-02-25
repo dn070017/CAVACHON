@@ -14,7 +14,7 @@ class MixtureMultivariateNormalDiagDistribution(
 ):
     """MixtureMultivariateNormalDiagDistribution
 
-    Distribution for mixture of multivarate normal distributions with
+    Distribution for mixture of multivariate normal distributions with
     diagonal covariance matrix (mainly used for the priors of latent
     distributions).
 
@@ -28,7 +28,7 @@ class MixtureMultivariateNormalDiagDistribution(
     def from_parameterizer_output(
         cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
     ):
-        """Create mixture of multivarate normal distributions with
+        """Create mixture of multivariate normal distributions with
         diagonal covariance matrix from the outputs of
         modules.parameterizers.MixtureMultivariateNormalDiag.
 

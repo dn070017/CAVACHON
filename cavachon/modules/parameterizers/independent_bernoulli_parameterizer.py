@@ -49,10 +49,10 @@ class IndependentBernoulliParameterizer(Parameterizer):
         Parameters
         ----------
         args: Any
-            parameters used to initialize IndenpendentBernoulli.
+            parameters used to initialize IndependentBernoulli.
 
         kwargs: Mapping[str, Any]
-            parameters used to initialize IndenpendentBernoulli.
+            parameters used to initialize IndependentBernoulli.
 
         """
         super().__init__(*args, **kwargs)

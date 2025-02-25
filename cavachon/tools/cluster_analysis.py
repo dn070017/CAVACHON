@@ -235,10 +235,10 @@ class ClusterAnalysis:
 
         return analysis_result
 
-    def compute_contigency_matrix(
+    def compute_contingency_matrix(
         self, modality: str, cluster_colname_a: str, cluster_colname_b: str
     ) -> pd.DataFrame:
-        """Compute the contigency matrix of two clustering results.
+        """Compute the contingency matrix of two clustering results.
 
         Parameters
         ----------
@@ -254,7 +254,7 @@ class ClusterAnalysis:
         Returns
         -------
         pd.DataFrame
-            contigency matrix where the indices are the cluster names
+            contingency matrix where the indices are the cluster names
             in the first clustering assignment, the column names are
             the second clustering assignment.
 
@@ -307,27 +307,27 @@ class ClusterAnalysis:
             7. Precision
 
         """
-        contigency_matrix = self.compute_contigency_matrix(
+        contingency_matrix = self.compute_contingency_matrix(
             modality, cluster_colname_a, cluster_colname_b
         )
 
         result = []
-        for target_a in contigency_matrix.index:
-            for target_b in contigency_matrix.columns:
+        for target_a in contingency_matrix.index:
+            for target_b in contingency_matrix.columns:
                 FP = (
-                    contigency_matrix[target_b].sum()
-                    - contigency_matrix[target_b][target_a]
+                    contingency_matrix[target_b].sum()
+                    - contingency_matrix[target_b][target_a]
                 )
-                TP = contigency_matrix[target_b][target_a]
+                TP = contingency_matrix[target_b][target_a]
                 FN = (
-                    contigency_matrix.loc[target_a].sum()
-                    - contigency_matrix[target_b][target_a]
+                    contingency_matrix.loc[target_a].sum()
+                    - contingency_matrix[target_b][target_a]
                 )
                 TN = (
-                    np.sum(contigency_matrix.values)
-                    - contigency_matrix[target_b].sum()
-                    - contigency_matrix.loc[target_a].sum()
-                    + contigency_matrix[target_b][target_a]
+                    np.sum(contingency_matrix.values)
+                    - contingency_matrix[target_b].sum()
+                    - contingency_matrix.loc[target_a].sum()
+                    + contingency_matrix[target_b][target_a]
                 )
 
                 sensitivity = TP / (TP + FN)

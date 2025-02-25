@@ -78,7 +78,7 @@ class SequentialTrainingScheduler:
 
     def compute_component_training_order(self) -> Mapping[int, List[str]]:
         """Compute the training order of the components based on the
-        order of topologic sort of the input dependency graph.
+        order of topological sort of the input dependency graph.
 
         Returns
         -------
@@ -165,7 +165,7 @@ class SequentialTrainingScheduler:
         x: tf.data.Dataset
             input dataset created by DataLoader.
 
-        **kargs: Mapping[str, Any]
+        **kwargs: Mapping[str, Any]
             additional arguments passed to self.model.fit.
 
         Returns

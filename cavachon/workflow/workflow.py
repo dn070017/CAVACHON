@@ -43,14 +43,14 @@ class Workflow:
         generative model created and trained as configured.
 
     train_scheduler: SequentialTrainingScheduler
-        sequential training sceduler for each component in the model.
+        sequential training scheduler for each component in the model.
 
     train_history: List[tf.keras.callbacks.History]
         history of training process in each step.
 
     outputs: MutableMapping[str, tf.Tensor]
         outputs latent representations and reconstructed data from the
-        trained generative mdoel.
+        trained generative model.
 
     """
 
