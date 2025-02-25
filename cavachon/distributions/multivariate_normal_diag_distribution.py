@@ -7,7 +7,7 @@ from cavachon.distributions.distribution import Distribution
 
 
 class MultivariateNormalDiagDistribution(
-    Distribution, tfp.distributions.MultivariateNormalDiagDistribution
+    Distribution, tfp.distributions.MultivariateNormalDiag
 ):
     """MultivariateNormalDiagDistribution
 

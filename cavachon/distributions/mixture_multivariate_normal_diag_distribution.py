@@ -5,7 +5,7 @@ import tensorflow_probability as tfp
 
 from cavachon.distributions.distribution import Distribution
 from cavachon.distributions.multivariate_normal_diag_distribution import (
-    MultivariateNormalDiag,
+    MultivariateNormalDiagDistribution,
 )
 
 
@@ -70,14 +70,16 @@ class MixtureMultivariateNormalDiagDistribution(
             # shape: (batch, n_components, event_dims * 2)
             components_params = params[..., 1:]
             # batch_shape: (batch, n_components), event_shape: (event_dims, )
-            components_distribution = MultivariateNormalDiag.from_parameterizer_output(
-                components_params
+            components_distribution = (
+                MultivariateNormalDiagDistribution.from_parameterizer_output(
+                    components_params
+                )
             )
         elif isinstance(params, Mapping):
             logits = params.get("logits")
             loc = params.get("loc")
             scale_diag = params.get("scale_diag")
-            components_distribution = MultivariateNormalDiag(
+            components_distribution = MultivariateNormalDiagDistribution(
                 loc=loc, scale_diag=scale_diag
             )
 
