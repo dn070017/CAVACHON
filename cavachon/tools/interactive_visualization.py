@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from cavachon.tools.AttributionAnalysis import AttributionAnalysis
+from cavachon.tools.attribution_analysis import AttributionAnalysis
 from cavachon.tools.cluster_analysis import ClusterAnalysis
 from cavachon.tools.differential_analysis import DifferentialAnalysis
 
