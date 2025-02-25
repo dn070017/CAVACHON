@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 
-class MultivariateNormalDiagParameterizer(tf.keras.layers.Layer):
-    """MultivariateNormalDiagParameterizer
+class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
+    """MultivariateNormalDiagParameterizerLayer
 
     Parameterizer for multivariate normal distributions with diagonal
     covariance matrix (loc and scale_diag).
@@ -12,7 +12,7 @@ class MultivariateNormalDiagParameterizer(tf.keras.layers.Layer):
     def __init__(
         self, event_dims: int, name: str = "multivariate_normal_diag_parameterizer"
     ):
-        """Constructor for MultivariateNormalDiagParameterizer
+        """Constructor for MultivariateNormalDiagParameterizerLayer
 
         Parameters
         ----------

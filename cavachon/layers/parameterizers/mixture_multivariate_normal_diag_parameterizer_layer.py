@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 
-class MixtureMultivariateNormalDiagParameterizer(tf.keras.layers.Layer):
-    """MixtureMultivariateNormalDiagParameterizer
+class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
+    """MixtureMultivariateNormalDiagParameterizerLayer
 
     Parameterizer for mixture of multivariate normal distributions with
     diagonal covariance matrix (logits, loc and scale_diag).
@@ -16,7 +16,7 @@ class MixtureMultivariateNormalDiagParameterizer(tf.keras.layers.Layer):
         unit_variance: bool = False,
         name: str = "mixture_multivariate_normal_diag_parameterizer",
     ):
-        """Constructor for MultivariateNormalDiagParameterizer
+        """Constructor for MultivariateNormalDiagParameterizerLayer
 
         Parameters
         ----------

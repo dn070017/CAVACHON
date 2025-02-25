@@ -1,10 +1,10 @@
 import tensorflow as tf
 
 
-class IndependentZeroInflatedNegativeBinomialParameterizer(tf.keras.layers.Layer):
-    """IndependentZeroInflatedNegativeBinomialParameterizer
+class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.Layer):
+    """IndependentZeroInflatedNegativeBinomialParameterizerLayer
 
-    Parameterizer for IndependentZeroInflatedNegativeBinomial
+    Parameterizer for IndependentZeroInflatedNegativeBinomialLayer
     distributions (logits, mean and dispersion).
 
     """
@@ -16,7 +16,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(tf.keras.layers.Layer
         name: str = "independent_zero_inflated_negative_binomial_parameterizer",
     ):
         """Constructor for
-        IndependentZeroInflatedNegativeBinomialParameterizer
+        IndependentZeroInflatedNegativeBinomialParameterizerLayer
 
         Parameters
         ----------

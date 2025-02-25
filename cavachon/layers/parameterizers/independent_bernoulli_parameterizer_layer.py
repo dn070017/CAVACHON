@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 
-class IndependentBernoulliParameterizer(tf.keras.layers.Layer):
-    """IndependentBernoulliParameterizer
+class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
+    """IndependentBernoulliParameterizerLayer
 
     Parameterizer for IndependentBernoulli distributions (logits).
 
@@ -11,7 +11,7 @@ class IndependentBernoulliParameterizer(tf.keras.layers.Layer):
     def __init__(
         self, event_dims: int, name: str = "independent_bernoulli_parameterizer"
     ):
-        """Constructor for IndependentBenoulliParameterizer
+        """Constructor for IndependentBenoulliParameterizerLayer
 
         Parameters
         ----------

@@ -1,5 +1,4 @@
 import functools
-from typing import Any, Mapping
 
 import tensorflow as tf
 
@@ -7,13 +6,14 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.to_dense import ToDense
 
 
-class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
-    """IndependentZeroInflatedNegativeBinomialModifier
+class MultivariateNormalDiagModifier(tf.keras.Model):
+    """MultivariateNormalDiagModifier
 
-    Modifiers for the modality which is
-    IndependentZeroInflatedNegativeBinomial distribution. The instance
-    will be used right after the tf.data.Dataset is created using the
-    DataLoader.
+    Modifiers for the modality which is MultivariateNormalDiag
+    distribution. The instance will be used before calling the
+    tf.keras.Model. Note that this will not change the data in the
+    DataLoader.dataset which
+    dataloader.modifiers.IndependentBernoulliModifier does.
 
     Attributes
     ----------
@@ -26,43 +26,35 @@ class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
 
     modifiers: List[tf.keras.layers.Layer]
         list of modifiers that will be applied to the data created from
-        tf.data.Dataset. Defaults to
-        [ToDense, LogTransform, NormalizeLibrarySize].
+        tf.data.Dataset. Defaults to [ToDense, Binarize].
 
     See Also
     --------
-    DataLoader: used to create tf.data.Dataset from MuData.
+    dataloader.modifiers.MultivariateNormalDiagModifier
+        similar modifier but used for DataLoader.dataset.
 
     """
 
     def __init__(self, modality_name):
-        """Constructor for IndependentZeroInflatedNegativeBinomial
-        (modifier for tf.data.Dataset)
-
-        Parameters
-        ----------
-        modality_name: str
-            the name of modality that needs to be processed.
-        """
         super().__init__()
-        self.modality_name: str = modality_name
-        self.modality_key: str = f"{modality_name}/{Constants.TENSOR_NAME_X}"
+        self.modality_name = modality_name
+        self.modality_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
         self.modifiers = [ToDense(self.modality_key)]
 
-    def call(self, inputs: Mapping[Any, tf.Tensor], training=None, mask=None):
+    def call(self, inputs, training=None, mask=None):
         """Processed the data created from tf.data.Dataset.
 
         Parameters
         ----------
         inputs:
-            Mapping of tf.Tensor, where the keys contain
+            mapping of tf.Tensor, where the keys contain
             self.modality_key.
 
         training: bool, optional
-            Not used (kept for tf.keras.Model API).
+            not used (kept for tf.keras.Model API).
 
         mask: tf.Tensor, optional
-            Not used (kept for tf.keras.Model API).
+            not used (kept for tf.keras.Model API).
 
         Returns
         -------

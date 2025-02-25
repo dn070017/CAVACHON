@@ -8,8 +8,8 @@ from cavachon.layers.modifiers.binarize import Binarize
 from cavachon.layers.modifiers.to_dense import ToDense
 
 
-class IndependentBernoulliModifier(tf.keras.Model):
-    """IndependentBernoulliModifier
+class IndependentBernoulliDataModifier(tf.keras.Model):
+    """IndependentBernoulliDataModifier
 
     Modifiers for the modality which is IndependentBernoulli
     distribution. The instance will be used right after the

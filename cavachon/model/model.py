@@ -14,7 +14,7 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
 from cavachon.losses.kl_divergence import KLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
-from cavachon.modules.components.Component import Component
+from cavachon.modules.components.component import Component
 from cavachon.utils.general_utils import GeneralUtils
 from cavachon.utils.tensor_utils import TensorUtils
 
