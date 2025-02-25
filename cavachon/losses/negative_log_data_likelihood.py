@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from cavachon.utils.ReflectionHandler import ReflectionHandler
+from cavachon.utils.reflection_handler import ReflectionHandler
 
 
 class NegativeLogDataLikelihood(tf.keras.losses.Loss):

@@ -17,7 +17,7 @@ from cavachon.config.config_mapping.model_config_mapping import ModelConfigMappi
 from cavachon.config.config_mapping.sample_config_mapping import SampleConfigMapping
 from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
 from cavachon.environment.constants import Constants
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ApplicationConfig:
@@ -415,19 +415,19 @@ class ApplicationConfig:
             modality = attribution_config.modality
             component = attribution_config.component
             with_respect_to = attribution_config.with_respect_to
-            has_component1 = False
-            has_component2 = False
+            is_modality_in_component = False
+            is_wrt_in_component = False
             has_modality = False
             for component_config in self.components:
                 if with_respect_to == component_config.name:
-                    has_component2 = True
+                    is_wrt_in_component = True
                 if component == component_config.name:
-                    has_component1 = True
+                    is_modality_in_component = True
                     for modality_in_component in component_config.modality_names:
                         if modality == modality_in_component:
                             has_modality = True
                             break
-                if has_modality and has_component1 and has_component2:
+                if has_modality and is_modality_in_component and is_wrt_in_component:
                     break
 
             if not has_modality:
@@ -435,11 +435,11 @@ class ApplicationConfig:
                     f"'{modality}' is not in the config of component '{component}'."
                 )
                 raise KeyError(message)
-            if not has_component1:
+            if not is_modality_in_component:
                 message = (
                     f"'{component}' (modality) is not in the config of components."
                 )
                 raise KeyError(message)
-            if not has_component2:
+            if not is_wrt_in_component:
                 message = f"'{with_respect_to}' (with_respect_to) is not in the config of components."
                 raise KeyError(message)

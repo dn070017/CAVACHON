@@ -2,7 +2,7 @@ import warnings
 from typing import Any, List, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ComponentConfigMapping(ConfigMapping):

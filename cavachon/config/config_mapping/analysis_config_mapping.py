@@ -5,7 +5,7 @@ from cavachon.config.config_mapping.analysis_attribution_score_config_mapping im
     AnalysisAttributionScoreConfigMapping,
 )
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class AnalysisConfigMapping(ConfigMapping):

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Mapping
 import anndata
 
 from cavachon.filter.anndata_filter import AnnDataFilter
-from cavachon.utils.ReflectionHandler import ReflectionHandler
+from cavachon.utils.reflection_handler import ReflectionHandler
 
 
 class AnnDataFilterHandler(Callable):
@@ -55,12 +55,8 @@ class AnnDataFilterHandler(Callable):
         for modality_name, modality_filter_steps in config.filter.items():
             step_runners = []
             for filter_step in modality_filter_steps:
-                step_runner_class = ReflectionHandler.get_class_by_name(
-                    filter_step.get("step")
-                )
-                step_runner = step_runner_class(
-                    name=filter_step.get("step"), **filter_step
-                )
+                step_runner_class = ReflectionHandler.get_class_by_name(filter_step.get("step"))
+                step_runner = step_runner_class(name=filter_step.get("step"), **filter_step)
                 step_runners.append(step_runner)
 
             steps.setdefault(modality_name, step_runners)

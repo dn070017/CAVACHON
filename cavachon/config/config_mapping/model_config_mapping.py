@@ -6,7 +6,7 @@ from cavachon.config.config_mapping.component_config_mapping import (
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.config.config_mapping.dataset_config_mapping import DatasetConfigMapping
 from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ModelConfigMapping(ConfigMapping):

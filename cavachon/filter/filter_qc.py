@@ -7,7 +7,7 @@ import pandas as pd
 import scanpy
 
 from cavachon.filter.anndata_filter import AnnDataFilter
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class FilterQC(AnnDataFilter):

@@ -4,7 +4,7 @@ from typing import Any, List, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.config.config_mapping.filter_config_mapping import FilterConfigMapping
 from cavachon.environment.constants import Constants
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ModalityConfigMapping(ConfigMapping):

@@ -7,7 +7,7 @@ from cavachon.config.config_mapping.modality_file_feature_config_mapping import 
 from cavachon.config.config_mapping.modality_file_matrix_config_mapping import (
     ModalityFileMatrixConfigMapping,
 )
-from cavachon.utils.GeneralUtils import GeneralUtils
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ModalityFileConfigMapping(ConfigMapping):

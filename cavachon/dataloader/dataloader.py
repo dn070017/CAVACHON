@@ -8,8 +8,8 @@ import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 
 from cavachon.environment.constants import Constants
-from cavachon.utils.ReflectionHandler import ReflectionHandler
-from cavachon.utils.TensorUtils import TensorUtils
+from cavachon.utils.reflection_handler import ReflectionHandler
+from cavachon.utils.tensor_utils import TensorUtils
 
 
 class DataLoader:
