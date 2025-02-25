@@ -17,9 +17,9 @@ from cavachon.modality.modality import Modality
 from cavachon.modality.multi_modality import MultiModality
 from cavachon.model.model import Model
 from cavachon.scheduler.sequential_training_scheduler import SequentialTrainingScheduler
-from cavachon.tools.ClusterAnalysis import ClusterAnalysis
-from cavachon.tools.DifferentialAnalysis import DifferentialAnalysis
-from cavachon.tools.InteractiveVisualization import InteractiveVisualization
+from cavachon.tools.cluster_analysis import ClusterAnalysis
+from cavachon.tools.differential_analysis import DifferentialAnalysis
+from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
 
 

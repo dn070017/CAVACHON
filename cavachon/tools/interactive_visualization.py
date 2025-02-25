@@ -16,8 +16,8 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from cavachon.tools.AttributionAnalysis import AttributionAnalysis
-from cavachon.tools.ClusterAnalysis import ClusterAnalysis
-from cavachon.tools.DifferentialAnalysis import DifferentialAnalysis
+from cavachon.tools.cluster_analysis import ClusterAnalysis
+from cavachon.tools.differential_analysis import DifferentialAnalysis
 
 
 class InteractiveVisualization:
