@@ -319,14 +319,14 @@ class SequentialTrainingScheduler:
                 )
 
             loss_weights.setdefault(
-                f"{component_name}/{Constants.MODEL_LOSS_KL_POSTFIX}",
+                f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}",
                 1.0 * weight_scale,
             )
             for modality_name in component_config.get(
                 Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
             ):
                 loss_weights.setdefault(
-                    f"{component_name}/{modality_name}/{Constants.MODEL_LOSS_DATA_POSTFIX}",
+                    f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}",
                     self.modality_weight.get(component_name).get(modality_name)
                     * weight_scale,
                 )
