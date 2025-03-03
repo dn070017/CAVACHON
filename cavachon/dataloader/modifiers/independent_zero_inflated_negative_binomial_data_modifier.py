@@ -22,7 +22,7 @@ class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
 
     modality_key: str
         the key used to access the mapping of data created from
-        tf.data.Dataset. Defaults to `modality_name`/matrix.
+        tf.data.Dataset. Defaults to `modality_name`_matrix.
 
     modifiers: List[tf.keras.layers.Layer]
         list of modifiers that will be applied to the data created from
@@ -46,7 +46,7 @@ class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
         """
         super().__init__()
         self.modality_name: str = modality_name
-        self.modality_key: str = f"{modality_name}/{Constants.TENSOR_NAME_X}"
+        self.modality_key: str = f"{modality_name}_{Constants.TENSOR_NAME_X}"
         self.modifiers = [ToDense(self.modality_key)]
 
     def call(self, inputs: Mapping[Any, tf.Tensor], training=None, mask=None):

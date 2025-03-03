@@ -3,7 +3,7 @@ import tensorflow as tf
 from cavachon.distributions.mixture_multivariate_normal_diag_distribution import (
     MixtureMultivariateNormalDiagDistribution,
 )
-from cavachon.distributions.MultivariateNormalDiag_distribution import (
+from cavachon.distributions.multivariate_normal_diag_distribution import (
     MultivariateNormalDiagDistribution,
 )
 

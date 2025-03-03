@@ -56,7 +56,8 @@ class AnnDataFilterHandler(Callable):
             step_runners = []
             for filter_step in modality_filter_steps:
                 step_runner_class = ReflectionHandler.get_class_by_name(
-                    filter_step.get("step")
+                    filter_step.get("step"),
+                    "filter",
                 )
                 step_runner = step_runner_class(
                     name=filter_step.get("step"), **filter_step

@@ -215,7 +215,7 @@ class Parameterizer(tf.keras.Model):
 
         inputs = cls.setup_inputs(input_dims, libsize_scaling, **kwargs)
         layer_class = ReflectionHandler.get_class_by_name(
-            cls.__name__, "layers/parameterizers"
+            f"{cls.__name__}", "layers/parameterizers", "Layer"
         )
         layer = layer_class(event_dims=event_dims, name="parameterizer", **kwargs)
         outputs = layer(inputs.get(Constants.TENSOR_NAME_X))

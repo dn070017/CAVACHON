@@ -31,9 +31,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
         """
         super().__init__(name=name)
-        self.total_iterations = tf.Variable(
-            total_iterations, trainable=False, dtype=tf.float32
-        )
+        self.total_iterations = tf.Variable(total_iterations, trainable=False, dtype=tf.float32)
         self.current_iteration = tf.Variable(tf.ones(()), trainable=False)
 
     def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:

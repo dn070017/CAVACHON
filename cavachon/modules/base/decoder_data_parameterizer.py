@@ -49,10 +49,10 @@ class DecoderDataParameterizer(tf.keras.Model):
             Defaults to 3.
 
         """
-        super().__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         distribution_parameterizer = ReflectionHandler.get_class_by_name(
-            distribution_name, "modules/parameterizers"
+            distribution_name, "modules/parameterizers", "Parameterizer"
         )
 
         self.backbone_network = TensorUtils.create_backbone_layers(

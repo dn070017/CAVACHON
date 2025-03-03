@@ -13,7 +13,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         self,
         event_dims: int,
         use_shared_dispersion: bool = True,
-        name: str = "independent_zero_inflated_negative_binomial_parameterizer",
+        name: str = "independent_zero_inflated_negative_binomial_parameterizer_layer",
     ):
         """Constructor for
         IndependentZeroInflatedNegativeBinomialParameterizerLayer
@@ -31,7 +31,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
 
         name: str, optional
             Name for the tensorflow layer. Defaults to
-            'independent_zero_inflated_negative_binomial_parameterizer'.
+            'independent_zero_inflated_negative_binomial_parameterizer_layer'.
         """
         super().__init__(name=name)
         self.event_dims: int = event_dims
@@ -39,8 +39,8 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         return
 
     def build(self, input_shape: tf.TensorShape) -> None:
-        """Create necessary tf.Variable for the first time being called.
-        (see tf.keras.layers.Layer)
+        """Create necessary tf.Variable for the first time being
+        called. (see tf.keras.layers.Layer)
 
         Parameters
         ----------
@@ -49,28 +49,30 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
 
         """
         self.logits_weight = self.add_weight(
-            f"{self.name}/logits_weight", shape=(int(input_shape[-1]), self.event_dims)
+            name=f"{self.name}_logits_weight",
+            shape=(int(input_shape[-1]), self.event_dims),
         )
         self.logits_bias = self.add_weight(
-            f"{self.name}/logits_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_logits_bias", shape=(1, self.event_dims)
         )
         self.mean_weight = self.add_weight(
-            f"{self.name}/mean_weight", shape=(int(input_shape[-1]), self.event_dims)
+            name=f"{self.name}_mean_weight",
+            shape=(int(input_shape[-1]), self.event_dims),
         )
         self.mean_bias = self.add_weight(
-            f"{self.name}/mean_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_mean_bias", shape=(1, self.event_dims)
         )
         if self.use_shared_dispersion:
             self.dispersion_weight = self.add_weight(
-                f"{self.name}/dispersion_weight", shape=(1, self.event_dims)
+                name=f"{self.name}_dispersion_weight", shape=(1, self.event_dims)
             )
         else:
             self.dispersion_weight = self.add_weight(
-                f"{self.name}/dispersion_weight",
+                name=f"{self.name}_dispersion_weight",
                 shape=(int(input_shape[-1]), self.event_dims),
             )
         self.dispersion_bias = self.add_weight(
-            f"{self.name}/dispersion_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_dispersion_bias", shape=(1, self.event_dims)
         )
 
         return
@@ -105,6 +107,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
             dispersion = tf.math.sigmoid(
                 tf.matmul(inputs, self.dispersion_weight) + self.dispersion_bias
             )
+
         dispersion = tf.where(
             dispersion <= 0.1, 0.1 * tf.ones_like(dispersion), dispersion
         )

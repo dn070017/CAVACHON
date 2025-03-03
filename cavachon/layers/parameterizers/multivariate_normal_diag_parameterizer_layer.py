@@ -10,7 +10,9 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
     """
 
     def __init__(
-        self, event_dims: int, name: str = "multivariate_normal_diag_parameterizer"
+        self,
+        event_dims: int,
+        name: str = "multivariate_normal_diag_parameterizer_layer",
     ):
         """Constructor for MultivariateNormalDiagParameterizerLayer
 
@@ -22,7 +24,7 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
         name: str, optional
             Name for the tensorflow layer. Defaults to
-            'multivariate_normal_diag_parameterizer'.
+            'multivariate_normal_diag_parameterizer_layer'.
         """
         super().__init__(name=name)
         self.event_dims: int = event_dims
@@ -39,17 +41,18 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
         """
         self.loc_weight = self.add_weight(
-            f"{self.name}/loc_weight", shape=(int(input_shape[-1]), self.event_dims)
+            name=f"{self.name}_loc_weight",
+            shape=(int(input_shape[-1]), self.event_dims),
         )
         self.loc_bias = self.add_weight(
-            f"{self.name}/loc_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_loc_bias", shape=(1, self.event_dims)
         )
         self.scale_diag_weight = self.add_weight(
-            f"{self.name}/scale_diag_weight",
+            name=f"{self.name}_scale_diag_weight",
             shape=(int(input_shape[-1]), self.event_dims),
         )
         self.scale_diag_bias = self.add_weight(
-            f"{self.name}/scale_diag_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_scale_diag_bias", shape=(1, self.event_dims)
         )
         return
 

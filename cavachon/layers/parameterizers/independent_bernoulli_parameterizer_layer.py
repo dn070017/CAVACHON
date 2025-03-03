@@ -9,7 +9,7 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
     """
 
     def __init__(
-        self, event_dims: int, name: str = "independent_bernoulli_parameterizer"
+        self, event_dims: int, name: str = "independent_bernoulli_parameterizer_layer"
     ):
         """Constructor for IndependentBenoulliParameterizerLayer
 
@@ -21,7 +21,7 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
 
         name: str, optional
             Name for the tensorflow layer. Defaults to
-            'independent_bernoulli_parameterizer'.
+            'independent_bernoulli_parameterizer_layer'.
         """
         super().__init__(name=name)
         self.event_dims: int = event_dims
@@ -38,10 +38,11 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
 
         """
         self.logits_weight = self.add_weight(
-            f"{self.name}/logits_weight", shape=(int(input_shape[-1]), self.event_dims)
+            name=f"{self.name}_logits_weight",
+            shape=(int(input_shape[-1]), self.event_dims),
         )
         self.logits_bias = self.add_weight(
-            f"{self.name}/logits_bias", shape=(1, self.event_dims)
+            name=f"{self.name}_logits_bias", shape=(1, self.event_dims)
         )
         return
 

@@ -22,7 +22,7 @@ class DataLoader:
     batch_effect_encoder: Dict[str, LabelEncoder]
         the encoders used to create one-hot encoded batch effect tensor.
         The keys of the dictionary are formatted as
-        `{modality}/{obs_column}`. The LabelEncoder stored the mapping
+        `{modality}_{obs_column}`. The LabelEncoder stored the mapping
         between categorical batch effect variables and the numerical
         representation.
 
@@ -35,8 +35,8 @@ class DataLoader:
         Tensorflow Dataset created from the MuData. Can be used to
         train/test/validate the model. The field of the dataset
         includes:
-        1. `{modality_name}`/matrix (tf.SparseTensor) and
-        2. `{modality_name}`/batch_effect (tf.Tensor)
+        1. `{modality_name}`_matrix (tf.SparseTensor) and
+        2. `{modality_name}`_batch_effect (tf.Tensor)
 
     mdata: mu.MuData
         (single-cell) multi-omics data used to create the dataset.
@@ -125,10 +125,10 @@ class DataLoader:
             )
 
             tensor_mapping.setdefault(
-                f"{modality_name}/{Constants.TENSOR_NAME_X}", data_tensor
+                f"{modality_name}_{Constants.TENSOR_NAME_X}", data_tensor
             )
             tensor_mapping.setdefault(
-                f"{modality_name}/{Constants.TENSOR_NAME_BATCH}", batch_effect_tensor
+                f"{modality_name}_{Constants.TENSOR_NAME_BATCH}", batch_effect_tensor
             )
 
         self.dataset = tf.data.Dataset.from_tensor_slices(tensor_mapping)
@@ -192,7 +192,7 @@ class DataLoader:
                 self.batch_effect_encoders.get(modality_name, dict()),
             )
             for colnames, encoder in encoder_mapping.items():
-                self.batch_effect_encoder[f"{modality_name}/{colnames}"] = encoder
+                self.batch_effect_encoder[f"{modality_name}_{colnames}"] = encoder
                 if modality_name not in self.batch_effect_encoders:
                     self.batch_effect_encoders[modality_name] = dict()
                 self.batch_effect_encoders[modality_name][colnames] = encoder
@@ -230,7 +230,7 @@ class DataLoader:
                 if not distribution_name:
                     continue
                 modifier_class = ReflectionHandler.get_class_by_name(
-                    distribution_name, "dataloader/modifiers"
+                    distribution_name, "dataloader/modifiers", "DataModifier"
                 )
                 modifier = modifier_class(modality_name=modality_name)
                 self.dataset = self.dataset.map(modifier)
@@ -309,4 +309,5 @@ class DataLoader:
         datadir = os.path.realpath(datadir)
         os.makedirs(datadir, exist_ok=True)
         tf.data.experimental.save(self.dataset, datadir)
+
         return

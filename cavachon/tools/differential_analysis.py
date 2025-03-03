@@ -288,7 +288,7 @@ class DifferentialAnalysis:
             for modality_name in modality_names:
                 if modality_name not in batch_effect:
                     batch_effect.setdefault(modality_name, [])
-                batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 batch_effect[modality_name].append(batch.get(batch_effect_key))
 
         for modality_name in batch_effect.keys():
@@ -425,26 +425,26 @@ class DifferentialAnalysis:
             modality
         )
         dist_x_z_class = ReflectionHandler.get_class_by_name(
-            dist_x_z_name, "distributions"
+            dist_x_z_name, "distributions", "Distribution"
         )
 
         x_means = []
         for batch in dataset.batch(batch_size):
             for modality_name in modality_names:
-                batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 n_obs_batch = batch[batch_effect_key].shape[0]
 
             random_batch_index = np.random.choice(
                 np.arange(self.mdata.n_obs), n_obs_batch
             )
             for modality_name in modality_names:
-                batch_effect_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 batch[batch_effect_key] = tf.gather(
                     batch_effect[modality_name], random_batch_index, axis=0
                 )
             result = self.model(batch, training=training)
             x_parameters = result.get(
-                f"{component}/{modality}/{Constants.MODEL_OUTPUTS_X_PARAMS}"
+                f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
             )
             dist_x_z = dist_x_z_class.from_parameterizer_output(x_parameters)
             x_means.append(dist_x_z.mean().numpy())

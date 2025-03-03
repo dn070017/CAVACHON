@@ -191,7 +191,7 @@ class AttributionAnalysis:
                     watch_accessed_variables=False, persistent=True
                 ) as tape:
                     z_variable = tf.Variable(
-                        outputs.get(f"{with_respect_to}/{Constants.MODEL_OUTPUTS_Z}")
+                        outputs[f"{with_respect_to}_{Constants.MODEL_OUTPUTS_Z}"]
                     )
                     tape.watch(z_variable)
 
@@ -226,7 +226,7 @@ class AttributionAnalysis:
                         unintegrated_gradients_batch += scaled_gradients
 
             integrated_gradients.append(unintegrated_gradients_batch)
-        integrated_gradients = tf.concat(integrated_gradients, 0)
+        integrated_gradients = tf.concat(integrated_gradients, axis=0)
 
         return integrated_gradients
 
@@ -279,9 +279,9 @@ class AttributionAnalysis:
         for component_config in self.model.component_configs:
             component_name = component_config.get("name")
             component_network = self.model.components.get(component_name)
-            modality_names = component_config.get(
+            modality_names = component_config[
                 Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            )
+            ]
             component_inputs = Model.prepare_component_inputs(
                 batch=batch,
                 component_config=component_config,
