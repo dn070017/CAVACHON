@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from cavachon.environment.constants import Constants
 from cavachon.layers.parameterizers.multivariate_normal_diag_parameterizer_layer import (
-    MultivariateNormalDiag as MultivariateNormalDiagParameterizer,
+    MultivariateNormalDiagParameterizerLayer,
 )
 from cavachon.utils.tensor_utils import TensorUtils
 
@@ -30,11 +30,11 @@ class EncoderLatentParameterizer(tf.keras.Model):
     """
 
     def __init__(self, n_layers: int = 3, n_latent_dims: int = 5, *args, **kwargs):
-        super().__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.backbone_network = TensorUtils.create_backbone_layers(
             n_layers, reverse=True, name=Constants.MODULE_BACKBONE
         )
-        self.z_parameterizer = MultivariateNormalDiagParameterizer(
+        self.z_parameterizer = MultivariateNormalDiagParameterizerLayer(
             n_latent_dims, name=Constants.MODULE_Z_PARAMETERIZER
         )
         self.max_n_neurons = TensorUtils.max_n_neurons(self.backbone_network.layers)

@@ -1,15 +1,13 @@
 import os
-from typing import Any, Dict, List, Optional, Union
-from warnings import deprecated
+from typing import List, Optional, Union
 
 import numpy as np
 import pandas as pd
-import yaml
 from anndata import AnnData
 from scipy.io import mmread
 from scipy.sparse import csr_matrix, vstack
 
-from cavachon.config import Config
+from cavachon.config.application_config import ApplicationConfig
 from cavachon.environment.constants import Constants
 
 
@@ -21,13 +19,13 @@ class FileReader:
     """
 
     @staticmethod
-    def read_multiomics_data(config: Config, modality_name: str) -> AnnData:
+    def read_multiomics_data(config: ApplicationConfig, modality_name: str) -> AnnData:
         """Read (single-cell) single-omics data for the given modality
         with the provided Config.
 
         Parameters
         ----------
-        config: Config
+        config: ApplicationConfig
             the config instance of Config which containing
             configurations to read the single-omics data from mtx, obs
             and var files.
@@ -224,27 +222,3 @@ class FileReader:
         else:
             matrix = mmread(filename).tocsr()
         return matrix
-
-    @deprecated
-    @staticmethod
-    def read_yaml(filename: str) -> Dict[str, Any]:
-        """Read a given yaml file, and return the content in dictionary
-        (Deprecated due to circular imports in Config.py).
-
-        Parameters
-        ----------
-        filename: str
-            the filename of the yaml file.
-
-        Returns
-        -------
-        Dict[str, Any]
-            the content of the yaml file.
-
-        """
-        content: Dict[str, Any] = dict()
-        filename = os.path.realpath(filename)
-        with open(filename, "r") as f:
-            content = yaml.load(f, Loader=yaml.FullLoader)
-
-        return content
