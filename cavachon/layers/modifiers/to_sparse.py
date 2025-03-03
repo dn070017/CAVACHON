@@ -1,6 +1,8 @@
-from typing import Any, MutableMapping
+from typing import Hashable, MutableMapping
 
 import tensorflow as tf
+
+from cavachon.utils.tensor_utils import TensorUtils
 
 
 class ToSparse(tf.keras.layers.Layer):
@@ -11,17 +13,17 @@ class ToSparse(tf.keras.layers.Layer):
 
     Attributes
     ----------
-    key: Any
+    key: Hashable
         key to access the data needed to be transform to tf.SparseTensor.
 
     """
 
-    def __init__(self, key: Any, *args, **kwargs):
+    def __init__(self, key: Hashable, *args, **kwargs):
         """Constructor for ToSparse
 
         Parameters
         ----------
-        key: Any
+        key: Hashable
             key to access the data needed to be transformed.
 
         """
@@ -35,18 +37,21 @@ class ToSparse(tf.keras.layers.Layer):
 
         Parameters
         ----------
-        inputs: MutableMapping[Any, tf.Tensor])
+        inputs: MutableMapping[Hashable, tf.Tensor])
             inputs MutableMapping of tf.Tensor contains self.key
 
         Returns
         -------
-        MutableMapping[Any, tf.Tensor]
+        MutableMapping[Hashable, tf.Tensor]
             processed MutableMapping of tf.Tensor
 
         """
 
-        tensor = inputs.get(self.key)
-        if isinstance(tensor, tf.Tensor):
+        tensor = inputs[self.key]
+        if isinstance(
+            tensor, (tf.keras.KerasTensor, tf.SparseTensor)
+        ) and not TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.from_dense(tensor)
+
         inputs[self.key] = tensor
         return inputs

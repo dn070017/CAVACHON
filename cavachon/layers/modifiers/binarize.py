@@ -1,7 +1,9 @@
 import warnings
-from typing import Any, MutableMapping
+from typing import Hashable, MutableMapping
 
 import tensorflow as tf
+
+from cavachon.utils.tensor_utils import TensorUtils
 
 
 class Binarize(tf.keras.layers.Layer):
@@ -11,7 +13,7 @@ class Binarize(tf.keras.layers.Layer):
 
     Attributes
     ----------
-    key: Any
+    key: Hashable
         key to access the data needed to be binarized.
 
     threshold: float
@@ -19,25 +21,18 @@ class Binarize(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self, key: Any, threshold: float = 1.0, *args, **kwargs):
+    def __init__(self, key: Hashable, threshold: float = 1.0, *args, **kwargs):
         """Constructor for Binarize
 
         Parameters
         ----------
-        key: Any
+        key: Hashable
             key to access the data needed to be binarized.
 
         threshold: float, optional
             threshold used to binarize the data. If the value is larger
             than this threshold, it will be set to 1.0. Needs to be in the
             range of [0.0, 1.0] Defaults to 1.0.
-
-
-        args:
-            additional parameters for tf.keras.layers.Layer
-
-        kwargs: Mapping[str, Any]
-            additional parameters for tf.keras.layers.Layer
 
         """
         super().__init__(*args, **kwargs)
@@ -54,27 +49,28 @@ class Binarize(tf.keras.layers.Layer):
         self.key = key
 
     def call(
-        self, inputs: MutableMapping[Any, tf.Tensor]
-    ) -> MutableMapping[Any, tf.Tensor]:
+        self, inputs: MutableMapping[Hashable, tf.Tensor]
+    ) -> MutableMapping[Hashable, tf.Tensor]:
         """Binarize to tf.Tensor stored in inputs.
 
         Parameters
         ----------
-        inputs: MutableMapping[Any, tf.Tensor])
+        inputs: MutableMapping[Hashable, tf.Tensor])
             inputs MutableMapping of tf.Tensor contains self.key
 
         Returns
         -------
-        MutableMapping[Any, tf.Tensor]
+        MutableMapping[Hashable, tf.Tensor]
             processed MutableMapping of tf.Tensor
         """
         is_sparse = False
-        tensor = inputs.get(self.key)
-        if isinstance(tensor, tf.SparseTensor):
+        tensor = inputs[self.key]
+        if TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.to_dense(tensor)
             is_sparse = True
         tensor = tf.where(tensor >= self.threshold, tf.ones_like(tensor), tensor)
         tensor = tf.where(tensor < self.threshold, tf.zeros_like(tensor), tensor)
+
         if is_sparse:
             tensor = tf.sparse.from_dense(tensor)
 

@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,6 +15,26 @@ class TensorUtils:
     Class containing multiple utility functions for tf.Tensor.
 
     """
+
+    @staticmethod
+    def is_sparse_tensor(input: Any) -> bool:
+        """Check if an input is a sparse tensor.
+
+        Parameters
+        ----------
+        input : Any
+            the input variable
+
+        Returns
+        -------
+        bool
+            if the input is a sparse tensor
+        """
+        if isinstance(input, tf.SparseTensor):
+            return True
+        if isinstance(input, tf.keras.KerasTensor) and input.sparse:
+            return True
+        return False
 
     @staticmethod
     def max_n_neurons(layers: Iterable[tf.keras.layers.Layer]) -> int:
@@ -64,20 +84,20 @@ class TensorUtils:
         for i, g in enumerate(gradients):
             if gradients[i] is None:
                 continue
-            gradients[i] = tf.where(tf.math.is_nan(g), tf.zeros_like(g), g)
-            gradients[i] = tf.where(
-                tf.math.is_inf(gradients[i]), tf.zeros_like(gradients[i]), gradients[i]
-            )
-            gradients[i] = tf.where(
-                gradients[i] > clip_value,
-                clip_value * tf.ones_like(gradients[i]),
-                gradients[i],
-            )
-            gradients[i] = tf.where(
-                gradients[i] < -1 * clip_value,
-                -1 * clip_value * tf.ones_like(gradients[i]),
-                gradients[i],
-            )
+            gradients[i] = tf.keras.layers.Lambda(
+                lambda x: tf.where(tf.math.is_nan(x), tf.zeros_like(x), x)
+            )(gradients[i])
+            gradients[i] = tf.keras.layers.Lambda(
+                lambda x: tf.where(tf.math.is_inf(x), tf.zeros_like(x), x)
+            )(gradients[i])
+            gradients[i] = tf.keras.layers.Lambda(
+                lambda x: tf.where(x > clip_value, clip_value * tf.ones_like(x), x)
+            )(gradients[i])
+            gradients[i] = tf.keras.layers.Lambda(
+                lambda x: tf.where(
+                    x < -1 * clip_value, -1 * clip_value * tf.ones_like(x), x
+                )
+            )(gradients[i])
 
         return gradients
 
@@ -205,7 +225,9 @@ class TensorUtils:
         if len(tensor_list) == 0:
             tensor_list.append(tf.zeros((n_obs, 1)))
 
-        return tf.concat(tensor_list, axis=1), encoder_dict
+        return tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=1))(
+            tensor_list
+        ), encoder_dict
 
     @staticmethod
     def create_one_hot_encoded_tensor(
@@ -280,4 +302,4 @@ class TensorUtils:
         # split_batch = [128, 128, 128, 128, 128, 128, 128, 104]
         split_batch = [batch_size] * (n_obs // batch_size) + [n_obs % batch_size]
 
-        return tf.split(x, split_batch)
+        return tf.keras.layers.Lambda(lambda x: tf.split(x, split_batch))(x)
