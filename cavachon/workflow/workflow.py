@@ -293,7 +293,9 @@ class Workflow:
         if self.config.model.save_weights:
             os.makedirs(self.config.io.checkpointdir, exist_ok=True)
             self.model.save_weights(
-                os.path.join(f"{self.config.io.checkpointdir}", self.model.name)
+                os.path.join(
+                    f"{self.config.io.checkpointdir}", self.model.name, ".weights.h5"
+                )
             )
 
         # change the training states to False
