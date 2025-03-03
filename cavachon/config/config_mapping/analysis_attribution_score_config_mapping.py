@@ -18,7 +18,7 @@ class AnalysisAttributionScoreConfigMapping(ConfigMapping):
         the outputs of which component to used.
 
     with_respect_to: str
-        compute integrated gradietn with respect to the latent
+        compute integrated gradient with respect to the latent
         representation of which component.
 
     """

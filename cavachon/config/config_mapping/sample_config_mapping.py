@@ -1,7 +1,7 @@
 from typing import Any, List, Mapping
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.modality_config_mapping import (
+from cavachon.config.config_mapping.modality_file_config_mapping import (
     ModalityFileConfigMapping,
 )
 

@@ -3,7 +3,7 @@ from typing import Any, Mapping
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class ModalityFileMatrixConfig(ConfigMapping):
+class ModalityFileMatrixConfigMapping(ConfigMapping):
     """ModalityFileMatrixConfigMapping
 
     Config mapping for modality matrix.
