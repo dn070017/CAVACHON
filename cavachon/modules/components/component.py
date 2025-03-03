@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.to_dense import ToDense
-from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameterizer import (
+from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameterizer_layer import (
     MixtureMultivariateNormalDiagParameterizerLayer,
 )
 from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
@@ -89,15 +89,15 @@ class Component(tf.keras.Model):
         inputs: Mapping[Any, tf.keras.Input]):
             inputs for building tf.keras.Model using Tensorflow
             functional API. By defaults, expect to have keys
-            `modality_name`/matrix, 'z_conditional' (if applicable),
+            `modality_name`_matrix, 'z_conditional' (if applicable),
             'z_hat_conditional' (if applicable) and
-            `modality_name`/libsize (if applicable).
+            `modality_name`_libsize (if applicable).
 
         outputs: Mapping[Any, tf.Tensor]
             outputs for building tf.keras.Model using Tensorflow
-            functional API. By defaults, the keys are `model_name`/z,
-            `model_name`/z_hat, `model_name`/z_parameters and
-            `modality_names`/x_parameters.
+            functional API. By defaults, the keys are `model_name`_z,
+            `model_name`_z_hat, `model_name`_z_parameters and
+            `modality_names`_x_parameters.
 
         modality_names: List[str]
             names of the modalities used in the component.
@@ -212,20 +212,20 @@ class Component(tf.keras.Model):
         inputs = dict()
 
         for modality_name in modality_names:
-            modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-            modality_batch_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+            modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
             inputs.setdefault(
                 modality_matrix_key,
                 tf.keras.Input(
                     shape=(n_vars.get(modality_name),),
-                    name=f"{modality_name}/{Constants.TENSOR_NAME_X}",
+                    name=f"{modality_name}_{Constants.TENSOR_NAME_X}",
                 ),
             )
             inputs.setdefault(
                 modality_batch_key,
                 tf.keras.Input(
                     shape=(n_vars_batch_effect.get(modality_name),),
-                    name=f"{modality_name}/{Constants.TENSOR_NAME_BATCH}",
+                    name=f"{modality_name}_{Constants.TENSOR_NAME_BATCH}",
                 ),
             )
 
@@ -366,7 +366,7 @@ class Component(tf.keras.Model):
                     n_layers=n_decoder_layers.get(
                         modality_name, default_n_decoder_layers
                     ),
-                    name=f"{name}/{modality_name}",
+                    name=f"{name}_{modality_name}",
                 ),
             )
 
@@ -603,7 +603,7 @@ class Component(tf.keras.Model):
             )
             x_parameters = decoders.get(modality_name)(decoder_inputs)
             outputs.setdefault(
-                f"{modality_name}/{Constants.MODEL_OUTPUTS_X_PARAMS}", x_parameters
+                f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}", x_parameters
             )
 
         return outputs
@@ -812,7 +812,7 @@ class Component(tf.keras.Model):
                 ),
             )
             for modality_name in self.modality_names:
-                nldl_name = f"{modality_name}/{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                 loss.setdefault(
                     nldl_name,
                     NegativeLogDataLikelihood(
@@ -834,10 +834,8 @@ class Component(tf.keras.Model):
         if "metrics" in kwargs:
             message = "".join(
                 (
-                    "Due to the incompatibility of the compiled_loss with Tensorflow 2.8.1 ",
-                    "(as the model requires outputs from multiple components to compute the ",
-                    "KLDivergence), The custom metrics provided to compile() in ",
-                    f"{self.__class__.__name__} will be ignored.",
+                    f"{self.__class__.__name__} directly uses the loss as evaluation metrics. ",
+                    "The custom metrics provided to compile() will be ignored.",
                 )
             )
             warnings.warn(message, RuntimeWarning)
@@ -875,21 +873,23 @@ class Component(tf.keras.Model):
 
             y_pred.setdefault(
                 kl_divergence_name,
-                tf.concat([results.get(z_key), results.get(z_params_key)], axis=-1),
+                tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                    [results.get(z_key), results.get(z_params_key)]
+                ),
             )
 
             for modality_name in self.modality_names:
                 negative_log_data_likelihood_name = (
-                    f"{modality_name}/{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                    f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                 )
-                modality_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
+                modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
                 data = ToDense(modality_key)(data)
                 y_true.setdefault(
                     negative_log_data_likelihood_name, data.get(modality_key)
                 )
                 y_pred.setdefault(
                     negative_log_data_likelihood_name,
-                    results.get(f"{modality_name}/{Constants.MODEL_OUTPUTS_X_PARAMS}"),
+                    results.get(f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"),
                 )
 
             loss = self.compiled_loss(y_true, y_pred)
@@ -897,8 +897,14 @@ class Component(tf.keras.Model):
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
             self.compiled_metrics.update_state(y_true, y_pred)
 
-        names = ["loss"] + [x.name for x in self.compiled_loss._losses]
-        return {name: m.result() for name, m in zip(names, self.metrics)}
+            loss_metrics = {"loss": loss}
+            for key in y_true:
+                loss_fn = self.loss.get(key)
+                if loss_fn:
+                    loss_value = loss_fn(y_true[key], y_pred[key])
+                    loss_metrics[key] = loss_value
+
+        return loss_metrics
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Overwrite __setattr__ function, so that every time setting
@@ -962,7 +968,7 @@ class Component(tf.keras.Model):
         Returns
         -------
         Mapping[str, tf.Tensor]
-            keys are `modality_name`/matrix, values are the
+            keys are `modality_name`_matrix, values are the
             corresponding tensors.
         """
         preprocessor_inputs = dict()
@@ -971,7 +977,7 @@ class Component(tf.keras.Model):
         preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT, None)
 
         for modality_name in modality_names:
-            modality_batch_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
             preprocessor_inputs.pop(modality_batch_key, None)
 
         return preprocessor_inputs
@@ -1050,13 +1056,15 @@ class Component(tf.keras.Model):
         """
 
         decoder_inputs = dict()
-        modality_batch_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+        modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
         decoder_inputs.setdefault(
             Constants.TENSOR_NAME_X,
-            tf.concat([z_hat, batch.get(modality_batch_key)], axis=-1),
+            tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                [z_hat, batch.get(modality_batch_key)]
+            ),
         )
         libsize_key = (
-            f"{modality_name}/{Constants.TENSOR_NAME_X}/{Constants.TENSOR_NAME_LIBSIZE}"
+            f"{modality_name}_{Constants.TENSOR_NAME_X}_{Constants.TENSOR_NAME_LIBSIZE}"
         )
         if libsize_key in preprocessor_outputs:
             decoder_inputs.setdefault(

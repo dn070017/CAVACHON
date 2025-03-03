@@ -6,7 +6,9 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from cavachon.config.config_mapping.component_config_mapping import ComponentConfigMapping
+from cavachon.config.config_mapping.component_config_mapping import (
+    ComponentConfigMapping,
+)
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
@@ -113,33 +115,35 @@ class Model(tf.keras.Model):
         -------
         Mapping[Any, tf.keras.Input]:
             inputs for building tf.keras.Model using Tensorflow
-            functional API, where keys are `modality_name`/matrix,
+            functional API, where keys are `modality_name`_matrix,
             values are the tf.keras.Input.
 
         """
         inputs = dict()
         for modality_name in modality_names:
-            modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-            modality_batch_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
+            modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
             inputs.setdefault(
                 modality_matrix_key,
                 tf.keras.Input(
                     shape=(n_vars.get(modality_name),),
-                    name=f"{modality_name}/{Constants.TENSOR_NAME_X}",
+                    name=f"{modality_name}_{Constants.TENSOR_NAME_X}",
                 ),
             )
             inputs.setdefault(
                 modality_batch_key,
                 tf.keras.Input(
                     shape=(n_vars_batch_effect.get(modality_name),),
-                    name=f"{modality_name}/{Constants.TENSOR_NAME_BATCH}",
+                    name=f"{modality_name}_{Constants.TENSOR_NAME_BATCH}",
                 ),
             )
 
         return inputs
 
     @classmethod
-    def setup_components(cls, component_configs: List[ComponentConfigMapping], **kwargs) -> Tuple:
+    def setup_components(
+        cls, component_configs: List[ComponentConfigMapping], **kwargs
+    ) -> Tuple:
         """Builder function for setting up components. Developers can
         overwrite this function to create custom Model.
 
@@ -175,10 +179,16 @@ class Model(tf.keras.Model):
         n_vars_batch_effect = dict()
         for component_config in component_configs:
             modality_names = modality_names.union(
-                set(component_config.get(Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES))
+                set(
+                    component_config.get(
+                        Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
+                    )
+                )
             )
             distributions.update(
-                component_config.get(Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES)
+                component_config.get(
+                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
+                )
             )
             n_vars.update(component_config.get(Constants.CONFIG_FIELD_COMPONENT_N_VARS))
             n_vars_batch_effect.update(component_config.get("n_vars_batch_effect"))
@@ -248,9 +258,11 @@ class Model(tf.keras.Model):
 
             results = component(component_inputs)
             for key, result in results.items():
-                outputs.setdefault(f"{component_name}/{key}", result)
+                outputs.setdefault(f"{component_name}_{key}", result)
 
-            z_conditional.setdefault(component_name, results.get(Constants.MODEL_OUTPUTS_Z))
+            z_conditional.setdefault(
+                component_name, results.get(Constants.MODEL_OUTPUTS_Z)
+            )
             z_hat_conditional.setdefault(
                 component_name, results.get(Constants.MODEL_OUTPUTS_Z_HAT)
             )
@@ -360,20 +372,20 @@ class Model(tf.keras.Model):
                     use_which_component.setdefault(modality_name, [])
                     use_which_component.get(modality_name).append(component_name)
                     save_x.setdefault(
-                        f"{component_name}/{modality_name}",
+                        f"{component_name}_{modality_name}",
                         component_config.get(field_save_x).get(modality_name),
                     )
                     save_z.setdefault(
-                        f"{component_name}/{modality_name}",
+                        f"{component_name}_{modality_name}",
                         component_config.get(field_save_z).get(modality_name),
                     )
                     save_z_hat.setdefault(
-                        f"{component_name}/{modality_name}",
+                        f"{component_name}_{modality_name}",
                         component_config.get(field_save_z).get(modality_name),
                     )
                     if predict_x:
                         outputs.setdefault(
-                            f"{component_name}/{modality_name}/x_parameters", list()
+                            f"{component_name}_{modality_name}/x_parameters", list()
                         )
 
             dataloader = DataLoader(x, batch_size=batch_size)
@@ -386,17 +398,19 @@ class Model(tf.keras.Model):
 
             for modality_name, component_names in use_which_component.items():
                 for component_name in component_names:
-                    if save_z.get(f"{component_name}/{modality_name}"):
+                    if save_z.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"z_{component_name}"] = outputs.get(
                             f"{component_name}/z"
                         )
-                    if save_z.get(f"{component_name}/{modality_name}"):
-                        x.mod[modality_name].obsm[f"z_hat_{component_name}"] = outputs.get(
-                            f"{component_name}/z_hat"
+                    if save_z.get(f"{component_name}_{modality_name}"):
+                        x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
+                            outputs.get(f"{component_name}/z_hat")
                         )
-                    if save_x.get(f"{component_name}/{modality_name}"):
-                        x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = outputs.get(
-                            f"{component_name}/{modality_name}/x_parameters"
+                    if save_x.get(f"{component_name}_{modality_name}"):
+                        x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
+                            outputs.get(
+                                f"{component_name}_{modality_name}/x_parameters"
+                            )
                         )
 
             return outputs
@@ -422,7 +436,9 @@ class Model(tf.keras.Model):
             loss = dict()
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
-                kl_divergence_name = f"{component_name}/{Constants.MODEL_LOSS_KL_POSTFIX}"
+                kl_divergence_name = (
+                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
+                )
                 loss.setdefault(
                     kl_divergence_name,
                     KLDivergence(
@@ -432,9 +448,7 @@ class Model(tf.keras.Model):
                 )
 
                 for modality_name in component_config.get("modality_names"):
-                    nldl_name = (
-                        f"{component_name}/{modality_name}/{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                    )
+                    nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     distribution_names = component_config.get(
                         Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
                     )
@@ -459,10 +473,8 @@ class Model(tf.keras.Model):
         if "metrics" in kwargs:
             message = "".join(
                 (
-                    "Due to the incompatibility of the compiled_loss with Tensorflow 2.8.1 ",
-                    "(as the model requires outputs from multiple components to compute the ",
-                    "KLDivergence), The custom metrics provided to compile() in ",
-                    f"{self.__class__.__name__} will be ignored.",
+                    f"{self.__class__.__name__} directly uses the loss as evaluation metrics. ",
+                    "The custom metrics provided to compile() will be ignored.",
                 )
             )
             warnings.warn(message, RuntimeWarning)
@@ -493,7 +505,9 @@ class Model(tf.keras.Model):
 
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
-                kl_divergence_name = f"{component_name}/{Constants.MODEL_LOSS_KL_POSTFIX}"
+                kl_divergence_name = (
+                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
+                )
                 component = self.components.get(component_name)
 
                 modality_names = component_config.get(
@@ -503,24 +517,24 @@ class Model(tf.keras.Model):
                     kl_divergence_name, component.z_prior_parameterizer(tf.ones((1, 1)))
                 )
 
-                z_key = f"{component_name}/{Constants.MODEL_OUTPUTS_Z}"
-                z_params_key = f"{component_name}/{Constants.MODEL_OUTPUTS_Z_PARAMS}"
+                z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
+                z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
 
                 y_pred.setdefault(
                     kl_divergence_name,
-                    tf.concat([results.get(z_key), results.get(z_params_key)], axis=-1),
+                    tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                        [results.get(z_key), results.get(z_params_key)]
+                    ),
                 )
                 for modality_name in modality_names:
-                    nldl_name = (
-                        f"{component_name}/{modality_name}/{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                    )
-                    modality_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
+                    nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                    modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
                     data = ToDense(modality_key)(data)
                     y_true.setdefault(nldl_name, data.get(modality_key))
                     y_pred.setdefault(
                         nldl_name,
                         results.get(
-                            f"{component_name}/{modality_name}/{Constants.MODEL_OUTPUTS_X_PARAMS}"
+                            f"{component_name}_{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
                         ),
                     )
 
@@ -528,10 +542,15 @@ class Model(tf.keras.Model):
             gradients = tape.gradient(loss, self.trainable_variables)
             gradients = TensorUtils.remove_nan_gradients(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-            self.compiled_metrics.update_state(y_true, y_pred)
 
-        names = ["loss"] + [x.name for x in self.compiled_loss._losses]
-        return {name: m.result() for name, m in zip(names, self.metrics)}
+            loss_metrics = {"loss": loss}
+            for key in y_true:
+                loss_fn = self.loss.get(key)
+                if loss_fn:
+                    loss_value = loss_fn(y_true[key], y_pred[key])
+                    loss_metrics[key] = loss_value
+
+        return loss_metrics
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Overwrite __setattr__ function, so that every time setting
@@ -699,27 +718,37 @@ class Model(tf.keras.Model):
         Returns
         -------
         Dict[str, tf.Tensors]
-            keys are the `{modality_name}/matrix`,
+            keys are the `{modality_name}_matrix`,
             `{modality_name}/batch_effect`, `z_conditional`,
             `z_hat_conditional`, values are the corresponding Tensors.
 
         """
         component_inputs = dict()
         for modality_name in components.get(target_component).modality_names:
-            modality_matrix_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-            modality_batch_key = f"{modality_name}/{Constants.TENSOR_NAME_BATCH}"
-            component_inputs.setdefault(modality_matrix_key, batch.get(modality_matrix_key))
-            component_inputs.setdefault(modality_batch_key, batch.get(modality_batch_key))
+            modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
+            component_inputs.setdefault(
+                modality_matrix_key, batch.get(modality_matrix_key)
+            )
+            component_inputs.setdefault(
+                modality_batch_key, batch.get(modality_batch_key)
+            )
 
-        conditionals = Model.prepare_conditionals(False, z_conditional, z_hat_conditional)
+        conditionals = Model.prepare_conditionals(
+            False, z_conditional, z_hat_conditional
+        )
 
         for input_key, config_key, tensor_dict in conditionals:
-            conditional_tensor = []
+            conditional_tensors = []
             conditional_component_names = component_config.get(config_key, [])
             if len(conditional_component_names) != 0:
                 for conditional_component_name in conditional_component_names:
-                    conditional_tensor.append(tensor_dict.get(conditional_component_name))
-                conditional_tensor = tf.concat(conditional_tensor, axis=-1)
-                component_inputs.setdefault(input_key, conditional_tensor)
+                    conditional_tensors.append(
+                        tensor_dict.get(conditional_component_name)
+                    )
+                conditional_tensors = tf.keras.layers.Lambda(
+                    lambda x: tf.concat(x, axis=-1)
+                )(conditional_tensors)
+                component_inputs.setdefault(input_key, conditional_tensors)
 
         return component_inputs
