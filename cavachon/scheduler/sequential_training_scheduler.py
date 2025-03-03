@@ -192,7 +192,7 @@ class SequentialTrainingScheduler:
                         initial_iteration=0.0,
                     )
                 )
-                print("Progress", loss_weights)
+
                 if max_n_progressive_epochs != 0:
                     run_name = f"Training/{component_order}/Progressive/{'/'.join(train_components)}"
                     mlflow.start_run(
@@ -231,7 +231,7 @@ class SequentialTrainingScheduler:
                     initial_iteration=None,
                 )
             )
-            print("None", loss_weights)
+
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
                 learning_rate=learning_rate
             )
@@ -291,7 +291,7 @@ class SequentialTrainingScheduler:
             if component_name in train_components:
                 component.trainable = True
                 weight_scale = 1.0
-                print(component_name, True)
+
                 n_progressive_epochs = float(
                     component_config.get(
                         Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
@@ -311,7 +311,6 @@ class SequentialTrainingScheduler:
                     total_iterations=progressive_iterations,
                 )
             else:
-                print(component_name, False)
                 component.trainable = False
                 weight_scale = 0.0
                 component.set_progressive_scaler_iteration(
