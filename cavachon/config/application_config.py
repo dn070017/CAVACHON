@@ -333,8 +333,8 @@ class ApplicationConfig:
             component_name = component_config.get("name")
 
             # Setup modality names and decoder for the component
-            for modality_config in component_config.get(
-                Constants.CONFIG_FIELD_MODALITY
+            for j, modality_config in enumerate(
+                component_config.get(Constants.CONFIG_FIELD_MODALITY)
             ):
                 self.are_all_fields_in_mapping(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITIES_REQUIRED,
@@ -344,6 +344,9 @@ class ApplicationConfig:
                 )
                 modality_name = modality_config.get("name")
                 modality_name = GeneralUtils.tensorflow_compatible_str(modality_name)
+                component_config[Constants.CONFIG_FIELD_MODALITY][j]["name"] = (
+                    modality_name
+                )
                 if modality_name not in self.modality:
                     message = f"'{modality_name}' is not in the config of modality."
                     raise KeyError(message)
@@ -387,10 +390,14 @@ class ApplicationConfig:
         self.analysis = AnalysisConfigMapping(
             **self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS)
         )
-        for modality, component in chain(
-            self.analysis.clustering.items(),
-            self.analysis.differential_analysis.items(),
+
+        for specific_analysis_config in chain(
+            self.analysis.clustering,
+            self.analysis.differential_analysis,
+            self.analysis.conditional_attribution_scores,
         ):
+            modality = specific_analysis_config.modality
+            component = specific_analysis_config.component
             has_component = False
             has_modality = False
             for component_config in self.components:
@@ -419,8 +426,9 @@ class ApplicationConfig:
             is_wrt_in_component = False
             has_modality = False
             for component_config in self.components:
-                if with_respect_to == component_config.name:
-                    is_wrt_in_component = True
+                for wrt in with_respect_to:
+                    if wrt == component_config.name:
+                        is_wrt_in_component = True
                 if component == component_config.name:
                     is_modality_in_component = True
                     for modality_in_component in component_config.modality_names:

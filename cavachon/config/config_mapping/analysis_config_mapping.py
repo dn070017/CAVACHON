@@ -1,11 +1,12 @@
-from collections import defaultdict
 from typing import Any, List, Mapping
 
 from cavachon.config.config_mapping.analysis_attribution_score_config_mapping import (
     AnalysisAttributionScoreConfigMapping,
 )
+from cavachon.config.config_mapping.analysis_generic_config_mapping import (
+    AnalysisGenericConfigMapping,
+)
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.utils.general_utils import GeneralUtils
 
 
 class AnalysisConfigMapping(ConfigMapping):
@@ -81,19 +82,11 @@ class AnalysisConfigMapping(ConfigMapping):
             ],
         )
 
-        self.clustering = defaultdict(list)
-        for x in kwargs["clustering"]:
-            modality = GeneralUtils.tensorflow_compatible_str(x["modality"])
-            self.clustering[modality].append(
-                GeneralUtils.tensorflow_compatible_str(x["component"])
-            )
+        self.clustering = [AnalysisGenericConfigMapping(**x) for x in self.clustering]
 
-        self.differential_analysis = {
-            GeneralUtils.tensorflow_compatible_str(
-                x["modality"]
-            ): GeneralUtils.tensorflow_compatible_str(x["component"])
-            for x in kwargs["clustering"]
-        }
+        self.differential_analysis = [
+            AnalysisGenericConfigMapping(**x) for x in self.differential_analysis
+        ]
 
         self.conditional_attribution_scores = [
             AnalysisAttributionScoreConfigMapping(**x)
