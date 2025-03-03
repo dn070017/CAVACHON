@@ -38,8 +38,8 @@ class Preprocessor(tf.keras.Model):
         ---------
         inputs: Mapping[Any, tf.keras.Input]):
             inputs for building tf.keras.Model using Tensorflow
-            functional API. Expect to have key `modality_name`/matrix
-            by defaults, and optionally expect `modality_name`/libsize
+            functional API. Expect to have key `modality_name`_matrix
+            by defaults, and optionally expect `modality_name`_libsize
             for modality that needs to be scaling by library size.
 
         outputs: Mapping[Any, tf.Tensor]):
@@ -104,15 +104,15 @@ class Preprocessor(tf.keras.Model):
 
         for modality_name in modality_names:
             distribution_name = distribution_names.get(modality_name)
-            modality_key = f"{modality_name}/{Constants.TENSOR_NAME_X}"
-            libsize_key = f"{modality_name}/{Constants.TENSOR_NAME_X}/{Constants.TENSOR_NAME_LIBSIZE}"
+            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            libsize_key = f"{modality_name}_{Constants.TENSOR_NAME_X}_{Constants.TENSOR_NAME_LIBSIZE}"
             modality_input = tf.keras.Input(
                 shape=(n_vars.get(modality_name),), name=modality_name
             )
             inputs.setdefault(modality_key, modality_input)
 
             modifiers_class = ReflectionHandler.get_class_by_name(
-                distribution_name, "modules/preprocessors/modifiers"
+                distribution_name, "modules/preprocessors/modifiers", "Modifier"
             )
             modifiers = modifiers_class(modality_name=modality_name)
             modifiers_outputs = modifiers(inputs)
@@ -121,14 +121,17 @@ class Preprocessor(tf.keras.Model):
                 outputs.setdefault(libsize_key, modifiers_outputs.get(libsize_key))
 
             transform_layer = tf.keras.Sequential(
-                [tf.keras.layers.Dense(n_dims)], name=f"{name}/{modality_name}"
+                [tf.keras.layers.Dense(n_dims)], name=f"{name}_{modality_name}"
             )
             processed_matrix.append(
                 transform_layer(modifiers_outputs.get(modality_key))
             )
 
         matrix_key = Constants.TENSOR_NAME_X
-        outputs.setdefault(matrix_key, tf.concat(processed_matrix, axis=-1))
+        outputs.setdefault(
+            matrix_key,
+            tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(processed_matrix),
+        )
 
         return cls(inputs=inputs, outputs=outputs, name=name, matrix_key=matrix_key)
 

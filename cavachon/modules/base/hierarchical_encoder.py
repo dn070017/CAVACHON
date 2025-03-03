@@ -106,7 +106,7 @@ class HierarchicalEncoder(tf.keras.Model):
                 )
 
         concat_inputs.append(z_hat)
-        z_hat = tf.concat(concat_inputs, axis=-1)
+        z_hat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(concat_inputs)
         z_hat = self.b_network(z_hat)
 
         return z_hat

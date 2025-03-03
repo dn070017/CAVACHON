@@ -69,7 +69,9 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
 
     def compute_attribution_target(self, inputs: tf.Tensor):
         outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
-        probs, means, dispersion = tf.split(outputs, 3, axis=-1)
+        probs, means, dispersion = tf.keras.layers.Lambda(
+            lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
+        )(outputs)
         probs = tf.keras.activations.sigmoid(probs)
         return means
 
@@ -111,17 +113,26 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
             functional API.
 
         """
-
-        logits, mean, dispersion = tf.split(outputs, 3, axis=-1)
+        logits, mean, dispersion = tf.keras.layers.Lambda(
+            lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
+        )(outputs)
         if libsize_scaling:
             mean *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
         if exp_transform:
-            mean = tf.where(mean > 7.0, 7.0 * tf.ones_like(mean), mean)
-            mean = tf.math.exp(mean) - 1.0
+            mean = tf.keras.layers.Lambda(
+                lambda x: tf.where(x > 7.0, 7 * tf.ones_like(x), x),
+                output_shape=(mean.shape[-1],),
+            )(mean)
+            mean = tf.keras.layers.Lambda(lambda x: tf.math.exp(x) - 1)(mean)
 
-        mean = tf.where(mean <= 0, 1e-7 * tf.ones_like(mean), mean)
+        mean = tf.keras.layers.Lambda(
+            lambda x: tf.where(x <= 0, 1e-7 * tf.ones_like(x), x),
+            output_shape=(mean.shape[-1],),
+        )(mean)
 
-        return tf.concat([logits, mean, dispersion], axis=-1)
+        return tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+            [logits, mean, dispersion]
+        )
 
     @classmethod
     def make(
