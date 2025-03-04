@@ -3,6 +3,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Union
 import muon as mu
 import numpy as np
 import tensorflow as tf
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
 from cavachon.dataloader.dataloader import DataLoader
@@ -29,6 +30,12 @@ class AttributionAnalysis:
     model: tf.keras.Model
         the trained generative model.
 
+    batch_effect_colnames: Dict[str, List[str]], optional the batch
+        effect columns for each modality. Defaults to None.
+
+    distribution_names: Dict[str, str], optional
+        the distribution names for each modality. Defaults to None.
+
     """
 
     def __init__(
@@ -37,6 +44,7 @@ class AttributionAnalysis:
         model: tf.keras.Model,
         batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
         distribution_names: Optional[Dict[str, str]] = None,
+        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]] = dict(),
     ):
         """Constructor for ContributionAnalysis.
 
@@ -59,7 +67,11 @@ class AttributionAnalysis:
         self.mdata = mdata
         self.model = model
         self.dataloader = DataLoader(
-            self.mdata, 1, batch_effect_colnames, distribution_names
+            self.mdata,
+            1,
+            batch_effect_colnames,
+            distribution_names,
+            batch_effect_encoders,
         )
 
     def compute_delta_x(
