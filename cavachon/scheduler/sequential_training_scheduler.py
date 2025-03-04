@@ -199,7 +199,7 @@ class SequentialTrainingScheduler:
                         experiment_id=experiment.experiment_id, run_name=run_name
                     )
                     mlflow.tensorflow.autolog(
-                        every_n_iter=1,
+                        log_every_n_steps=1,
                         log_models=False,
                         registered_model_name=f"Model/{run_name}",
                     )
@@ -220,7 +220,7 @@ class SequentialTrainingScheduler:
             run_name = f"Training/{component_order}/{'/'.join(train_components)}"
             mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
-                every_n_iter=5,
+                log_every_n_steps=5,
                 log_models=False,
                 registered_model_name=f"Model/{run_name}",
             )
