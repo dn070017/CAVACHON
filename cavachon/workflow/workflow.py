@@ -96,6 +96,11 @@ class Workflow:
 
         self.perform_clustering_analysis()
         self.visualize_embedding()
+
+        outdir = os.path.join(self.config.io.outdir, "mdata")
+        os.makedirs(outdir, exist_ok=True)
+        self.mdata.to_h5ad(f"{outdir}/mdata.h5mu")
+
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
 
@@ -256,7 +261,9 @@ class Workflow:
         """Load the pretrained model weights"""
         try:
             self.model.load_weights(
-                os.path.join(f"{self.config.io.checkpointdir}", self.model.name)
+                os.path.join(
+                    f"{self.config.io.checkpointdir}", f"{self.model.name}.weights.h5"
+                )
             )
         except OSError:
             message = "".join(
@@ -294,7 +301,7 @@ class Workflow:
             os.makedirs(self.config.io.checkpointdir, exist_ok=True)
             self.model.save_weights(
                 os.path.join(
-                    f"{self.config.io.checkpointdir}", self.model.name, ".weights.h5"
+                    f"{self.config.io.checkpointdir}", f"{self.model.name}.weights.h5"
                 )
             )
 
@@ -325,15 +332,16 @@ class Workflow:
             Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
         )
         analysis = ClusterAnalysis(self.mdata, self.model)
-        for modality, components in self.config.analysis.clustering.items():
-            for component in components:
-                analysis.compute_cluster_log_probability(
-                    modality=modality,
-                    component=component,
-                    batch_size=batch_size,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
-                )
+        for clustering_config in self.config.analysis.clustering:
+            component = clustering_config.component
+            modality = clustering_config.modality
+            analysis.compute_cluster_log_probability(
+                modality=modality,
+                component=component,
+                batch_size=batch_size,
+                batch_effect_colnames=self.batch_effect_colnames,
+                distribution_names=self.distribution_names,
+            )
 
         return
 
@@ -347,9 +355,9 @@ class Workflow:
         for embedding_method in embedding_methods:
             for modality_name in self.mdata.mod.keys():
                 colors = deepcopy(self.config.analysis.annotation_colnames)
-                colors.append(
-                    f"cluster_{self.config.analysis.clustering.get(modality_name)}"
-                )
+                for cluster_config in self.config.analysis.clustering:
+                    if cluster_config.modality == modality_name:
+                        colors.append(f"cluster_{cluster_config.component}")
                 for color in colors:
                     adata = self.mdata[modality_name]
                     for latent_representation in adata.obsm.keys():
@@ -414,14 +422,13 @@ class Workflow:
         targets = list()
         outdir = os.path.join(self.config.io.outdir, "differential_analysis")
         os.makedirs(outdir, exist_ok=True)
-        for (
-            modality_name,
-            component,
-        ) in self.config.analysis.differential_analysis.items():
+        for analysis_config in self.config.analysis.differential_analysis:
             colors = deepcopy(self.config.analysis.annotation_colnames)
             # colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
             for color in colors:
-                targets.append((modality_name, component, color))
+                targets.append(
+                    (analysis_config.modality, analysis_config.component, color)
+                )
 
         analysis = DifferentialAnalysis(
             self.mdata,
