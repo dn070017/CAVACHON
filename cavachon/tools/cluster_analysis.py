@@ -105,7 +105,7 @@ class ClusterAnalysis:
         )
         for batch_data in tqdm(dataloader):
             outputs = self.model(batch_data, training=False)
-            z = outputs[f"{component}/z"]
+            z = outputs[f"{component}_z"]
             logpz_y = dist_z_y.log_prob(tf.expand_dims(z, -2))
             logpz = tf.expand_dims(dist_z.log_prob(z), -1)
             logpy_z.append(logpy + logpz_y - logpz)

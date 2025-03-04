@@ -1028,7 +1028,7 @@ class Component(tf.keras.Model):
         preprocessor_outputs: Mapping[str, tf.Tensor] = dict(),
     ) -> Mapping[str, tf.Tensor]:
         """Prepare inputs for decoder of `modality_name`. The function
-        concatenates z_hat and `modality_name`/batch_effect into
+        concatenates z_hat and `modality_name`_batch_effect into
         'matrix', and combined with 'libsize' (if applicable) into a
         dictionary as the inputs for decoder.
 
@@ -1050,7 +1050,7 @@ class Component(tf.keras.Model):
         -------
         Mapping[str, tf.Tensor]
             keys are 'matrix' and 'libsize', values are the
-            concatenation of z_hat and `modality_name`/batch_effect,
+            concatenation of z_hat and `modality_name`_batch_effect,
             and library size tensor.
 
         """

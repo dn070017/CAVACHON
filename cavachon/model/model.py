@@ -358,8 +358,8 @@ class Model(tf.keras.Model):
             save_z_hat = dict()
             for component_config in self.component_configs:
                 component_name = component_config.name
-                outputs.setdefault(f"{component_name}/z", list())
-                outputs.setdefault(f"{component_name}/z_hat", list())
+                outputs.setdefault(f"{component_name}_z", list())
+                outputs.setdefault(f"{component_name}_z_hat", list())
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_N_VARS
                 ).keys()
@@ -385,7 +385,7 @@ class Model(tf.keras.Model):
                     )
                     if predict_x:
                         outputs.setdefault(
-                            f"{component_name}_{modality_name}/x_parameters", list()
+                            f"{component_name}_{modality_name}_x_parameters", list()
                         )
 
             dataloader = DataLoader(x, batch_size=batch_size)
@@ -400,16 +400,16 @@ class Model(tf.keras.Model):
                 for component_name in component_names:
                     if save_z.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"z_{component_name}"] = outputs.get(
-                            f"{component_name}/z"
+                            f"{component_name}_z"
                         )
                     if save_z.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
-                            outputs.get(f"{component_name}/z_hat")
+                            outputs.get(f"{component_name}_z_hat")
                         )
                     if save_x.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
                             outputs.get(
-                                f"{component_name}_{modality_name}/x_parameters"
+                                f"{component_name}_{modality_name}_x_parameters"
                             )
                         )
 
@@ -719,7 +719,7 @@ class Model(tf.keras.Model):
         -------
         Dict[str, tf.Tensors]
             keys are the `{modality_name}_matrix`,
-            `{modality_name}/batch_effect`, `z_conditional`,
+            `{modality_name}_batch_effect`, `z_conditional`,
             `z_hat_conditional`, values are the corresponding Tensors.
 
         """

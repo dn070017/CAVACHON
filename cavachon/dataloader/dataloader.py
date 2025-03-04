@@ -112,8 +112,8 @@ class DataLoader:
         -------
         tf.data.Dataset:
             created Dataset. The field of the dataset includes:
-            1. `modality`/'matrix': (tf.SparseTensor)
-            2. `modality`/'batch_effect': (tf.Tensor)
+            1. `modality`_'matrix': (tf.SparseTensor)
+            2. `modality`_'batch_effect': (tf.Tensor)
         """
         tensor_mapping = dict()
         modality_names = self.mdata.mod.keys()
