@@ -124,9 +124,7 @@ class DataLoader:
                 modality_name=modality_name, batch_effect_colnames=batch_effect_colnames
             )
 
-            tensor_mapping.setdefault(
-                f"{modality_name}_{Constants.TENSOR_NAME_X}", data_tensor
-            )
+            tensor_mapping.setdefault(f"{modality_name}_{Constants.TENSOR_NAME_X}", data_tensor)
             tensor_mapping.setdefault(
                 f"{modality_name}_{Constants.TENSOR_NAME_BATCH}", batch_effect_tensor
             )
@@ -166,18 +164,13 @@ class DataLoader:
         # batch_effect_colnames is not in adata.uns['cavachon'], assumes
         # there is no batch effect.
         batch_effect_colnames_modality = batch_effect_colnames.get(modality_name, None)
-        if batch_effect_colnames_modality is None and issubclass(
-            type(adata.uns), Mapping
-        ):
+        if batch_effect_colnames_modality is None and issubclass(type(adata.uns), Mapping):
             adata_config = adata.uns.get("cavachon", {})
             batch_effect_colnames_modality = adata_config.get(
                 Constants.CONFIG_FIELD_MODALITY_BATCH_COLNAMES, None
             )
 
-        if (
-            batch_effect_colnames_modality is None
-            or len(batch_effect_colnames_modality) == 0
-        ):
+        if batch_effect_colnames_modality is None or len(batch_effect_colnames_modality) == 0:
             # if batch_effect colname is not specified for the current
             # modality, use zero matrix as batch effect
             batch_effect_tensor = tf.zeros((adata.n_obs, 1))
