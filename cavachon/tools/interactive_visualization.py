@@ -61,8 +61,8 @@ class InteractiveVisualization:
             fig = go.Figure()
             for subset in unique_groups:
                 data_subset = data.loc[data[group] == subset]
-                means = data_subset.groupby(x).mean()[y]
-                sem = data_subset.groupby(x).sem()[y]
+                means = data_subset.groupby(x)[y].mean()
+                sem = data_subset.groupby(x)[y].sem()
                 if color_discrete_map.get(subset, None):
                     fig.add_trace(
                         go.Bar(
@@ -88,8 +88,8 @@ class InteractiveVisualization:
                     )
             fig.update_layout(barmode="group", **kwargs)
         else:
-            means = data.groupby(x).mean()[y]
-            sem = data.groupby(x).sem()[y]
+            means = data.groupby(x)[y].mean()
+            sem = data.groupby(x)[y].sem()
             fig = go.Figure()
             fig.add_trace(
                 go.Bar(
