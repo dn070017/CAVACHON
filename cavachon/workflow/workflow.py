@@ -89,6 +89,7 @@ class Workflow:
 
         self.setup_train_scheduler()
         if self.config.model.load_weights:
+            self.predict()
             self.load_model_weights()
         if self.config.training.train:
             self.train_model()
@@ -99,7 +100,7 @@ class Workflow:
 
         outdir = os.path.join(self.config.io.outdir, "mdata")
         os.makedirs(outdir, exist_ok=True)
-        self.mdata.to_h5ad(f"{outdir}/mdata.h5mu")
+        self.mdata.write(f"{outdir}/mdata.h5mu")
 
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
