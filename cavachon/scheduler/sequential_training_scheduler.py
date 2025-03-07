@@ -200,7 +200,10 @@ class SequentialTrainingScheduler:
                     )
                     mlflow.tensorflow.autolog(
                         log_every_n_steps=1,
+                        log_every_epoch=False,
                         log_models=False,
+                        checkpoint=False,
+                        checkpoint_save_best_only=False,
                         registered_model_name=f"Model/{run_name}",
                     )
                     optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
@@ -220,8 +223,10 @@ class SequentialTrainingScheduler:
             run_name = f"Training/{component_order}/{'/'.join(train_components)}"
             mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
-                log_every_n_steps=5,
+                log_every_epoch=True,
                 log_models=False,
+                checkpoint=False,
+                checkpoint_save_best_only=False,
                 registered_model_name=f"Model/{run_name}",
             )
             loss_weights, max_n_progressive_epochs = (

@@ -538,7 +538,7 @@ class Model(tf.keras.Model):
                         ),
                     )
 
-            loss = self.compiled_loss(y_true, y_pred)
+            loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             gradients = tape.gradient(loss, self.trainable_variables)
             gradients = TensorUtils.remove_nan_gradients(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
