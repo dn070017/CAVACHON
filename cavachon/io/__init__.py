@@ -1,1 +1,1 @@
-from .FileReader import FileReader
+from .file_reader import FileReader as FileReader

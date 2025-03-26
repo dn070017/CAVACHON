@@ -1,1 +1,1 @@
-from .Config import Config
+from .application_config import ApplicationConfig as ApplicationConfig

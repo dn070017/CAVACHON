@@ -3,14 +3,31 @@
 **C**ell cluster **A**nalysis with **V**ariational **A**utoencoder using **C**onditional **H**ierarchy **Of** latent representio**N** is the Tensorflow implementation of the research "[_Using hierarchical variational autoencoders to incorporate conditional independent priors for paired single-cell multi-omics data integration_ (NeurIPS LMRL Workshop 2022)](https://drive.google.com/file/d/1-WLQ3fQtIffnC2_b64iEw_6to4bcJrfi/view?usp=sharing)" by PH Hsieh, RX Hsiao, T Belova, KT Ferenc, A Mathelier, R Burkholz, CY Chen, GK Sandve, ML Kuijjer.
 
 ## Installation
-```batch
-# for developers
-pip install -r requirements.txt
- 
-# for users
-pip install -e .
+### For developers
+```bash
+conda create -n cavachon
+conda activate cavachon
+conda config --env --add channels conda-forge
+conda install python=3.11 cudnn=8.9 cuda-toolkit=12.5 poetry>=2.0 
+poetry config virtualenvs.create false
+poetry install
 ```
-
+### Check if GPU is used
+```bash
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+```
+If the GPU can be detected, it shows message similar to:
+```python
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+```
+### Fix the dependency if the GPU cannot be detected.
+```bash
+pushd $(dirname $(python -c 'print(__import__("tensorflow").__file__)'))
+ln -svf ../nvidia/*/lib/*.so* .
+popd
+export ENV_ROOT=$(conda info --envs | grep -Po 'cavachon\K.*' | sed 's:[ *]::g')
+ln -sf $ENV_ROOT/lib/python3.11/site-packages/nvidia/cuda_nvcc/bin/ptxas $ENV_ROOT/bin/ptxas
+```
 ## Perform Analysis
 ### Input Preparation
 Please refer to [config template](./sample_data/config_templates/README.md) for detail specification. 

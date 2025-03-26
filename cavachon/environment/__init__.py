@@ -1,2 +1,2 @@
-from .Constants import Constants
-from .Settings import Settings
+from .constants import Constants as Constants
+from .settings import Settings as Settings

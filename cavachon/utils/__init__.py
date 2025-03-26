@@ -1,4 +1,4 @@
-from .AnnDataUtils import AnnDataUtils
-from .DataFrameUtils import DataFrameUtils
-from .ReflectionHandler import ReflectionHandler
-from .TensorUtils import TensorUtils
+from .anndata_utils import AnnDataUtils as AnnDataUtils
+from .dataframe_utils import DataFrameUtils as DataFrameUtils
+from .reflection_handler import ReflectionHandler as ReflectionHandler
+from .tensor_utils import TensorUtils as TensorUtils

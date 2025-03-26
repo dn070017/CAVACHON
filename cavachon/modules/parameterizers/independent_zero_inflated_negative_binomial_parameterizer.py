@@ -1,0 +1,182 @@
+from typing import Mapping
+
+import tensorflow as tf
+
+from cavachon.environment.constants import Constants
+from cavachon.modules.parameterizers.parameterizer import Parameterizer
+
+
+class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
+    """IndependentZeroInflatedNegativeBinomialParameterizer
+
+    Parameterizer for IndependentZeroInflatedNegativeBinomial. By
+    defaults, the call() function expects a Mapping of tf.Tensor with
+    'input' and 'libsize'. The call() function generate one single
+    tf.Tensor which can be considered as the logits, mean and
+    dispersion for IndependentZeroInflatedNegativeBinomial
+    distribution, and:
+    1.  outputs[..., 0:p] will be used as the logits.
+    2.  outputs[..., p:2*p] will be used as the mean.
+    3.  outputs[..., 2*p:3*p] will be used as the dispersion.
+
+    Attributes
+    ----------
+    default_libsize_scaling: bool
+        class attributes, whether to scale by libsize by default (this
+        is used when building tf.keras.Model to understand if the
+        module requires multiple inputs.)
+
+    libsize_scaling: bool
+        whether to perform scaling by libsize.
+
+    exp_transform: bool
+        whether to perform exponential transformation. This will be
+        performed after scaling by libsize by default.
+
+    See Also
+    --------
+    distributions.IndependentZeroInflatedNegativeBinomialDistribution
+        the compatible distribution.
+
+    layers.parameterizer.IndependentZeroInflatedNegativeBinomialParameterizer
+        the parameterizer layer.
+
+    modules.parameterizer.Parameterizer
+        the parent class.
+
+    """
+
+    default_libsize_scaling = True
+
+    def __init__(self, *args, **kwargs):
+        """Constructor for
+        IndependentZeroInflatedNegativeBinomialParameterizer. Should
+        not be called directly most of the time. Please use make() to
+        create the model.
+
+        Parameters
+        ----------
+        args: Any
+            parameters used to initialize
+            IndependentZeroInflatedNegativeBinomial.
+
+        kwargs: Mapping[str, Any]
+            parameters used to initialize
+            IndependentZeroInflatedNegativeBinomial.
+
+        """
+        super().__init__(*args, **kwargs)
+
+    def compute_attribution_target(self, inputs: tf.Tensor):
+        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+        probs, means, dispersion = tf.keras.layers.Lambda(
+            lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
+        )(outputs)
+        probs = tf.keras.activations.sigmoid(probs)
+        return means
+
+    @classmethod
+    def modify_outputs(
+        cls,
+        inputs: Mapping[str, tf.keras.Input],
+        outputs: tf.Tensor,
+        libsize_scaling: bool = True,
+        exp_transform: bool = True,
+        **kwargs,
+    ) -> tf.Tensor:
+        """Postprocess the parameters created by
+        layers.IndependentZeroInflatedNegativeBinomial. In particular,
+        it allows libsize scaling and exponential transform. In
+        addition, it checks if the parameters are valid.
+
+        Parameters
+        ----------
+        input_dims: int
+            input tf.Tensor dimension
+
+        libsize_scaling: bool, optional
+            whether to perform scaling by libsize. Defaults to True.
+
+        exp_transform: bool, optional
+            whether to perform exponential transformation. This will be
+            performed after scaling by libsize by default. Defaults to
+            True.
+
+        kwargs: Mapping[str, Any]
+            additional parameters to modify the outputs, used for
+            custom modify_outputs() function.
+
+        Returns
+        -------
+        Mapping[str, tf.keras.Input]:
+            Inputs for building tf.keras.Model using Tensorflow
+            functional API.
+
+        """
+        logits, mean, dispersion = tf.keras.layers.Lambda(
+            lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
+        )(outputs)
+        if libsize_scaling:
+            mean *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
+        if exp_transform:
+            mean = tf.keras.layers.Lambda(
+                lambda x: tf.where(x > 7.0, 7 * tf.ones_like(x), x),
+                output_shape=(mean.shape[-1],),
+            )(mean)
+            mean = tf.keras.layers.Lambda(lambda x: tf.math.exp(x) - 1)(mean)
+
+        mean = tf.keras.layers.Lambda(
+            lambda x: tf.where(x <= 0, 1e-7 * tf.ones_like(x), x),
+            output_shape=(mean.shape[-1],),
+        )(mean)
+
+        return tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+            [logits, mean, dispersion]
+        )
+
+    @classmethod
+    def make(
+        cls,
+        input_dims: int,
+        event_dims: int,
+        name: str = "independent_zero_inflated_negative_binomial",
+        libsize_scaling: bool = True,
+        exp_transform: bool = True,
+    ):
+        """Make the tf.keras.Model using the functional API of
+        Tensorflow.
+
+        Parameters
+        ----------
+        input_dims: int
+            input tf.Tensor dimension. By default, it should be the
+            last dimension of the outputs from previous layer.
+
+        event_dims: int
+            number of event dimensions for the outputs distribution.
+
+        name: str, optional
+            Name for the tensorflow model. Defaults to
+            'independent_zero_inflated_negative_binomial'.
+
+        libsize_scaling: bool, optional
+            whether to perform scaling by libsize. Defaults to False.
+
+        exp_transform: bool, optional
+            whether to perform exponential transformation. This will be
+            performed after scaling by libsize by default. Defaults to
+            False.
+
+        Returns
+        -------
+        tf.keras.Model
+            Created model using Tensorflow functional API.
+
+        """
+        return super().make(
+            input_dims=input_dims,
+            event_dims=event_dims,
+            name=name,
+            libsize_scaling=libsize_scaling,
+            exp_transform=exp_transform,
+        )

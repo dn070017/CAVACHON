@@ -1,2 +1,2 @@
-from .Modality import Modality
-from .MultiModality import MultiModality
+from .modality import Modality as Modality
+from .multi_modality import MultiModality as MultiModality
