@@ -7,10 +7,8 @@
 ```bash
 conda create -n cavachon
 conda activate cavachon
-conda create -n cavachon
-conda activate cavachon
 conda config --env --add channels conda-forge
-conda install python=3.11 cudnn=8.9.7 cuda-toolkit=12.5.1 "poetry>=2.0" 
+conda install python=3.11 cudnn=8.9 cuda-toolkit=12.5 poetry>=2.0 
 poetry config virtualenvs.create false
 poetry install
 ```
