@@ -32,7 +32,8 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
   * `io`: [Inputs and Outputs](#inputs-and-outputs).
   * `analysis`: [Analysis](#analysis)
     * `clustering`: list of [Clustering](#clustering)
-    * `conditional_attribution_scores`: list of [Conditional Attribution Scores]    (#conditional-attribution-scores)
+    * `visualize_embedding`: list of [Visualize Embedding](#visualize_embedding)
+    * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
     * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
@@ -76,6 +77,10 @@ The configs for analysis and visualization are specified under the field `analys
   * required: `False`.
   * type: `List[AnalysisClusteringConfig]`
   * description: the config for clustering. See [Clustering](#clustering) for more details.
+* `visualize_embedding`:
+  * required: `False`.
+  * type: `List[VisualizeEmbeddingConfig]`
+  * description: the config for embedding visualization. See [VisualizeEmbedding](#visualize-embedding) for more details.
 * `differential_analysis`:
   * required: `False`.
   * type: `List[AnalysisDifferentialAnalysisConfig]`
@@ -94,6 +99,7 @@ The configs for analysis and visualization are specified under the field `analys
   * required: `False`.
   * defaults: `[]`
   * type: the config for the attribution scores. See [Conditional Attribution Scores](#conditional-attribution-scores) for more details.
+
 ## Clustering
 The config for clustering.
 * `modality`:
@@ -105,6 +111,31 @@ The config for clustering.
   * type: `str`
   * description: the outputs of which component to used.
 
+[back to top](#config-hierarchy)
+&nbsp;
+
+## Visualize Embedding
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality to visualize.
+* `use_rep`:
+  * required: `True`
+  * type: `str`
+  * description: which representation of the modality to visualize.
+* `embedding_method`:
+  * required: `True`
+  * type: `str`
+  * description: method used to embed the representation of the modality. Should be one of `'pca'`, `'umap'` or `'tsne'`.
+* `color_by`
+  * required: `True`
+  * type: `str`
+  * description: color by which annotation column.
+* `interactive`
+  * required: `False`
+  * type: `bool`
+  * description:  whether or not to create interactive visualization. Defaults to False.
+  
 [back to top](#config-hierarchy)
 &nbsp;
 
@@ -133,8 +164,8 @@ The config for conditional attribution scores
   * description: the outputs of which component to used.
 * `with_respect_to`:
   * required: `True`
-  * type: `str`
-  * description: compute integrated gradietn with respect to the latent representation of which component.
+  * type: `list(str)`
+  * description: compute integrated gradient with respect to the latent representation of which component.
 
 [back to top](#config-hierarchy)
 &nbsp;

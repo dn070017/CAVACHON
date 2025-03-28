@@ -33,7 +33,6 @@ class Constants:
     )
 
     CONFIG_FIELD_ANALYSIS = "analysis"
-    CONFIG_FIELD_ANALYSIS_EMBEDDING_METHODS = "embedding_methods"
     CONFIG_FIELD_ANALYSIS_ANNOTATION_COLNAMES = "annotation_colnames"
 
     CONFIG_FIELD_IO = "io"

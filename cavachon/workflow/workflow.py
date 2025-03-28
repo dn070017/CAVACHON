@@ -350,42 +350,28 @@ class Workflow:
         """Create visualization of posterior distribution"""
         outdir = os.path.join(self.config.io.outdir, "embeddings")
         os.makedirs(outdir, exist_ok=True)
-        embedding_methods = self.config.analysis.embedding_methods
-
-        targets = list()
-        for embedding_method in embedding_methods:
-            for modality_name in self.mdata.mod.keys():
-                colors = deepcopy(self.config.analysis.annotation_colnames)
-                for cluster_config in self.config.analysis.clustering:
-                    if cluster_config.modality == modality_name:
-                        colors.append(f"cluster_{cluster_config.component}")
-                for color in colors:
-                    adata = self.mdata[modality_name]
-                    for latent_representation in adata.obsm.keys():
-                        if latent_representation.startswith("z_"):
-                            targets.append(
-                                (
-                                    embedding_method,
-                                    color,
-                                    modality_name,
-                                    latent_representation,
-                                )
-                            )
 
         # to void dictionary changed during iteration
-        for target in targets:
-            embedding_method, color, modality_name, latent_representation = target
+        for config in self.config.analysis.visualize_embedding:
+            embedding_method = config.embedding_method
+            color = config.color_by
+            modality_name = config.modality
+            use_rep = config.use_rep
+            interactive = config.interactive
             adata = self.mdata[modality_name]
-            title = f"{latent_representation} of {modality_name} colored with {color} {embedding_method}"
+            title = (
+                f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
+            )
+            extension = "html" if interactive else "png"
             InteractiveVisualization.embedding(
                 adata=adata,
                 title=title,
                 method=embedding_method,
-                use_rep=latent_representation,
+                use_rep=use_rep,
                 color=color,
                 width=800,
                 height=760,
-                filename=f"{outdir}/{title}.html".lower().replace(" ", "_"),
+                filename=f"{outdir}/{title}.{extension}".lower().replace(" ", "_"),
             )
 
     def visualize_knn(self, use_cluster, n_neighbors) -> None:
