@@ -3,12 +3,12 @@ import functools
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.modifiers.log_transform import LogTransform
-from cavachon.layers.modifiers.normalize_library_size import NormalizeLibrarySize
-from cavachon.layers.modifiers.to_dense import ToDense
+from cavachon.layers.modifiers.base.log_transform import LogTransform
+from cavachon.layers.modifiers.base.normalize_library_size import NormalizeLibrarySize
+from cavachon.layers.modifiers.base.to_dense import ToDense
 
 
-class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
+class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.layers.Layer):
     """IndependentZeroInflatedNegativeBinomialModifier
 
     Modifiers for the modality which is
@@ -57,7 +57,7 @@ class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
             NormalizeLibrarySize(self.modality_key),
         ]
 
-    def call(self, inputs, training=None, mask=None):
+    def call(self, inputs):
         """Processed the data created from tf.data.Dataset.
 
         Parameters
@@ -65,12 +65,6 @@ class IndependentZeroInflatedNegativeBinomialModifier(tf.keras.Model):
         inputs:
             mapping of tf.Tensor, where the keys contain
             self.modality_key.
-
-        training: bool, optional
-            not used (kept for tf.keras.Model API).
-
-        mask: tf.Tensor, optional
-            not used (kept for tf.keras.Model API).
 
         Returns
         -------

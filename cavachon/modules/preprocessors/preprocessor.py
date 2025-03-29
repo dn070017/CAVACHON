@@ -100,7 +100,6 @@ class Preprocessor(tf.keras.Model):
 
         inputs = dict()
         outputs = dict()
-        processed_matrix = list()
 
         for modality_name in modality_names:
             distribution_name = distribution_names.get(modality_name)
@@ -112,7 +111,7 @@ class Preprocessor(tf.keras.Model):
             inputs.setdefault(modality_key, modality_input)
 
             modifiers_class = ReflectionHandler.get_class_by_name(
-                distribution_name, "modules/preprocessors/modifiers", "Modifier"
+                distribution_name, "layers/modifiers/distributions_preset", "Modifier"
             )
             modifiers = modifiers_class(modality_name=modality_name)
             modifiers_outputs = modifiers(inputs)
@@ -123,15 +122,11 @@ class Preprocessor(tf.keras.Model):
             transform_layer = tf.keras.Sequential(
                 [tf.keras.layers.Dense(n_dims)], name=f"{name}_{modality_name}"
             )
-            processed_matrix.append(
-                transform_layer(modifiers_outputs.get(modality_key))
-            )
 
-        matrix_key = Constants.TENSOR_NAME_X
-        outputs.setdefault(
-            matrix_key,
-            tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(processed_matrix),
-        )
+            matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            outputs.setdefault(
+                matrix_key, transform_layer(modifiers_outputs.get(modality_key))
+            )
 
         return cls(inputs=inputs, outputs=outputs, name=name, matrix_key=matrix_key)
 
