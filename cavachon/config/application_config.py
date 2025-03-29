@@ -418,6 +418,20 @@ class ApplicationConfig:
                 message = f"'{component}' is not in the config of components."
                 raise KeyError(message)
 
+        for visualize_embedding_config in self.analysis.visualize_embedding:
+            modality = visualize_embedding_config.modality
+            has_modality = False
+            for component_config in self.components:
+                for modality_in_component in component_config.modality_names:
+                    if modality == modality_in_component:
+                        has_modality = True
+                        break
+            if not has_modality:
+                message = (
+                    f"'{modality}' is not in the config of component '{component}'."
+                )
+                raise KeyError(message)
+
         for attribution_config in self.analysis.conditional_attribution_scores:
             modality = attribution_config.modality
             component = attribution_config.component
