@@ -1,14 +1,14 @@
-import functools
-from typing import Any, Mapping
-
-import tensorflow as tf
-
 from cavachon.environment.constants import Constants
-from cavachon.layers.modifiers.to_dense import ToDense
+from cavachon.layers.modifiers.base.to_dense import ToDense
+from cavachon.layers.modifiers.distribution_preset_modifier import (
+    DistributionPresetModifier,
+)
 
 
-class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
-    """IndependentZeroInflatedNegativeBinomialDataModifier
+class IndependentZeroInflatedNegativeBinomialObservedDataModifier(
+    DistributionPresetModifier
+):
+    """IndependentZeroInflatedNegativeBinomialObservedDataModifier
 
     Modifiers for the modality which is
     IndependentZeroInflatedNegativeBinomial distribution. The instance
@@ -22,7 +22,7 @@ class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
 
     modality_key: str
         the key used to access the mapping of data created from
-        tf.data.Dataset. Defaults to `modality_name`_matrix.
+        tf.data.Dataset. Defaults to `modality_name`_matrix_observed.
 
     modifiers: List[tf.keras.layers.Layer]
         list of modifiers that will be applied to the data created from
@@ -46,29 +46,5 @@ class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
         """
         super().__init__()
         self.modality_name: str = modality_name
-        self.modality_key: str = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+        self.modality_key: str = f"{modality_name}_{Constants.TENSOR_NAME_X_OBSERVED}"
         self.modifiers = [ToDense(self.modality_key)]
-
-    def call(self, inputs: Mapping[Any, tf.Tensor], training=None, mask=None):
-        """Processed the data created from tf.data.Dataset.
-
-        Parameters
-        ----------
-        inputs:
-            Mapping of tf.Tensor, where the keys contain
-            self.modality_key.
-
-        training: bool, optional
-            Not used (kept for tf.keras.Model API).
-
-        mask: tf.Tensor, optional
-            Not used (kept for tf.keras.Model API).
-
-        Returns
-        -------
-        Mapping[Any, tf.Tensor]
-            processed data.
-
-        """
-        modifiers = self.modifiers
-        return functools.reduce(lambda x, modifier: modifier(x), modifiers, inputs)

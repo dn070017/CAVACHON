@@ -1,6 +1,12 @@
 class Constants:
-    TENSOR_NAME_X = "matrix"
-    TENSOR_NAME_ORIGIONAL_X = "_matrix"
+    MDATA_UNS_FIELD_CAVACHON = "cavachon"
+    MDATA_UNS_FIELD_MODALITY = "modality_names"
+    MDATA_UNS_FIELD_DISTRIBUTION = "distribution"
+    MDATA_UNS_FIELD_BATCH_EFFECT_COLNAMES = "batch_effect_colnames"
+    MDATA_UNS_FIELD_BATCH_EFFECT_ENCODER_CLASSES = "batch_effect_encoders_classes"
+
+    TENSOR_NAME_X_MODEL = "matrix_modeled"
+    TENSOR_NAME_X_OBSERVED = "matrix_observed"
     TENSOR_NAME_LIBSIZE = "libsize"
     TENSOR_NAME_BATCH = "batch_effect"
 
@@ -18,6 +24,7 @@ class Constants:
 
     MODULE_INPUTS_CONDITIONED_Z = "z_conditional"
     MODULE_INPUTS_CONDITIONED_Z_HAT = "z_hat_conditional"
+
     MODULE_BACKBONE = "backbone_network"
     MODULE_R_NETWORK = "r_network"
     MODULE_B_NETWORK = "b_network"

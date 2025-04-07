@@ -171,8 +171,8 @@ class TensorUtils:
     @staticmethod
     def create_tensor_from_df(
         df: pd.DataFrame,
-        colnames: List[str] = [],
-        encoder_dict: Dict[str, LabelEncoder] = dict(),
+        colnames: List[str] | None = None,
+        col_encoders: Dict[str, LabelEncoder] | None = None,
     ) -> Tuple[tf.Tensor, Dict[str, LabelEncoder]]:
         """Create a Tensorflow Tensor from column data (specified with
         `colnames`) in the provided DataFrame. If the column data is a
@@ -187,9 +187,15 @@ class TensorUtils:
         df: pd.DataFrame
             input DataFrame.
 
-        colnames: List[str], optional
+        colnames: List[str] | None, optional
             columns of the DataFrame that are used to create the
             Tensor. Defaults to [].
+
+        col_encoders: Dict[str, LabelEncoder], None
+            the dictionary of LabelEncoder used to map the categorical
+            variable into scalar representation, where the keys are the
+            column names and the values are the corresponding
+            LabelEncoder.
 
         Returns
         -------
@@ -204,6 +210,10 @@ class TensorUtils:
         # if no valid batch effect column is provided, use zero vector for batch effect
         n_obs, n_features = df.shape
         tensor_list = []
+        if colnames is None:
+            colnames = []
+        if col_encoders is None:
+            col_encoders = dict()
 
         for colname in colnames:
             if colname not in df.columns:
@@ -212,14 +222,14 @@ class TensorUtils:
             if DataFrameUtils.check_is_categorical(coldata):
                 # if the column is a categorical variable, use one hot encoded tensor
                 encoded_tensor, encoder = TensorUtils.create_one_hot_encoded_tensor(
-                    coldata, encoder_dict.get(colname, None)
+                    coldata, col_encoders.get(colname, None)
                 )
-                encoder_dict.setdefault(colname, encoder)
+                col_encoders.setdefault(colname, encoder)
                 tensor_list.append(encoded_tensor)
             else:
                 # if the column is a continous variable,
                 tensor = tf.reshape(tf.convert_to_tensor(coldata, tf.float32), (-1, 1))
-                encoder_dict.setdefault(colname, None)
+                col_encoders.setdefault(colname, None)
                 tensor_list.append(tensor)
 
         if len(tensor_list) == 0:
@@ -227,7 +237,7 @@ class TensorUtils:
 
         return tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=1))(
             tensor_list
-        ), encoder_dict
+        ), col_encoders
 
     @staticmethod
     def create_one_hot_encoded_tensor(
@@ -240,6 +250,10 @@ class TensorUtils:
         data: pd.Series
             pd.Series of categorical variables to be transformed to
             one-hot encoded tf.Tensor.
+
+        encoder: Optional[LabelEncoder], optional
+            the LabelEncoder used to map the categorical variable into
+            scalar representation. Defaults to None.
 
         Returns
         -------
