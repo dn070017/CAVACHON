@@ -89,7 +89,7 @@ class Parameterizer(tf.keras.Model):
         self.exp_transform = exp_transform
 
     def compute_attribution_target(self, inputs: tf.Tensor):
-        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X_MODEL))
         return outputs
 
     @classmethod
@@ -115,7 +115,9 @@ class Parameterizer(tf.keras.Model):
             functional API.
         """
         inputs = dict()
-        inputs.setdefault(Constants.TENSOR_NAME_X, tf.keras.Input(shape=(input_dims,)))
+        inputs.setdefault(
+            Constants.TENSOR_NAME_X_MODEL, tf.keras.Input(shape=(input_dims,))
+        )
         if libsize_scaling:
             inputs.setdefault(Constants.TENSOR_NAME_LIBSIZE, tf.keras.Input(shape=(1,)))
 
@@ -218,7 +220,7 @@ class Parameterizer(tf.keras.Model):
             f"{cls.__name__}", "layers/parameterizers", "Layer"
         )
         layer = layer_class(event_dims=event_dims, name="parameterizer", **kwargs)
-        outputs = layer(inputs.get(Constants.TENSOR_NAME_X))
+        outputs = layer(inputs.get(Constants.TENSOR_NAME_X_MODEL))
         outputs = cls.modify_outputs(
             inputs=inputs,
             outputs=outputs,

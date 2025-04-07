@@ -76,10 +76,10 @@ class DecoderDataParameterizer(tf.keras.Model):
 
     def compute_attribution_target(self, inputs: tf.Tensor):
         result = self.backbone_network(
-            inputs.get(Constants.TENSOR_NAME_X), training=False
+            inputs.get(Constants.TENSOR_NAME_X_MODEL), training=False
         )
         x_parameterizer_inputs = dict()
-        x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
+        x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X_MODEL, result)
 
         return self.x_parameterizer.compute_attribution_target(x_parameterizer_inputs)
 
@@ -112,10 +112,10 @@ class DecoderDataParameterizer(tf.keras.Model):
 
         """
         result = self.backbone_network(
-            inputs.get(Constants.TENSOR_NAME_X), training=training, mask=mask
+            inputs.get(Constants.TENSOR_NAME_X_MODEL), training=training, mask=mask
         )
         x_parameterizer_inputs = dict()
-        x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
+        x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X_MODEL, result)
         if self.x_parameterizer.libsize_scaling:
             x_parameterizer_inputs.setdefault(
                 Constants.TENSOR_NAME_LIBSIZE, inputs.get(Constants.TENSOR_NAME_LIBSIZE)

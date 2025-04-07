@@ -68,7 +68,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
         super().__init__(*args, **kwargs)
 
     def compute_attribution_target(self, inputs: tf.Tensor):
-        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X_MODEL))
         probs, means, dispersion = tf.keras.layers.Lambda(
             lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
         )(outputs)

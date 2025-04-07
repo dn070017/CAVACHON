@@ -29,7 +29,7 @@ class Preprocessor(tf.keras.Model):
         inputs: Mapping[Any, tf.keras.Input],
         outputs: Mapping[Any, tf.Tensor],
         name: str = "preprocessor",
-        matrix_key: Any = Constants.TENSOR_NAME_X,
+        matrix_key: Any = Constants.TENSOR_NAME_X_MODEL,
     ):
         """Constructor for Preprocessor. Should not be called directly
         most of the time. Please use make() to create the model.
@@ -103,15 +103,17 @@ class Preprocessor(tf.keras.Model):
 
         for modality_name in modality_names:
             distribution_name = distribution_names.get(modality_name)
-            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
-            libsize_key = f"{modality_name}_{Constants.TENSOR_NAME_X}_{Constants.TENSOR_NAME_LIBSIZE}"
+            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
+            libsize_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}_{Constants.TENSOR_NAME_LIBSIZE}"
             modality_input = tf.keras.Input(
                 shape=(n_vars.get(modality_name),), name=modality_name
             )
             inputs.setdefault(modality_key, modality_input)
 
             modifiers_class = ReflectionHandler.get_class_by_name(
-                distribution_name, "layers/modifiers/distributions_preset", "Modifier"
+                distribution_name,
+                "layers/modifiers/distributions_preset_modeled",
+                "Modifier",
             )
             modifiers = modifiers_class(modality_name=modality_name)
             modifiers_outputs = modifiers(inputs)
@@ -123,7 +125,7 @@ class Preprocessor(tf.keras.Model):
                 [tf.keras.layers.Dense(n_dims)], name=f"{name}_{modality_name}"
             )
 
-            matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
             outputs.setdefault(
                 matrix_key, transform_layer(modifiers_outputs.get(modality_key))
             )

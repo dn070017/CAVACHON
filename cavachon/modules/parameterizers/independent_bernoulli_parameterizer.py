@@ -58,7 +58,7 @@ class IndependentBernoulliParameterizer(Parameterizer):
         super().__init__(*args, **kwargs)
 
     def compute_attribution_target(self, inputs: tf.Tensor):
-        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+        outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X_MODEL))
 
         return tf.keras.activations.sigmoid(outputs)
 
