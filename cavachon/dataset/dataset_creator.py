@@ -637,7 +637,7 @@ class DatasetCreator:
                     continue
                 modifier_class = ReflectionHandler.get_class_by_name(
                     distribution_name,
-                    "layers/modifiers/distribution_preset_observed_data_presets",
+                    "layers/modifiers/distribution_observed_data_presets",
                     "ObservedDataModifier",
                 )
                 modifier = modifier_class(modality_name=modality_name)
