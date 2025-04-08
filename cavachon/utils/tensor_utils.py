@@ -157,7 +157,7 @@ class TensorUtils:
 
         """
 
-        layers = []
+        layers: List[tf.keras.layers.Layer] = []
         for no_layer in range(0, n_layers):
             n_neurons = min(base_n_neurons * rate**no_layer, max_n_neurons)
             layers.append(tf.keras.layers.Dense(n_neurons, activation=activation))
@@ -228,7 +228,7 @@ class TensorUtils:
                 tensor_list.append(encoded_tensor)
             else:
                 # if the column is a continous variable,
-                tensor = tf.reshape(tf.convert_to_tensor(coldata, tf.float32), (-1, 1))
+                tensor = tf.reshape(tf.convert_to_tensor(coldata, tf.float32), (-1, 1))  # type: ignore
                 col_encoders.setdefault(colname, None)
                 tensor_list.append(tensor)
 
@@ -312,8 +312,13 @@ class TensorUtils:
             List of splitted tensors.
         """
         n_obs = x.shape[0]
-        # if batch_size = 128, n_obs = 1000
-        # split_batch = [128, 128, 128, 128, 128, 128, 128, 104]
-        split_batch = [batch_size] * (n_obs // batch_size) + [n_obs % batch_size]
+        if n_obs is None:
+            raise RuntimeError(
+                "Placeholder tensor does not have batch size in shape. Please run split() on a Tensor in eager mode."
+            )
+        else:
+            # if batch_size = 128, n_obs = 1000
+            # split_batch = [128, 128, 128, 128, 128, 128, 128, 104]
+            split_batch = [batch_size] * (n_obs // batch_size) + [n_obs % batch_size]
 
-        return tf.keras.layers.Lambda(lambda x: tf.split(x, split_batch))(x)
+            return tf.keras.layers.Lambda(lambda x: tf.split(x, split_batch))(x)

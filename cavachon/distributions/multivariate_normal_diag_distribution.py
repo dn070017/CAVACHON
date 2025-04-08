@@ -1,4 +1,4 @@
-from typing import Mapping, Union
+from typing import Mapping, Self
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -13,7 +13,10 @@ class MultivariateNormalDiagDistribution(
 
     Distribution for multivariate normal distributions with
     diagonal covariance matrix (mainly used for latent distributions).
-
+    Note that this can also be treated as the independent single
+    variate normal distributions since each dimensionality is
+    independent in terms of covariance (used for observed data
+    distribution)
     """
 
     def __init__(self, *args, **kwargs):
@@ -22,16 +25,16 @@ class MultivariateNormalDiagDistribution(
 
     @classmethod
     def from_parameterizer_output(
-        cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
-    ):
+        cls, params: tf.Tensor | Mapping[str, tf.Tensor], **kwargs
+    ) -> Self:
         """Create multivariate normal distributions with diagonal
         covariance matrix from the outputs of
         modules.parameterizers.MultivariateNormalDiag.
 
         Parameters
         ----------
-        params: Union[tf.Tensor, Mapping[str, tf.Tensor]]
-            Parameters for the distribution created by parameterizers.
+        params: tf.Tensor | Mapping[str, tf.Tensor]
+            parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name as
             keys can be provided. If provided with a tf.Tensor. The last
             dimension needs to be a multiple of 2,, and:
@@ -48,8 +51,8 @@ class MultivariateNormalDiagDistribution(
 
         Returns
         -------
-        tfp.distributions.Distribution
-            Created Tensorflow Probability MultivariateNormalDiag
+        MultivariateNormalDiagDistribution
+            created Tensorflow Probability MultivariateNormalDiag
             Distribution.
 
         """

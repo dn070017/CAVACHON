@@ -1,8 +1,7 @@
-from abc import ABC, abstractmethod, classmethod
-from typing import Mapping, Union
+from abc import ABC, abstractmethod
+from typing import Mapping
 
 import tensorflow as tf
-import tensorflow_probability as tfp
 
 
 class Distribution(ABC):
@@ -11,25 +10,25 @@ class Distribution(ABC):
 
     """
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def from_parameterizer_output(
-        cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
-    ) -> tfp.distributions.Distribution | None:
+        cls, params: tf.Tensor | Mapping[str, tf.Tensor], **kwargs
+    ):
         """Create Tensorflow Probability Distribution from the outputs
         of parameterizers.
 
         Parameters
         ----------
-        params: Union[tf.Tensor, Mapping[str, tf.Tensor]]
+        params: tf.Tensor | Mapping[str, tf.Tensor]
             parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name
             as keys can be provided.
 
         Returns
         -------
-        tfp.distributions.Distribution | None
-            created Tensorflow Probability Distribution.
+        tfp.distributions.Distribution
+            created Tensorflow Probability Distribution like instance.
 
         See Also
         --------
@@ -37,5 +36,4 @@ class Distribution(ABC):
         distributions.
 
         """
-        # TODO: fix typing issue
-        return
+        pass

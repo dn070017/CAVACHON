@@ -79,8 +79,8 @@ class MuDataUtils:
             observations, with the mean expression values and
             summarized metadata for each group.
         """
-        group_X = defaultdict(list)
-        group_obs = defaultdict(list)
+        group_X_list = defaultdict(list)
+        group_obs_list = defaultdict(list)
         first_mod = list(mdata.mod.keys())[0]
         for group in mdata[first_mod].obs[group_col].unique():
             for mod in mdata.mod.keys():
@@ -93,14 +93,16 @@ class MuDataUtils:
                     elif is_numeric_dtype(adata.obs[batch_effect_col]):
                         obs[batch_effect_col] = adata.obs[batch_effect_col].mean()
 
-                obs.index = [group]
-                group_X[mod].append(adata.X.mean(axis=0))
-                group_obs[mod].append(obs)
+                obs.index = pd.Index([group])
+                group_X_list[mod].append(adata.X.mean(axis=0))
+                group_obs_list[mod].append(obs)
 
         group_adata = dict()
-        for key in group_X.keys():
-            group_X[key] = coo_array(np.stack(group_X[key])).tocsr()
-            group_obs[key] = pd.concat(group_obs[key], axis=0)
+        group_X: Dict[str, coo_array] = dict()
+        group_obs: Dict[str, pd.DataFrame] = dict()
+        for key in group_X_list.keys():
+            group_X[key] = coo_array(np.stack(group_X_list[key])).tocsr()
+            group_obs[key] = pd.concat(group_obs_list[key], axis=0)
             adata = AnnData(X=group_X[key])
             adata.obs = group_obs[key]
             adata.var = mdata[key].var

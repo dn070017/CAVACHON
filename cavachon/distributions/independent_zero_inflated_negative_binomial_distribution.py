@@ -1,4 +1,4 @@
-from typing import Mapping, Union
+from typing import Mapping, Self
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -21,16 +21,16 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
 
     @classmethod
     def from_parameterizer_output(
-        cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
-    ):
+        cls, params: tf.Tensor | Mapping[str, tf.Tensor], **kwargs
+    ) -> Self:
         """Create independent zero-inflated negative binomial
         distributions from the outputs of
         modules.parameterizers.IndependentZeroInflatedNegativeBinomial
 
         Parameters
         ----------
-        params: Union[tf.Tensor, Mapping[str, tf.Tensor]]
-            Parameters for the distribution created by parameterizers.
+        params: tf.Tensor | Mapping[str, tf.Tensor]
+            parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name
             as keys can be provided. If provided with a tf.Tensor. The
             last dimension needs to be a multiple of 3, and:
@@ -45,8 +45,8 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
 
         Returns
         -------
-        tfp.distributions.Distribution
-            Created Tensorflow Probability Zero-inflated Negative
+        IndependentZeroInflatedNegativeBinomialDistribution
+            created Tensorflow Probability Zero-inflated Negative
             Binomial Distribution.
 
         """
@@ -54,20 +54,18 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
         if isinstance(params, tf.Tensor):
             logits, mean, dispersion = tf.split(params, 3, axis=-1)
         elif isinstance(params, Mapping):
-            logits = params.get("logits")
-            mean = params.get("mean")
-            dispersion = params.get("dispersion")
+            logits = params["logits"]
+            mean = params["mean"]
+            dispersion = params["dispersion"]
 
         probs = tf.math.sigmoid(logits)
         probs = tf.stack([probs, 1 - probs], axis=-1)
 
-        # batch_shape: (batch, ), event_shape: (event_dims, )
+        # batch_shape: (batch, ), event_shape: []
         return cls(
             cat=tfp.distributions.Categorical(probs=probs),
             components=(
-                tfp.distributions.NegativeBinomial.experimental_from_mean_dispersion(
-                    1e-7 * tf.ones_like(mean), dispersion
-                ),
+                tfp.distributions.Deterministic(tf.zeros_like(mean)),
                 tfp.distributions.NegativeBinomial.experimental_from_mean_dispersion(
                     mean, dispersion
                 ),

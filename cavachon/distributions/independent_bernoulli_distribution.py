@@ -1,4 +1,4 @@
-from typing import Mapping, Union
+from typing import Mapping, Self
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -19,15 +19,15 @@ class IndependentBernoulliDistribution(Distribution, tfp.distributions.Bernoulli
 
     @classmethod
     def from_parameterizer_output(
-        cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
-    ):
+        cls, params: tf.Tensor | Mapping[str, tf.Tensor], **kwargs
+    ) -> Self:
         """Create independent Bernoulli distributions from the outputs
         of modules.parameterizers.IndependentBernoulli.
 
         Parameters
         ----------
-        params: Union[tf.Tensor, Mapping[str, tf.Tensor]]
-            Parameters for the distribution created by parameterizers.
+        params: tf.Tensor | Mapping[str, tf.Tensor]
+            parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name
             as keys can be provided. If provided with a tf.Tensor, it
             will be used as the logits to create Bernoulli distribution.
@@ -39,15 +39,14 @@ class IndependentBernoulliDistribution(Distribution, tfp.distributions.Bernoulli
 
         Returns
         -------
-        tfp.distributions.Distribution
-            Created Tensorflow Probability Bernoulli Distribution.
+        IndependentBernoulliDistribution
+            created Tensorflow Probability Bernoulli Distribution.
 
         """
         if isinstance(params, tf.Tensor):
             logits = params
         elif isinstance(params, Mapping):
-            logits = params.get("logits")
+            logits = params["logits"]
 
-        distribution = tfp.distributions.Bernoulli(logits=logits)
-
-        return distribution
+        # batch_shape: (batch, ), event_shape: []
+        return cls(logits=logits, **kwargs)

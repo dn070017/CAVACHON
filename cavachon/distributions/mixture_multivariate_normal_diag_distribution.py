@@ -1,4 +1,4 @@
-from typing import Mapping, Union
+from typing import Mapping, Self
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -26,16 +26,16 @@ class MixtureMultivariateNormalDiagDistribution(
 
     @classmethod
     def from_parameterizer_output(
-        cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
-    ):
+        cls, params: tf.Tensor | Mapping[str, tf.Tensor], **kwargs
+    ) -> Self:
         """Create mixture of multivariate normal distributions with
         diagonal covariance matrix from the outputs of
         modules.parameterizers.MixtureMultivariateNormalDiag.
 
         Parameters
         ----------
-        params: Union[tf.Tensor, Mapping[str, tf.Tensor]]
-            Parameters for the distribution created by parameterizers.
+        params: tf.Tensor | Mapping[str, tf.Tensor]
+            parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name as
             keys can be provided. If provided with a tf.Tensor. The last
             dimension needs to be a multiple of 2 plus 1,, and:
@@ -59,16 +59,16 @@ class MixtureMultivariateNormalDiagDistribution(
 
         Returns
         -------
-        tfp.distributions.Distribution
-            Created Tensorflow Probability MixtureMultivariateNormalDiag
+        MixtureMultivariateNormalDiagDistribution
+            created Tensorflow Probability MixtureMultivariateNormalDiag
             Distribution.
 
         """
         if isinstance(params, tf.Tensor):
             # shape: (batch, n_components)
-            logits = params[..., 0]
+            logits = params[..., 0]  # type: ignore
             # shape: (batch, n_components, event_dims * 2)
-            components_params = params[..., 1:]
+            components_params = params[..., 1:]  # type: ignore
             # batch_shape: (batch, n_components), event_shape: (event_dims, )
             components_distribution = (
                 MultivariateNormalDiagDistribution.from_parameterizer_output(
@@ -76,14 +76,14 @@ class MixtureMultivariateNormalDiagDistribution(
                 )
             )
         elif isinstance(params, Mapping):
-            logits = params.get("logits")
-            loc = params.get("loc")
-            scale_diag = params.get("scale_diag")
+            logits = params["logits"]
+            loc = params["loc"]
+            scale_diag = params["scale_diag"]
             components_distribution = MultivariateNormalDiagDistribution(
                 loc=loc, scale_diag=scale_diag
             )
 
-        # batch_shape: (batch, ), event_shape: (, )
+        # batch_shape: (batch, ), event_shape: []
         mixture_distribution = tfp.distributions.Categorical(logits=logits)
 
         # batch_shape: (batch, ), event_shape: (event_dims, )
