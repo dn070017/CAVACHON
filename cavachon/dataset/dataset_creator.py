@@ -123,7 +123,7 @@ class DatasetCreator:
         self,
         mdata: mu.MuData,
         modality_names: List[str] | None = None,
-    ) -> None:
+    ) -> List[str]:
         """Configure modality names to be used, and stored the result
         to self.modality_names.
 
@@ -172,7 +172,7 @@ class DatasetCreator:
         mdata: mu.MuData,
         modality_names: List[str],
         distribution_names: Dict[str, str] | None = None,
-    ) -> None:
+    ) -> Dict[str, str]:
         """Configure distribution names for each modality, and stored
         the result to self.distribution_names.
 
@@ -198,18 +198,19 @@ class DatasetCreator:
         resulting_distribution_names = dict()
         for modality_name in modality_names:
             adata = mdata[modality_name]
-            if modality_name in distribution_names:
+            if (
+                isinstance(distribution_names, dict)
+                and modality_name in distribution_names
+            ):
                 resulting_distribution_names[modality_name] = distribution_names[
                     modality_name
                 ]
             elif MuDataUtils.check_if_cavachon_config_exists(
                 adata, Constants.MDATA_UNS_FIELD_DISTRIBUTION
             ):
-                resulting_distribution_names[modality_name] = (
-                    adata.uns[Constants.MDATA_UNS_FIELD_CAVACHON][
-                        Constants.MDATA_UNS_FIELD_DISTRIBUTION
-                    ],
-                )
+                resulting_distribution_names[modality_name] = adata.uns[
+                    Constants.MDATA_UNS_FIELD_CAVACHON
+                ][Constants.MDATA_UNS_FIELD_DISTRIBUTION]
             else:
                 raise KeyError(
                     f"Cannot find distribution name for modality {modality_name}"
@@ -230,7 +231,7 @@ class DatasetCreator:
         modality_names: List[str],
         batch_effect_colnames: Dict[str, List[str]] | None = None,
         batch_effect_encoders: Dict[str, List[LabelEncoder | None]] | None = None,
-    ) -> None:
+    ) -> Dict[str, List[BatchEffectProcessConfig]]:
         """Configure batch effect column process configs.
 
         mdata: mu.MuData
@@ -266,7 +267,7 @@ class DatasetCreator:
 
         Returns
         -------
-        Dict[str, List[BatchEffectProcessConfig] | None]
+        Dict[str, List[BatchEffectProcessConfig]]
             the batch effect process config for each batch effect
             column of each modality. The keys are the `modality`,
             the values are a list of batch effect process configs. The
@@ -374,17 +375,22 @@ class DatasetCreator:
             ):
                 # if batch_effect_encoders is not configured by function parameters,
                 # but configured in adata.uns['cavachon']['batch_effect_encoders'].
-                result_batch_effect_encoders_of_modality = []
+                result_batch_effect_encoders_of_modality: (
+                    List[LabelEncoder | None] | None
+                ) = []
                 batch_effect_encoders_of_modality_classes = adata.uns[
                     Constants.MDATA_UNS_FIELD_CAVACHON
                 ][Constants.MDATA_UNS_FIELD_BATCH_EFFECT_ENCODER_CLASSES]
                 for encoder_class in batch_effect_encoders_of_modality_classes:
-                    if encoder_class is None:
-                        result_batch_effect_encoders_of_modality.append(None)
-                    else:
-                        encoder = LabelEncoder()
-                        encoder.classes_ = encoder_class
-                        result_batch_effect_encoders_of_modality.append(encoder)
+                    if isinstance(
+                        result_batch_effect_encoders_of_modality, list
+                    ):  # added to avoid mypy complains
+                        if encoder_class is None:
+                            result_batch_effect_encoders_of_modality.append(None)
+                        else:
+                            encoder = LabelEncoder()
+                            encoder.classes_ = encoder_class
+                            result_batch_effect_encoders_of_modality.append(encoder)
             else:
                 result_batch_effect_encoders_of_modality = None
         else:
@@ -563,9 +569,10 @@ class DatasetCreator:
             3. "`modality`_batch_effect": (tf.Tensor)
 
         """
-        resulting_tensors = dict()
+        resulting_tensors: Dict[str, tf.Tensor | tf.SparseTensor] = dict()
         for modality_name in self.modality_names:
             adata = self.mdata[modality_name]
+            data_tensor: tf.Tensor | tf.SparseTensor
             if isinstance(adata.X, scipy.sparse.spmatrix):
                 data_tensor = TensorUtils.spmatrix_to_sparse_tensor(adata.X)
             elif isinstance(adata.X, np.ndarray):
@@ -596,11 +603,11 @@ class DatasetCreator:
                 batch_effect_tensor,
             )
 
-        return tf.data.Dataset.from_tensor_slices(resulting_tensors)
+        return tf.data.Dataset.from_tensor_slices(resulting_tensors)  # type: ignore
 
     def modify_dataset(
         self, dataset: tf.data.Dataset, distribution_names: Dict[str, str]
-    ) -> None:
+    ) -> tf.data.Dataset:
         """Modify the dataset based on the modifiers of distributions
         inplace. This will modify the observed data (used as the
         ground truth for computing the loss during training) and

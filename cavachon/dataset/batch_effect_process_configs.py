@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Self
 
 from sklearn.preprocessing import LabelEncoder
 
@@ -11,20 +10,32 @@ class BatchEffectProcessConfig:
     encoder: LabelEncoder | None
     n_vars: int
 
-    def __eq__(self, other: Self) -> bool:
-        if self.colname != other.colname:
+    def __eq__(this: object, other: object) -> bool:
+        if not isinstance(this, BatchEffectProcessConfig) or not isinstance(
+            other, BatchEffectProcessConfig
+        ):
+            raise NotImplementedError(
+                "BatchEffectProcessConfig objects can only compare with BatchEffectProcessConfig"
+            )
+
+        if this.colname != other.colname:
             return False
-        if self.categorical != other.categorical:
+        if this.categorical != other.categorical:
             return False
-        if self.n_vars != other.n_vars:
+        if this.n_vars != other.n_vars:
             return False
-        if self.encoder is None and other.encoder is None:
+        if this.encoder is None and other.encoder is None:
             return True
-        if self.encoder is not None and other.encoder is None:
+        if this.encoder is not None and other.encoder is None:
             return False
-        if self.encoder is None and other.encoder is not None:
+        if this.encoder is None and other.encoder is not None:
             return False
-        if any(self.encoder.classes_ != other.encoder.classes_):
+        if isinstance(this.encoder, LabelEncoder) and isinstance(
+            other.encoder, LabelEncoder
+        ):
+            if any(this.encoder.classes_ != other.encoder.classes_):
+                return False
+        else:
             return False
 
         return True
