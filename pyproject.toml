@@ -34,4 +34,8 @@ build-backend = "poetry.core.masonry.api"
 ipykernel = "^6.29.5"
 ruff = "^0.9.7"
 pytest = "^8.3.4"
+pytest-cov = "^6.1.1"
+mypy = "^1.15.0"
+pandas-stubs = "^2.2.3.250308"
+types-tensorflow = "^2.18.0.20250404"
 
