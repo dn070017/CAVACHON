@@ -1,7 +1,7 @@
 import copy
 import itertools
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Union
+from typing import Any, Dict, List, Set
 
 import networkx as nx
 
@@ -11,16 +11,18 @@ from cavachon.environment.constants import Constants
 class GeneralUtils:
     @staticmethod
     def order_components(
-        component_configs: Union[Iterable[Dict[str, Any]], Dict[str, Dict[str, Any]]],
-    ) -> List[Dict[str, Any]]:
+        component_configs: Dict[str, Any],
+    ) -> List[Any]:
         """Reorder the components based on the dependency. The
         components are ordered based on the number of predecessors
         components.
 
         Parameters
         ----------
-        component_configs: Union[Iterable[Dict[str, Any]], Dict[str, Dict[str, Any]]]
-            component configs (can be loaded with Config.components)
+        component_configs: Dict[str, Any]
+            component configs (which can be loaded with
+            Config.components), where the keys are the component name,
+            values are the component configs.
 
         Raises
         ------
@@ -30,23 +32,18 @@ class GeneralUtils:
 
         Returns
         -------
-        List[str, Dict[str, Any]]:
+        List[Any]:
             reordered components.
 
         """
-        component_id_mapping = dict()
-        id_component_mapping = dict()
-        if issubclass(type(component_configs), Mapping):
-            for i, (component_name, component_config) in enumerate(
-                component_configs.items()
-            ):
-                component_id_mapping.setdefault(component_name, i)
-                id_component_mapping.setdefault(i, component_config)
-        else:
-            for i, component_config in enumerate(component_configs):
-                component_name = component_config.get("name")
-                component_id_mapping.setdefault(component_name, i)
-                id_component_mapping.setdefault(i, component_config)
+        # TODO: fix the return type hint when refactoring configs
+        component_id_mapping: dict[str, int] = dict()
+        id_component_mapping: dict[int, str] = dict()
+        for i, (component_name, component_config) in enumerate(
+            component_configs.items()
+        ):
+            component_id_mapping.setdefault(component_name, i)
+            id_component_mapping.setdefault(i, component_config)
 
         n_components = len(component_configs)
         component_ids = list(range(n_components))
@@ -80,11 +77,11 @@ class GeneralUtils:
             )
             raise AttributeError(message)
 
-        component_id_ordered_list = list()
-        added_component_id_set = set()
+        component_id_ordered_list: List[int] = list()
+        added_component_id_set: Set[int] = set()
         while len(component_id_ordered_list) < n_components:
             for component_id in G.nodes:
-                node_successors_not_added = set()
+                node_successors_not_added: Set[int] = set()
                 for bfs_successors in nx.bfs_successors(G, component_id):
                     node, successors = bfs_successors
                     node_successors_not_added = node_successors_not_added.union(

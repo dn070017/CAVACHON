@@ -144,7 +144,7 @@ class MuDataUtils:
 
         selected_indices = indices.loc[obs_index, "IntegerIndex"].values
 
-        selected_adata = AnnData(X=matrix[selected_indices], dtype=np.float32)
+        selected_adata = AnnData(X=matrix[selected_indices])
         selected_adata.obs = obs_df.iloc[selected_indices]
         selected_adata.var = var_df
 

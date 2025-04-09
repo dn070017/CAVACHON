@@ -10,8 +10,8 @@ class Constants:
     TENSOR_NAME_LIBSIZE = "libsize"
     TENSOR_NAME_BATCH = "batch_effect"
 
-    TENSORFLOW_NAME_REGEX = r"^[A-Za-z0-9.][A-Za-z0-9_.\\/>-]*$"
-    TENSORFLOW_NAME_START_REGEX = r"^[A-Za-z0-9.]"
+    TENSORFLOW_NAME_REGEX = r"^[A-Za-z.][A-Za-z0-9_.\\/>-]*$"
+    TENSORFLOW_NAME_START_REGEX = r"^[A-Za-z._]"
 
     MODEL_INPUTS_Z_CONDITIONAL_DIMS = "z_conditional_dims"
     MODEL_INPUTS_Z_HAT_CONDITIONAL_DIMS = "z_hat_conditional_dims"
