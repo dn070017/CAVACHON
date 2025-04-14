@@ -1,52 +1,38 @@
 import os
-from copy import deepcopy
-from typing import Any, Mapping
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class IOConfigMapping(ConfigMapping):
-    """ComponentConfigMapping
-
-    Config mapping for inputs and outputs.
+class IOConfig(BaseModel):
+    """Config for inputs and outputs.
 
     Attributes
     ----------
-    checkpointdir: str
-        path to the checkpoint directory.
-
     datadir: str
-        path to the data directory.
+        Path to the data directory. Defaults to "./".
 
     outdir: str
-        path to the output directory.
+        Path to the output directory. Defaults to "./".
 
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for IOConfigMapping.
+    datadir: str = Field(
+        default="./", description="path to the data directory.", validate_default=True
+    )
+    outdir: str = Field(
+        default="./", description="path to the output directory.", validate_default=True
+    )
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )
 
-        Parameters
-        ----------
-        checkpointdir: str
-            path to the checkpoint directory.
+    @field_validator("datadir", "outdir", mode="after")
+    @classmethod
+    def convert_to_path(cls, value: str) -> str:
+        path = os.path.realpath(os.path.dirname(f"{value}/"))
+        if not os.path.exists(f"{path}"):
+            raise ValueError(f"Path {value} does not exist.")
+        return path
 
-        datadir: str
-            path to the data directory.
 
-        outdir: str
-            path to the output directory.
-
-        """
-        # change default values here
-        self.checkpointdir: str = "./"
-        self.datadir: str = "./"
-        self.outdir: str = "./"
-
-        # preprocess
-        kwargs = deepcopy(kwargs)
-        for attributes in kwargs.keys():
-            path = kwargs.get(attributes)
-            kwargs[attributes] = os.path.realpath(os.path.dirname(f"{path}/"))
-
-        super().__init__(kwargs, ["checkpointdir", "datadir", "outdir"])
+# %%
