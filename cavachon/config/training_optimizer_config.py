@@ -1,39 +1,198 @@
-from typing import Any, Mapping
+import warnings
+from copy import deepcopy
+from typing import Any, Literal, Self
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class OptimizerConfigMapping(ConfigMapping):
-    """OptimizerConfigMapping
+class OptimizerParams(BaseModel):
+    learning_rate: float | None = Field(
+        default=0.001, description="learning rate of the optimizer."
+    )
+    use_ema: bool | None = Field(
+        default=False,
+        description="if True, exponential moving average (EMA) is applied.",
+    )
+    ema_momentum: float | None = Field(
+        default=None,
+        description="only used if use_ema=True. This is the momentum to use when computing the EMA of the model's weight",
+    )
+    ema_overwrite_frequency: int | None = Field(
+        default=None,
+        description="only used if use_ema=True. Every ema_overwrite_frequency steps of iterations, we overwrite the model variable by its moving average. If None, the optimizer does not overwrite model variables in the middle of training.",
+    )
+    weight_decay: float | None = Field(
+        default=None, description="if set, weight decay is applied."
+    )
+    clipnorm: float | None = Field(
+        default=None,
+        description="if set, the gradient of each weight is individually clipped so that its norm is no higher than this value.",
+    )
+    clipvalue: float | None = Field(
+        default=None,
+        description="if set, the gradient of each weight is clipped to be no higher than this value.",
+    )
+    global_clipnorm: float | None = Field(
+        default=None,
+        description="if set, the gradient of all weights is clipped so that their global norm is no higher than this value.",
+    )
+    jit_compile: bool | None = Field(
+        default=True, description="if True, the optimizer will use XLA compilation."
+    )
 
-    Config mapping for optimizer.
+    model_config = ConfigDict(revalidate_instances="always", validate_assignment=True)
+
+
+class AdafactorOptimizerParams(OptimizerParams):
+    name: Literal["adafactor"] = Field(
+        default="adafactor",
+        description="name of the optimizer. Should not be changed, used for discriminator in Pydantic.",
+    )
+    beta_2_decay: float | None = Field(
+        default=-0.8, description="the decay rate of beta_2."
+    )
+    epsilon_1: float | None = Field(
+        default=1e-30, description="a small offset to keep denominator away from 0."
+    )
+    epsilon_2: float | None = Field(
+        default=0.001,
+        description="a small offset to avoid learning rate becoming too small by time.",
+    )
+    clip_threshold: float | None = Field(default=1.0, description="clipping threshold")
+    relative_step: bool | None = Field(
+        default=True,
+        description="if learning_rate is a constant and relative_step=True, learning rate will be adjusted based on current iterations.",
+    )
+
+
+class AdamOptimizerParams(OptimizerParams):
+    name: Literal["adam"] = Field(
+        default="adam",
+        description="name of the optimizer. Should not be changed, used for discriminator in Pydantic.",
+    )
+    beta_1: float | None = Field(
+        default=0.9,
+        description="the exponential decay rate for the 1st moment estimates.",
+    )
+    beta_2: float | None = Field(
+        default=0.999,
+        description="the exponential decay rate for the 2nd moment estimates.",
+    )
+    epsilon: float | None = Field(
+        default=1e-07, description="a small constant for numerical stability."
+    )
+    amsgrad: bool | None = Field(
+        default=False, description="whether to apply AMSGrad variant of this algorithm"
+    )
+
+
+class AdamWOptimizerParams(AdamOptimizerParams):
+    name: Literal["adamw"] = Field(  # type: ignore
+        default="adamw",
+        description="name of the optimizer. Should not be changed, used for discriminator in Pydantic.",
+    )
+    weight_decay: float | None = Field(
+        default=0.004, description="if set, weight decay is applied."
+    )
+
+
+class LionOptimizerParams(OptimizerParams):
+    name: Literal["lion"] = Field(
+        default="lion",
+        description="name of the optimizer. Should not be changed, used for discriminator in Pydantic.",
+    )
+    beta_1: float | None = Field(
+        default=0.9,
+        description="the rate to combine the current gradient and the 1st moment estimate.",
+    )
+    beta_2: float | None = Field(
+        default=0.999,
+        description="the exponential decay rate for the 1st moment estimate.",
+    )
+
+
+class TrainingOptimizerConfig(BaseModel):
+    """TrainingOptimizerConfig
+
+    Config for optimizer.
 
     Attributes
     ----------
     name: str
         name of the optimizer.
 
-    learning_rate: float
-        learning rate of the optimizer.
+    params: AdafactorOptimizerParams | AdamOptimizerParams | AdamWOptimizerParams | LionOptimizerParams
+        the parameters of the optimizer, see References.
+
+    References
+    ----------
+    https://www.tensorflow.org/versions/r2.14/api_docs/python/tf/keras/optimizers: Tensorflow Keras optimizer documentation
 
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for OptimizerConfigMapping.
+    kind: Literal[
+        "adafactor",
+        "adam",
+        "adamw",
+        "lion",
+    ] = Field(default="adam", description="name of the optimizer.")
+    params: (
+        AdafactorOptimizerParams
+        | AdamOptimizerParams
+        | AdamWOptimizerParams
+        | LionOptimizerParams
+    ) = Field(..., discriminator="name", description="optimizer configuration.")
 
-        Parameters
-        ----------
-        name: str, optional
-            name of the optimizer. Defaults to 'adam'
+    model_config = ConfigDict(revalidate_instances="always", validate_assignment=True)
 
-        learning_rate: float, optional
-            learning rate of the optimizer. Defaults to 1e-4.
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_params_based_on_name(cls, data: Any) -> Any:
+        resulting_data = deepcopy(data)
+        if isinstance(data, dict | BaseModel):
+            optimizer_kind = data.get("kind", "adam")
+            optimizer_kind = optimizer_kind.lower()
+            resulting_data["kind"] = optimizer_kind
 
-        """
-        # change default values here
-        self.name: str = "adam"
-        self.learning_rate: float = 1e-4
-        super().__init__(kwargs, ["name", "learning_rate"])
+            if (
+                "params" not in data
+                or data["params"] is None
+                or "name" not in data["params"]
+            ):
+                resulting_data["params"] = {"name": optimizer_kind}
 
-        # postprocessing
-        self.learning_rate = float(self.learning_rate)
+        return resulting_data
+
+    @model_validator(mode="after")
+    def validate_name_consistency(self) -> Self:
+        if (
+            (
+                self.params is not None
+                and self.params.name
+                in [
+                    "adafactor",
+                    "adam",
+                    "adamw",
+                    "lion",
+                ]
+            )
+            and (
+                self.kind is not None
+                and self.kind
+                in [
+                    "adafactor",
+                    "adam",
+                    "adamw",
+                    "lion",
+                ]
+            )
+            and (self.kind != self.params.name)
+        ):
+            warnings.warn(
+                f"'{self.kind}' doesn't match with '{self.params.name}' when explicitly set to "
+                "'adafactor', 'adam', 'adamw' and 'lion'. This may cause confusion for the "
+                "configuration, the type of the optimizer will be created based "
+                "on the params.name.",
+                UserWarning,
+            )
+        return self

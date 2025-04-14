@@ -1,60 +1,88 @@
-from typing import Any, Mapping
+import warnings
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.optimizer_config_mapping import (
-    OptimizerConfigMapping,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
+
+from cavachon.config.training_optimizer_config import TrainingOptimizerConfig
 
 
-class TrainingConfigMapping(ConfigMapping):
-    """TrainingConfigMapping
+class TrainingConfig(BaseModel):
+    """TrainingConfig
 
     Config mapping for training.
 
     Attributes
     ----------
-    optimizer: OptimizerConfigMapping
+    optimizer: OptimizerConfig
         config for optimizer.
 
     max_n_epochs: int
-        maximum number of epochs for training.
+        maximum number of epochs for training. Defaults to 500.
 
     train: bool
-        whether or not to retrain (finetune) the model.
+        whether or not to retrain (finetune) the model. Defaults to True.
 
     early_stopping: bool
         whether or not to use early stopping when training the model.
-        Ignored if `train=False`.
+        Ignored if `train=False`. Defaults to True.
+
+    save_weight: bool
+        whether or not to save the weights after training.
+
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for TrainingConfigMapping.
+    optimizer: TrainingOptimizerConfig | None = Field(
+        default_factory=TrainingOptimizerConfig, description="config for optimizer."
+    )
+    max_n_epochs: int | None = Field(
+        default=500, description="maximum number of epochs for training."
+    )
+    train: bool | None = Field(
+        default=True,
+        description="whether or not to retrain (finetune) the model.",
+        validate_default=True,
+    )
+    early_stopping: bool | None = Field(
+        default=True,
+        description="whether or not to use early stopping when training the model. Ignored if `train=False`.",
+        validate_default=True,
+    )
+    save_weight: bool | None = Field(
+        default=True,
+        description="whether or not to save the weights after training.",
+        validate_default=True,
+    )
 
-        Parameters
-        ----------
-        optimizer: OptimizerConfigMapping
-            optimizer config.
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )
 
-        max_n_epochs: int, optional
-            maximum number of epochs for training. Defaults to 500.
+    @field_validator("train", mode="after")
+    def validate_train(cls, value: bool, info: ValidationInfo) -> bool:
+        if isinstance(value, bool) and not value:
+            for field in ["early_stopping", "save_weight"]:
+                field_value = info.data.get(field, None)
+                if (
+                    field_value is not None
+                    and isinstance(field_value, bool)
+                    and field_value
+                ):
+                    warnings.warn(
+                        f"{info.data} is ignored when train=False.",
+                        UserWarning,
+                    )
 
-        train: bool, optional
-            whether or not to retrain (finetune) the model. Defaults to
-            True.
+        return value
 
-        early_stopping: bool, optional
-            whether or not to use early stopping when training the
-            model. Ignored if `train=False`. Defaults to True.
-        """
-        # change default values here
-        self.optimizer: OptimizerConfigMapping
-        self.max_n_epochs: int = 500
-        self.train: bool = True
-        self.early_stopping: bool = True
-        super().__init__(
-            kwargs, ["optimizer", "max_n_epochs", "train", "early_stopping"]
-        )
+    @field_validator("early_stopping", "save_weight", mode="after")
+    def validate_early_stopping_vave_weight(
+        cls, value: bool, info: ValidationInfo
+    ) -> bool:
+        train = info.data.get("train", None)
+        train_is_false = train is not None and isinstance(train, bool) and not train
+        if train_is_false and value:
+            warnings.warn(
+                f"{info.field_name} is ignored when train=False.", UserWarning
+            )
 
-        # postprocessing
-        self.setdefault("optimizer", {"name": "adam", "learning_rate": 1e-4})
-        self.optimizer = OptimizerConfigMapping(**self.optimizer)
+        return value
