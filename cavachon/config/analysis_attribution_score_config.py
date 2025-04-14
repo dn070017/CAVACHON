@@ -1,55 +1,37 @@
-from typing import Any, List, Mapping
+from typing import List
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
+from pydantic import Field, field_validator
+
+from cavachon.config.analysis_generic_config import AnalysisGenericConfig
 from cavachon.utils.general_utils import GeneralUtils
 
 
-class AnalysisAttributionScoreConfigMapping(ConfigMapping):
-    """AnalysisAttributionScoreConfigMapping
+class AnalysisAttributionScoreConfig(AnalysisGenericConfig):
+    """AnalysisAttributionScoreConfig
 
-    Config mapping for attribution score analysis.
+    Config for attribution score analysis. Inherits modality and component
+    from AnalysisGenericConfig.
 
     Attributes
     ----------
-    modality: str
-        which modality of the outputs of the component to used.
+    with_respect_to: List[str]
+        list of component names to compute integrated gradients with respect to
+        their latent representations. Will be transformed to be TensorFlow
+        compatible.
 
-    component: str
-        the outputs of which component to used.
-
-    with_respect_to: str
-        compute integrated gradient with respect to the latent
-        representation of which component.
+    use_cluster: str
+        the column name of the clusters in the obs of the specified modality.
 
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisAttributionScoreConfigMapping.
+    with_respect_to: List[str] = Field(
+        default_factory=list,
+        description="List of component names to compute integrated gradients with respect to their latent representations. Will be transformed to be TensorFlow compatible.",
+    )
+    use_cluster: str = Field(
+        description="The column name of the clusters in the obs of the specified modality.",
+    )
 
-        Parameters
-        ----------
-        modality: str
-            which modality of the outputs of the component to used.
-
-        component: str
-            the outputs of which component to used.
-
-        with_respect_to: List[str]
-            compute integrated gradient with respect to the latent
-            representation of which component.
-
-        use_cluster: str
-            the column name of the clusters in the obs of modality.
-
-        """
-        # change default values here
-        self.modality: str = ""
-        self.component: str = ""
-        self.with_respect_to: List[str] = list()
-        self.use_cluster: str = ""
-
-        super().__init__(kwargs)
-        self.modality = GeneralUtils.tensorflow_compatible_str(self.modality)
-        self.component = GeneralUtils.tensorflow_compatible_str(self.component)
-        for i, wrt in enumerate(self.with_respect_to):
-            self.with_respect_to[i] = GeneralUtils.tensorflow_compatible_str(wrt)
+    @field_validator("with_respect_to", mode="after")
+    def convert_wrt_to_tensorflow_compatible_list_of_string(cls, value: List[str]):
+        return [GeneralUtils.convert_to_tensorflow_compatible_string(v) for v in value]

@@ -1,66 +1,59 @@
-from typing import Any, Mapping
+from typing import Literal
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from cavachon.utils.general_utils import GeneralUtils
 
 
-class AnalysisVisualizeEmbedding(ConfigMapping):
-    """AnalysisVisualizeEmbedding
+class AnalysisVisualizeEmbeddingConfig(BaseModel):
+    """AnalysisVisualizeEmbeddingConfig
 
-    Config mapping for embedding visualization.
+    Config for embedding visualization using Pydantic.
 
     Attributes
     ----------
     modality: str
-        which modality of the outputs of the component to used.
+        which modality to visualize. It will be transformed to be
+        TensorFlow compatible.
 
-    component: str
-        the outputs of which component to used.
+    use_rep: str
+        which representation of the modality's obs to visualize.
 
-    embedding_method: str
-        the embedding method to use.
+    embedding_method: Literal['pca', 'umap', 'tsne']
+        method used to embed the representation of the modality.
+        Defaults to 'tsne'.
 
     color_by: str
-        color by which annotation column.
+        color by which annotation column in the modality's obs.
 
     interactive: bool
-        whether or not to create interactive visualization.
-
+        whether or not to create interactive visualization. Defaults to
+        False.
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisAttributionScoreConfigMapping.
+    modality: str = Field(
+        description="which modality to visualize. It will be transformed to be TensorFlow compatible."
+    )
+    use_rep: str = Field(
+        description="which representation of the modality to visualize (e.g., a component name)."
+    )
+    embedding_method: Literal["pca", "umap", "tsne"] = Field(
+        default="tsne",
+        description="method used to embed the representation of the modality.",
+    )
+    color_by: str = Field(
+        description="color by which annotation column in the modality's obs."
+    )
+    interactive: bool = Field(
+        default=False,
+        description="whether or not to create interactive visualization.",
+    )
 
-        Parameters
-        ----------
-        modality: str
-            which modality to visualize.
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )
 
-        use_rep: str
-            which representation of the modality to visualize.
-
-        embedding_method: str
-            method used to embed the representation of the modality.
-            Should be one of `'pca'`, `'umap'` or `'tsne'`.
-
-        color_by: str
-            color by which annotation column.
-
-        interactive: bool
-            whether or not to create interactive visualization.
-
-        """
-        # change default values here
-        self.modality: str = ""
-        self.use_rep: str = ""
-        self.embedding_method: str = ""
-        self.color_by: str = ""
-        self.interactive: bool = False
-
-        super().__init__(kwargs)
-        self.modality = GeneralUtils.tensorflow_compatible_str(self.modality)
-        self.use_rep = GeneralUtils.tensorflow_compatible_str(self.use_rep)
-        if self.embedding_method not in ["pca", "umap", "tsne"]:
-            raise ValueError(
-                "embedding_method should be one of 'pca', 'umap' or 'tsne'"
-            )
+    @field_validator("modality", mode="after")
+    @classmethod
+    def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        return GeneralUtils.convert_to_tensorflow_compatible_string(value)

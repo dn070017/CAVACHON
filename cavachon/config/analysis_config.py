@@ -1,93 +1,59 @@
-from typing import Any, List, Mapping
+from typing import List
 
-from cavachon.config.config_mapping.analysis_attribution_score_config_mapping import (
-    AnalysisAttributionScoreConfigMapping,
+from pydantic import BaseModel, ConfigDict, Field
+
+from cavachon.config.analysis_attribution_score_config import (
+    AnalysisAttributionScoreConfig,
 )
-from cavachon.config.config_mapping.analysis_generic_config_mapping import (
-    AnalysisGenericConfigMapping,
+from cavachon.config.analysis_generic_config import AnalysisGenericConfig
+from cavachon.config.analysis_visualize_embedding_config import (
+    AnalysisVisualizeEmbeddingConfig,
 )
-from cavachon.config.config_mapping.analysis_visualize_embedding import (
-    AnalysisVisualizeEmbedding,
-)
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
 
 
-class AnalysisConfigMapping(ConfigMapping):
-    """AnalysisConfigMapping
+class AnalysisConfig(BaseModel):
+    """AnalysisConfig
 
-    Config mapping for analysis.
+    Config for various analysis tasks.
 
     Attributes
     ----------
-    clustering: List[AnalysisGenericConfigMapping]
-        config for clustering.
+    clustering: List[AnalysisGenericConfig]
+        list of configurations for clustering analysis. Each item specifies
+        a modality and the component representation to use for clustering.
 
-    visualize_embedding: List[AnalysisVisualizeEmbeddingConfigMapping]
-        config for embedding visualization.
+    visualize_embedding: List[AnalysisVisualizeEmbeddingConfig]
+        list of configurations for embedding visualization. Each item defines
+        the modality, representation, embedding method, coloring scheme,
+        and interactivity.
 
-    differential_analysis: List[AnalysisGenericConfigMapping]
-        config for differential analysis.
+    differential_analysis: List[AnalysisGenericConfig]
+        list of configurations for differential analysis. Each item specifies
+        a modality and the component representation to use.
 
-    annotation_colnames: List[str]
-        column names for the annotated cluster that needs to be
-        included in the clustering analysis.
-
-    conditional_attribution_scores: List[AnalysisAttributionScoreConfigMapping]
-        config for the conditional attribution score analysis.
-
+    conditional_attribution_scores: List[AnalysisAttributionScoreConfig]
+        list of configurations for conditional attribution score analysis.
+        Each item specifies the target modality/component, the components
+        to compute gradients with respect to, and the clustering column to use.
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisConfigMapping.
+    clustering: List[AnalysisGenericConfig] = Field(
+        default_factory=list,
+        description="list of configurations for clustering analysis.",
+    )
+    visualize_embedding: List[AnalysisVisualizeEmbeddingConfig] = Field(
+        default_factory=list,
+        description="list of configurations for embedding visualization.",
+    )
+    differential_analysis: List[AnalysisGenericConfig] = Field(
+        default_factory=list,
+        description="list of configurations for differential analysis.",
+    )
+    conditional_attribution_scores: List[AnalysisAttributionScoreConfig] = Field(
+        default_factory=list,
+        description="list of configurations for conditional attribution score analysis.",
+    )
 
-        Parameters
-        ----------
-        clustering: Dict[str, str], optional
-            config for clustering. The keys are the modality names, the
-            values are the component that is used to identify the
-            clusters of modalities. Defaults to dict().
-
-        annotation_colnames: List[str], optional
-            column names for the annotated cluster that needs to be
-            included in the clustering analysis. Needs to match the
-            column names in adata.obs. Defaults to [].
-
-        conditional_attribution_scores: List[AnalysisAttributionScoreConfigMapping], optional
-            config for the conditional attribution score analysis.
-            Defaults to [].
-
-        """
-        # change default values here
-        self.clustering: Mapping[str, str] = dict()
-        self.differential_analysis: Mapping[str, str] = dict()
-        self.visualize_embedding: Mapping[str, str] = dict()
-        self.annotation_colnames: List[str] = []
-        self.conditional_attribution_scores: List[
-            AnalysisAttributionScoreConfigMapping
-        ] = []
-
-        super().__init__(
-            kwargs,
-            [
-                "clustering",
-                "differential_analysis",
-                "visualize_embedding",
-                "annotation_colnames",
-                "conditional_attribution_scores",
-            ],
-        )
-
-        self.clustering = [AnalysisGenericConfigMapping(**x) for x in self.clustering]
-
-        self.visualize_embedding = [
-            AnalysisVisualizeEmbedding(**x) for x in self.visualize_embedding
-        ]
-
-        self.differential_analysis = [
-            AnalysisGenericConfigMapping(**x) for x in self.differential_analysis
-        ]
-
-        self.conditional_attribution_scores = [
-            AnalysisAttributionScoreConfigMapping(**x)
-            for x in self.conditional_attribution_scores
-        ]
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )

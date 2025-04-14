@@ -1,40 +1,33 @@
-from typing import Any, Mapping
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.utils.general_utils import GeneralUtils
 
 
-class AnalysisGenericConfigMapping(ConfigMapping):
-    """AnalysisGenericConfigMapping
+class AnalysisGenericConfig(BaseModel):
+    """AnalysisGenericConfig
 
-    Config mapping for analysis which uses modality and component.
+    Config for analysis which uses modality and component.
 
     Attributes
     ----------
     modality: str
-        which modality of the outputs of the component to used.
+        which modality of the outputs of the component to use. It
+        will be transformed to be TensorFlow compatible.
 
     component: str
-        the outputs of which component to used.
+        the outputs of which component to use. It will be transformed
+        to be TensorFlow compatible.
 
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for AnalysisGenericConfigMapping.
+    modality: str = Field(
+        description="which modality of the outputs of the component to use. It will be transformed to be TensorFlow compatible."
+    )
+    component: str = Field(
+        description="the outputs of which component to use. It will be transformed to be TensorFlow compatible."
+    )
+    model_config = ConfigDict(revalidate_instances="always", validate_assignment=True)
 
-        Parameters
-        ----------
-        modality: str
-            which modality of the outputs of the component to used.
-
-        component: str
-            the outputs of which component to used.
-
-        """
-        # change default values here
-        self.modality: str = ""
-        self.component: str = ""
-
-        super().__init__(kwargs)
-        self.modality = GeneralUtils.tensorflow_compatible_str(self.modality)
-        self.component = GeneralUtils.tensorflow_compatible_str(self.component)
+    @field_validator("modality", "component", mode="after")
+    def convert_to_tensorflow_compatible_string(cls, value: str):
+        return GeneralUtils.convert_to_tensorflow_compatible_string(value)
