@@ -104,7 +104,7 @@ class GeneralUtils:
         return components
 
     @staticmethod
-    def tensorflow_compatible_str(string: str) -> str:
+    def convert_to_tensorflow_compatible_string(string: str, lower: bool = True) -> str:
         """Generate string which is compatible with Tensorflow object
         names.
 
@@ -113,6 +113,9 @@ class GeneralUtils:
         string: str
             string to be processed.
 
+        lower: bool, optional
+            whether or not to lowercase the string.
+
         Returns
         -------
         str:
@@ -120,13 +123,19 @@ class GeneralUtils:
         """
         valid_full_regex = re.compile(Constants.TENSORFLOW_NAME_REGEX)
         valid_start_regex = re.compile(Constants.TENSORFLOW_NAME_START_REGEX)
+        converted_string = ""
         if not valid_full_regex.match(string):
             if valid_start_regex.match(string):
-                return re.sub(r"[^A-Za-z0-9_.\\/>-]", "_", string)
+                converted_string = re.sub(r"[^A-Za-z0-9_.\\/>-]", "_", string)
             else:
-                return "t_" + re.sub(r"[^A-Za-z0-9_.\\/>-]", "_", string)
+                converted_string = "t_" + re.sub(r"[^A-Za-z0-9_.\\/>-]", "_", string)
         else:
-            return string
+            converted_string = string
+
+        if lower:
+            return converted_string.lower()
+        else:
+            return converted_string
 
     @staticmethod
     def duplicate_obj_to_list(obj: Any, n_objs: int) -> List[Any]:

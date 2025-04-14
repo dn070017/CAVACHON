@@ -108,27 +108,41 @@ def test_order_components_no_deps(component_configs_no_deps):
 
 
 @pytest.mark.parametrize(
-    "input_str, expected_str",
+    "input_str, lower, expected_str",
     [
-        ("valid_name", "valid_name"),
-        ("ValidName123", "ValidName123"),
-        ("name.with/dots-and_hyphens", "name.with/dots-and_hyphens"),
-        ("invalid name", "invalid_name"),
-        ("name_with_!@#$", "name_with_____"),
-        ("1_starts_with_number", "t_1_starts_with_number"),
-        ("-starts_with_hyphen", "t_-starts_with_hyphen"),
-        (
-            "_starts_with_underscore",
-            "_starts_with_underscore",
-        ),
-        ("", "t_"),
-        ("a", "a"),
-        ("a-b/c_d.e>f", "a-b/c_d.e>f"),
-        ("a b c", "a_b_c"),
+        ("valid_name", True, "valid_name"),
+        ("ValidName123", True, "validname123"),
+        ("name.with/dots-and_hyphens", True, "name.with/dots-and_hyphens"),
+        ("invalid name", True, "invalid_name"),
+        ("name_with_!@#$", True, "name_with_____"),
+        ("1_starts_with_number", True, "t_1_starts_with_number"),
+        ("-starts_with_hyphen", True, "t_-starts_with_hyphen"),
+        ("_starts_with_underscore", True, "_starts_with_underscore"),
+        ("", True, "t_"),
+        ("a", True, "a"),
+        ("a-b/c_d.e>f", True, "a-b/c_d.e>f"),
+        ("a b c", True, "a_b_c"),
+        ("UPPER_CASE", True, "upper_case"),
+        ("valid_name", False, "valid_name"),
+        ("ValidName123", False, "ValidName123"),
+        ("name.with/dots-and_hyphens", False, "name.with/dots-and_hyphens"),
+        ("invalid name", False, "invalid_name"),
+        ("name_with_!@#$", False, "name_with_____"),
+        ("1_starts_with_number", False, "t_1_starts_with_number"),
+        ("-starts_with_hyphen", False, "t_-starts_with_hyphen"),
+        ("_starts_with_underscore", False, "_starts_with_underscore"),
+        ("", False, "t_"),
+        ("a", False, "a"),
+        ("a-b/c_d.e>f", False, "a-b/c_d.e>f"),
+        ("a b c", False, "a_b_c"),
+        ("UPPER_CASE", False, "UPPER_CASE"),
     ],
 )
-def test_tensorflow_compatible_str(input_str, expected_str):
-    assert GeneralUtils.tensorflow_compatible_str(input_str) == expected_str
+def test_tensorflow_compatible_str(input_str, lower, expected_str):
+    assert (
+        GeneralUtils.convert_to_tensorflow_compatible_string(input_str, lower=lower)
+        == expected_str
+    )
 
 
 @pytest.mark.parametrize(
