@@ -1,34 +1,38 @@
-from typing import Any, Mapping
+from typing import List
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
+from pydantic import BaseModel, ConfigDict, Field
+
+from cavachon.config.dataset_modality_config import DatasetModalityConfig
 
 
-class DatasetConfigMapping(ConfigMapping):
-    """DatasetConfigMapping
+class DatasetConfig(BaseModel):
+    """DatasetConfig
 
-    Config mapping for Dataset.
+    Config for Dataset.
 
     Attributes
     ----------
     batch_size: int
-        bath size for iterating dataset.
+        batch size for iterating dataset. Defaults to 128.
 
+    shuffle: bool
+        whether or not to shuffle the dataset during training.
+        Defaults to False.
+
+    modalities: List[DatasetModalityConfig]
+        list of modality configurations.
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for DatasetConfigMapping.
-
-        Parameters
-        ----------
-        batch_size: int, optional
-            bath size for iterating dataset. Defaults to 128
-
-        shuffle: bool, optional
-            whether or not to shuffle the dataset during training.
-            Defaults to False.
-
-        """
-        # change default values here
-        self.batch_size: int = 128
-        self.shuffle: bool = False
-        super().__init__(kwargs, ["batch_size", "shuffle"])
+    batch_size: int = Field(
+        default=128, description="batch size for iterating dataset."
+    )
+    shuffle: bool = Field(
+        default=False,
+        description="whether or not to shuffle the dataset during training.",
+    )
+    modalities: List[DatasetModalityConfig] = Field(
+        description="list of modality configurations."
+    )
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )

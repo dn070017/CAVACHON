@@ -1,112 +1,50 @@
-from copy import deepcopy
-from typing import Any, List, Mapping
+from typing import List, Literal
 
-from cavachon.config.config_mapping.config_mapping import ConfigMapping
-from cavachon.config.config_mapping.filter_config_mapping import FilterConfigMapping
-from cavachon.environment.constants import Constants
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from cavachon.utils.general_utils import GeneralUtils
 
 
-class ModalityConfigMapping(ConfigMapping):
-    """ModalityConfigMapping
+class DatasetModalityConfig(BaseModel):
+    """DatasetModalityConfig
 
-    Config mapping for modality.
+    Config for modality (inside dataset configuration)
 
     Attributes
     ----------
     name: str
         name of the modality.
 
-    samples: List[str]
-        names of the samples.
-
-    type: str
-        modality type.
-
     dist: str
-        distribution name of the modality.
+        observed distribution of the modality.
 
-    h5ad: str
+    h5ad: str | None
         filename to the h5ad (if not provided with samples)
 
-    filters: List[FilterConfigMapping]
-        filter step configs for the modality.
-
+    batch_effect_colnames: List[str] | None
+        the column names of the batch effects that needs to be
+        corrected.
     """
 
-    def __init__(self, **kwargs: Mapping[str, Any]):
-        """Constructor for ModalityConfigMapping.
+    name: str = Field(description="name of the modality.")
+    dist: Literal[
+        "IndependentBernoulli",
+        "IndependentZeroInflatedNegativeBinomial",
+        "MultivariateNormalDiagDistribution",
+    ] = Field(description="observed distribution of the modality.")
+    h5ad: str | None = Field(
+        default=None, description="filename to the h5ad (if not provided with samples)"
+    )
+    batch_effect_colnames: List[str] | None = Field(
+        default_factory=list,
+        description="the column names of the batch effects that needs to be corrected.",
+    )
 
-        Parameters
-        ----------
-        name: str
-            name of the modality.
+    model_config = ConfigDict(
+        extra="forbid", revalidate_instances="always", validate_assignment=True
+    )
 
-        type: str
-            modality type.
-
-        dist: str, optional
-            the data distribution of the modality. Currently supports
-            `'IndependentBernoulli'` and
-            `'IndependentZeroInflatedNegativeBinomial'`
-            (see `cavachon/distributions` for more details). Defaults
-            to:
-            1.  `'IndependentBernoulli'` for `type:atac`.
-            2.  `'IndependentZeroInflatedNegativeBinomial'` for
-                `type:rna`.
-
-        samples: List[str]
-            names of the samples.
-
-        h5ad: str, optional
-            filename to the h5ad (if not provided with samples)
-
-        filters: List[FilterConfigMapping]
-            filter step configs for the modality.
-
-        batch_effect_colnames: List[str]
-            the column names of the batch effects that needs to be
-            corrected.
-
-        """
-        # change default values here
-        self.name: str
-        self.type: str
-        self.dist: str
-        self.samples: List[str] = list()
-        self.h5ad: str = ""
-        self.filters: List[FilterConfigMapping] = list()
-        self.batch_effect_colnames: List[str] = list()
-
-        # preprocess
-        kwargs = deepcopy(kwargs)
-        ## name
-        name = kwargs.get("name")
-        kwargs["name"] = GeneralUtils.tensorflow_compatible_str(name)
-
-        ## modality type
-        modality_type = kwargs.get(Constants.CONFIG_FIELD_MODALITY_TYPE).lower()
-        kwargs[Constants.CONFIG_FIELD_MODALITY_TYPE] = modality_type
-
-        ## filters
-        if Constants.CONFIG_FIELD_MODALITY_FILTER in kwargs:
-            filter_configs = kwargs.get(Constants.CONFIG_FIELD_MODALITY_FILTER)
-            filter_configs = [FilterConfigMapping(**x) for x in filter_configs]
-            kwargs[Constants.CONFIG_FIELD_MODALITY_FILTER] = filter_configs
-
-        ## dist
-        if Constants.CONFIG_FIELD_MODALITY_DIST not in kwargs:
-            self.dist = Constants.DEFAULT_MODALITY_DISTRIBUTION.get(modality_type)
-
-        super().__init__(
-            kwargs,
-            [
-                "name",
-                "type",
-                "dist",
-                "samples",
-                "h5ad",
-                "filters",
-                "batch_effect_colnames",
-            ],
-        )
+    @field_validator("name", mode="after")
+    @classmethod
+    def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        return GeneralUtils.convert_to_tensorflow_compatible_string(value)
