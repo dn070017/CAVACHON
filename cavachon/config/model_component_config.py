@@ -1,9 +1,7 @@
 from typing import List
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-from cavachon.config.dataset_modality_config import DatasetModalityConfig
 from cavachon.utils.general_utils import GeneralUtils
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModelComponentConfig(BaseModel):
