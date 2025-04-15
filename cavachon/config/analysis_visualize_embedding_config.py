@@ -32,7 +32,7 @@ class AnalysisVisualizeEmbeddingConfig(BaseModel):
     """
 
     modality: str = Field(
-        description="which modality to visualize. It will be transformed to be TensorFlow compatible."
+        description="which modality to visualize. It will be transformed to a TensorFlow compatible string"
     )
     use_rep: str = Field(
         description="which representation of the modality to visualize (e.g., a component name)."
@@ -54,6 +54,17 @@ class AnalysisVisualizeEmbeddingConfig(BaseModel):
     )
 
     @field_validator("modality", mode="after")
-    @classmethod
     def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        """Convert to tensorflow compatible string.
+
+        Parameters
+        ----------
+        value: str
+            string to be converted.
+
+        Returns
+        -------
+        str
+            converted Tensorflow compatible string.
+        """
         return GeneralUtils.convert_to_tensorflow_compatible_string(value)

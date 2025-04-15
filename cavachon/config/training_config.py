@@ -59,6 +59,25 @@ class TrainingConfig(BaseModel):
 
     @field_validator("train", mode="after")
     def validate_train(cls, value: bool, info: ValidationInfo) -> bool:
+        """Validate train field.
+
+        If train is False, check if early_stopping or save_weight is
+        True and issue a warning if so, as these fields are ignored
+        when train is False.
+
+        Parameters
+        ----------
+        value: bool
+            value of the field.
+
+        info: ValidationInfo
+            validation info from pydantic.
+
+        Returns
+        -------
+        bool
+            validated value of the field.
+        """
         if isinstance(value, bool) and not value:
             for field in ["early_stopping", "save_weight"]:
                 field_value = info.data.get(field, None)
@@ -75,9 +94,28 @@ class TrainingConfig(BaseModel):
         return value
 
     @field_validator("early_stopping", "save_weight", mode="after")
-    def validate_early_stopping_vave_weight(
+    def validate_early_stopping_save_weight(
         cls, value: bool, info: ValidationInfo
     ) -> bool:
+        """Validate early_stopping and save_weight fields.
+
+        If train is False, check if the field (early_stopping or
+        save_weight) is True and issue a warning if so, as these fields
+        are ignored when train is False.
+
+        Parameters
+        ----------
+        value: bool
+            value of the field.
+
+        info: ValidationInfo
+            validation info from pydantic.
+
+        Returns
+        -------
+        bool
+            validated value of the field.
+        """
         train = info.data.get("train", None)
         train_is_false = train is not None and isinstance(train, bool) and not train
         if train_is_false and value:

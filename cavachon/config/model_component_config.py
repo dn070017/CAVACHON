@@ -1,7 +1,8 @@
 from typing import List
 
-from cavachon.utils.general_utils import GeneralUtils
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from cavachon.utils.general_utils import GeneralUtils
 
 
 class ModelComponentConfig(BaseModel):
@@ -82,11 +83,36 @@ class ModelComponentConfig(BaseModel):
     @field_validator("name", mode="after")
     @classmethod
     def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        """Convert to tensorflow compatible string.
+
+        Parameters
+        ----------
+        value: str
+            string to be converted.
+
+        Returns
+        -------
+        str
+            converted Tensorflow compatible string.
+
+        """
         return GeneralUtils.convert_to_tensorflow_compatible_string(value)
 
     @field_validator("modalities", mode="after")
-    @classmethod
     def convert_to_tensorflow_compatible_list_of_string(
         cls, value: List[str]
     ) -> List[str]:
+        """Convert to tensorflow compatible list of strings.
+
+        Parameters
+        ----------
+        value: List[str]
+            strings to be converted.
+
+        Returns
+        -------
+        List[str]
+            converted Tensorflow compatible list of strings.
+
+        """
         return [GeneralUtils.convert_to_tensorflow_compatible_string(v) for v in value]

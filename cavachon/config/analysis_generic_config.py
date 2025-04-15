@@ -29,5 +29,17 @@ class AnalysisGenericConfig(BaseModel):
     model_config = ConfigDict(revalidate_instances="always", validate_assignment=True)
 
     @field_validator("modality", "component", mode="after")
-    def convert_to_tensorflow_compatible_string(cls, value: str):
+    def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        """Convert to tensorflow compatible string.
+
+        Parameters
+        ----------
+        value: str
+            string to be converted.
+
+        Returns
+        -------
+        str
+            converted Tensorflow compatible string.
+        """
         return GeneralUtils.convert_to_tensorflow_compatible_string(value)

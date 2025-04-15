@@ -27,12 +27,20 @@ class IOConfig(BaseModel):
     )
 
     @field_validator("datadir", "outdir", mode="after")
-    @classmethod
     def convert_to_path(cls, value: str) -> str:
+        """Convert to realpath.
+
+        Parameters
+        ----------
+        value: str
+            path to a file or directory.
+
+        Returns
+        -------
+        str
+            converted realpath to the directory.
+        """
         path = os.path.realpath(os.path.dirname(f"{value}/"))
         if not os.path.exists(f"{path}"):
             raise ValueError(f"Path {value} does not exist.")
         return path
-
-
-# %%

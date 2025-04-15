@@ -146,8 +146,24 @@ class TrainingOptimizerConfig(BaseModel):
     model_config = ConfigDict(revalidate_instances="always", validate_assignment=True)
 
     @model_validator(mode="before")
-    @classmethod
     def set_default_params_based_on_name(cls, data: Any) -> Any:
+        """Set default params based on the optimizer kind.
+
+        If the 'params' field or 'params.name' is not provided in the
+        input data, this validator sets a default 'params' dictionary
+        containing only the 'name' key, derived from the 'kind' field.
+        It also ensures the 'kind' field is lowercase.
+
+        Parameters
+        ----------
+        data: Any
+            the input data before validation.
+
+        Returns
+        -------
+        Any
+            the (potentially modified) data to be validated.
+        """
         resulting_data = deepcopy(data)
         if isinstance(data, dict | BaseModel):
             optimizer_kind = data.get("kind", "adam")
@@ -165,6 +181,17 @@ class TrainingOptimizerConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_name_consistency(self) -> Self:
+        """Validate consistency between 'kind' and 'params.name'.
+
+        Issues a warning if 'kind' and 'params.name' are both explicitly
+        set to one of the allowed optimizer names ('adafactor', 'adam',
+        'adamw', 'lion') but do not match each other.
+
+        Returns
+        -------
+        TrainingOptimizerConfig
+            The validated model instance.
+        """
         if (
             (
                 self.params is not None

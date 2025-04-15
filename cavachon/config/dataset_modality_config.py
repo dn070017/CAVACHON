@@ -45,6 +45,17 @@ class DatasetModalityConfig(BaseModel):
     )
 
     @field_validator("name", mode="after")
-    @classmethod
     def convert_to_tensorflow_compatible_string(cls, value: str) -> str:
+        """Convert to tensorflow compatible string.
+
+        Parameters
+        ----------
+        value: str
+            string to be converted.
+
+        Returns
+        -------
+        str
+            converted Tensorflow compatible string.
+        """
         return GeneralUtils.convert_to_tensorflow_compatible_string(value)
