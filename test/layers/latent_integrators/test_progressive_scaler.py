@@ -23,7 +23,7 @@ def test_progressive_scaler_initialization(progressive_scaler_instance):
     )
     tf.debugging.assert_equal(
         progressive_scaler_instance.current_iteration,
-        tf.constant(1.0, dtype=tf.float32),
+        tf.constant(0.0, dtype=tf.float32),
     )
     assert not progressive_scaler_instance.total_iterations.trainable
     assert not progressive_scaler_instance.current_iteration.trainable
@@ -39,8 +39,7 @@ def test_progressive_scaler_call_training(progressive_scaler_instance, input_ten
     total_iterations = progressive_scaler_instance.total_iterations
 
     current_iter_before = tf.identity(progressive_scaler_instance.current_iteration)
-    expected_alpha_1 = tf.square(current_iter_before / total_iterations)
-    expected_output_1 = expected_alpha_1 * input_tensor
+    expected_output_1 = tf.zeros_like(input_tensor)
     output_tensor_1 = progressive_scaler_instance(input_tensor, training=True)
 
     tf.debugging.assert_near(output_tensor_1, expected_output_1, rtol=1e-6)
@@ -63,49 +62,112 @@ def test_progressive_scaler_call_training(progressive_scaler_instance, input_ten
 
 
 def test_progressive_scaler_call_training_iteration_cap(input_tensor):
-    scaler = ProgressiveScaler(total_iterations=3)
+    scaler = ProgressiveScaler(total_iterations=2)
     total_iterations = scaler.total_iterations
-
-    # call 1
+    scaler(input_tensor, training=True)
+    tf.debugging.assert_equal(
+        scaler.current_iteration, tf.constant(1.0, dtype=tf.float32)
+    )
     scaler(input_tensor, training=True)
     tf.debugging.assert_equal(
         scaler.current_iteration, tf.constant(2.0, dtype=tf.float32)
     )
-
-    # call 2
-    scaler(input_tensor, training=True)
-    tf.debugging.assert_equal(
-        scaler.current_iteration, tf.constant(3.0, dtype=tf.float32)
-    )
-
-    # call 3 (should reach total_iterations, alpha uses 3/3)
-    current_iter_before = tf.identity(scaler.current_iteration)  # Should be 3.0
+    # call 3 (should reach total_iterations, alpha uses 2/2)
+    current_iter_before = tf.identity(scaler.current_iteration)  # Should be 2.0
     expected_alpha_3 = tf.square(
         current_iter_before / total_iterations
-    )  # (3/3)^2 = 1.0
+    )  # (2/2)^2 = 1.0
     expected_output_3 = expected_alpha_3 * input_tensor
     output_tensor_3 = scaler(input_tensor, training=True)
     tf.debugging.assert_near(output_tensor_3, expected_output_3, rtol=1e-6)
-    # Iteration should be capped at total_iterations (3.0)
+    # Iteration should be capped at total_iterations (2.0)
     tf.debugging.assert_equal(scaler.current_iteration, total_iterations)
 
-    # call 4 (should remain capped at total_iterations, alpha uses 3/3)
-    current_iter_before = tf.identity(scaler.current_iteration)  # should still be 3.0
-    expected_alpha_4 = tf.square(
-        current_iter_before / total_iterations
-    )  # (3/3)^2 = 1.0
-    expected_output_4 = expected_alpha_4 * input_tensor
-    output_tensor_4 = scaler(input_tensor, training=True)
-    tf.debugging.assert_near(output_tensor_4, expected_output_4, rtol=1e-6)
-    # iteration should remain capped at total_iterations (3.0)
-    tf.debugging.assert_equal(scaler.current_iteration, total_iterations)
+
+def test_progressive_scaler_compute_alpha(progressive_scaler_instance):
+    total_iterations = progressive_scaler_instance.total_iterations
+
+    progressive_scaler_instance.current_iteration.assign(1.0)
+    expected_alpha = tf.square(1.0 / total_iterations)
+    tf.debugging.assert_near(
+        progressive_scaler_instance.compute_alpha(), expected_alpha, rtol=1e-6
+    )
+
+    mid_iteration = total_iterations / 2.0
+    progressive_scaler_instance.current_iteration.assign(mid_iteration)
+    expected_alpha_mid = tf.square(mid_iteration / total_iterations)
+    tf.debugging.assert_near(
+        progressive_scaler_instance.compute_alpha(), expected_alpha_mid, rtol=1e-6
+    )
+
+    progressive_scaler_instance.current_iteration.assign(total_iterations)
+    expected_alpha_end = tf.square(total_iterations / total_iterations)  # (1.0)^2 = 1.0
+    tf.debugging.assert_near(
+        progressive_scaler_instance.compute_alpha(), expected_alpha_end, rtol=1e-6
+    )
+
+    progressive_scaler_instance.current_iteration.assign(total_iterations + 5.0)
+    expected_alpha_beyond = tf.constant(
+        1.0, dtype=tf.float32
+    )  # (capped_alpha)^2 = (1.0)^2 = 1.0
+    tf.debugging.assert_near(
+        progressive_scaler_instance.compute_alpha(), expected_alpha_beyond, rtol=1e-6
+    )
+
+
+def test_progressive_scaler_step(progressive_scaler_instance):
+    progressive_scaler_instance.total_iterations.assign(2.0)
+    total_iterations = progressive_scaler_instance.total_iterations
+
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(1.0, dtype=tf.float32),
+    )
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(2.0, dtype=tf.float32),
+    )
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        total_iterations,
+    )
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        total_iterations,
+    )
+
+
+def test_progressive_scaler_reset(progressive_scaler_instance):
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(1.0, dtype=tf.float32),
+    )
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(2.0, dtype=tf.float32),
+    )
+    progressive_scaler_instance.reset()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(0.0, dtype=tf.float32),
+    )
+    progressive_scaler_instance.step()
+    tf.debugging.assert_equal(
+        progressive_scaler_instance.current_iteration,
+        tf.constant(1.0, dtype=tf.float32),
+    )
 
 
 def test_progressive_scaler_alpha_clamping(input_tensor):
     scaler = ProgressiveScaler(total_iterations=5)
     total_iterations = scaler.total_iterations
 
-    # manually set current_iteration past total_iterations to test clamping inside call
     scaler.current_iteration.assign(6.0)
 
     # expected alpha should be 1.0 (clamped during calculation)
@@ -114,8 +176,5 @@ def test_progressive_scaler_alpha_clamping(input_tensor):
     expected_output = expected_alpha * input_tensor
     output_tensor = scaler(input_tensor, training=True)
 
-    # check if the output matches the expectation with alpha=1.0
     tf.debugging.assert_near(output_tensor, expected_output, rtol=1e-6)
-
-    # check if current_iteration was correctly capped back to total_iterations after the call
     tf.debugging.assert_equal(scaler.current_iteration, total_iterations)

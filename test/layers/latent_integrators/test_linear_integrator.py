@@ -79,9 +79,7 @@ def test_init(integrator_no_cond, n_latent_dims, progressive_iterations):
     assert isinstance(integrator_no_cond, LinearIntegrator)
     assert not integrator_no_cond.is_conditioned_on_z
     assert not integrator_no_cond.is_conditioned_on_z_hat
-    assert (
-        integrator_no_cond.progressive_scaler.total_iterations == progressive_iterations
-    )
+    assert integrator_no_cond.total_iterations == progressive_iterations
     assert integrator_no_cond.r_network.layers[0].units == n_latent_dims
     assert integrator_no_cond.b_network.layers[0].units == n_latent_dims
 
@@ -97,7 +95,7 @@ def test_call_no_cond(integrator_no_cond, z, batch_size, n_latent_dims):
     # check progressive scaling effect (training vs inference)
     # note: due to random weights, we can't check exact values, but training output should differ from inference
     # reset iteration counter for consistent testing if needed (though not strictly necessary here)
-    integrator_no_cond.progressive_scaler.current_iteration.assign(1.0)
+    integrator_no_cond.current_iteration.assign(1.0)
     z_hat_train_again = integrator_no_cond(inputs, training=True)
     # ensure the training output is different from the inference output due to scaling
     # use tf.reduce_any to check if at least one element is different, allowing for float precision issues
@@ -138,7 +136,7 @@ def test_call_cond_both(
 
 def test_progressive_scaling(integrator_no_cond, z, progressive_iterations):
     inputs = {Constants.MODEL_OUTPUTS_Z: z}
-    integrator_no_cond.progressive_scaler.current_iteration.assign(1.0)
+    integrator_no_cond.current_iteration.assign(1.0)
 
     # call multiple times in training mode
     outputs = []
@@ -149,16 +147,10 @@ def test_progressive_scaling(integrator_no_cond, z, progressive_iterations):
         expected_iteration = min(
             float(i + 1 + 1), float(progressive_iterations)
         )  # +1 for assign_add, +1 because current_iteration starts at 1
-        assert (
-            integrator_no_cond.progressive_scaler.current_iteration
-            == expected_iteration
-        )
+        assert integrator_no_cond.current_iteration == expected_iteration
 
     # Check iteration counter stops at total_iterations
-    assert (
-        integrator_no_cond.progressive_scaler.current_iteration
-        == progressive_iterations
-    )
+    assert integrator_no_cond.current_iteration == progressive_iterations
 
     # check that output stabilizes after total_iterations
     # allow for minor floating point differences

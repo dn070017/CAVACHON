@@ -7,7 +7,7 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.latent_integrators.progressive_scaler import ProgressiveScaler
 
 
-class LinearIntegrator(tf.keras.layers.Layer):
+class LinearIntegrator(ProgressiveScaler):
     """LinearIntegrator
 
     LinearIntegrator used to integrate z from the component of
@@ -51,10 +51,9 @@ class LinearIntegrator(tf.keras.layers.Layer):
             Name for the tensorflow model. Defaults to
             'hierarchical_encoder'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, total_iterations=progressive_iterations)
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
-        self.progressive_scaler = ProgressiveScaler(progressive_iterations)
         self.r_network = tf.keras.Sequential(
             [tf.keras.layers.Dense(n_latent_dims)], name=Constants.MODULE_R_NETWORK
         )
@@ -64,7 +63,7 @@ class LinearIntegrator(tf.keras.layers.Layer):
 
     def call(
         self,
-        inputs: Dict[str, tf.Tensor],
+        inputs: tf.Tensor | Dict[str, tf.Tensor],
         training: bool = False,
         **kwargs,
     ) -> tf.Tensor:
@@ -72,10 +71,11 @@ class LinearIntegrator(tf.keras.layers.Layer):
 
         Parameters
         ----------
-        inputs: Dict[str, tf.Tensor]
+        inputs: tf.Tensor | Dict[str, tf.Tensor]
             inputs Tensors for the LinearIntegrator, where keys
             are 'z', 'z_conditional' (if applicable) and
-            'z_hat_conditional' (if applicable).
+            'z_hat_conditional' (if applicable). tf.Tensor is not
+            supported (it merely exists for type checking).
 
         training: bool, optional
             whether to run the network in training mode. Defaults to
@@ -88,9 +88,17 @@ class LinearIntegrator(tf.keras.layers.Layer):
             the conditioned components)
 
         """
-        z_hat = self.r_network(inputs[Constants.MODEL_OUTPUTS_Z])
-        z_hat = self.progressive_scaler(z_hat, training=training)
-        concat_inputs = []
+        if not isinstance(inputs, dict):
+            raise NotImplementedError
+
+        z = self.r_network(inputs[Constants.MODEL_OUTPUTS_Z])
+        if training:
+            alpha = self.compute_alpha()
+            z = alpha * z
+            self.step()
+
+        concat_inputs = [z]
+
         if self.is_conditioned_on_z or self.is_conditioned_on_z_hat:
             if self.is_conditioned_on_z:
                 if Constants.MODULE_INPUTS_CONDITIONED_Z in inputs:
@@ -113,8 +121,6 @@ class LinearIntegrator(tf.keras.layers.Layer):
                         UserWarning,
                     )
 
-        concat_inputs.append(z_hat)
-        z_hat = tf.concat(concat_inputs, axis=-1)
-        z_hat = self.b_network(z_hat)
+        z_hat = self.b_network(tf.concat(concat_inputs, axis=-1))
 
         return z_hat

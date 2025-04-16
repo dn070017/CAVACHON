@@ -1,3 +1,5 @@
+from typing import Dict
+
 import tensorflow as tf
 
 
@@ -24,29 +26,45 @@ class ProgressiveScaler(tf.keras.layers.Layer):
         Parameters
         ----------
         total_iterations: int, optional
-            total iterations in the progressive training. Defaults to 5000.
+            total iterations in the progressive training. Defaults to
+            5000.
 
         name: str, optional
-            Name for the tensorflow layer. Defaults to 'progressive_scaler'.
+            Name for the tensorflow layer. Defaults to
+            'progressive_scaler'.
+
+        Raises
+        ------
+        ValueError
+            when total_iterations is equal to or smaller than 0.
 
         """
         super().__init__(name=name)
+        if total_iterations <= 0:
+            raise ValueError("total_iterations must be greater than 0")
+
         self.total_iterations = tf.Variable(
             total_iterations * tf.ones(()), trainable=False, dtype=tf.float32
-        )
-        self.current_iteration = tf.Variable(tf.ones(()), trainable=False)
+        )  # to ensure the total_iterations will be saved in the model
+        self.current_iteration = tf.Variable(
+            tf.zeros(()), trainable=False
+        )  # to ensure the total_iterations will be saved in the model
 
-    def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:
+    def call(
+        self, inputs: tf.Tensor | Dict[str, tf.Tensor], training: bool = False, **kwargs
+    ) -> tf.Tensor:
         """Forward pass for ProgressiveScaler
 
         Parameters
         ----------
         inputs: tf.Tensor
-            inputs Tensor for the encoder, expect a single Tensor (by
-            defaults, z_hat of conditioned component)
+            inputs Tensor to be progressively scaled.
+            Dict[str, tf.Tensor] is not supported (it merely exists for
+            type checking).
 
         training: bool, optional
-            whether to run the network in training mode. Defaults to False.
+            whether to run the network in training mode. Defaults to
+            False.
 
         Returns
         -------
@@ -54,20 +72,42 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             parameters for the latent distributions.
 
         """
+        if not isinstance(inputs, tf.Tensor):
+            raise NotImplementedError
+
         if training:
-            alpha = (self.current_iteration + 1e-7) / (self.total_iterations + 1e-7)
-            alpha = tf.where(alpha > 1.0, tf.ones_like(alpha), alpha)
-            alpha = alpha**2
+            alpha = self.compute_alpha()
             result = alpha * inputs
-            self.current_iteration.assign_add(1.0)
-            self.current_iteration.assign(
-                tf.where(
-                    self.current_iteration > self.total_iterations,
-                    self.total_iterations,
-                    self.current_iteration,
-                )
-            )
+            self.step()
         else:
             result = 1 * inputs
 
         return result
+
+    def compute_alpha(self) -> tf.Tensor:
+        """Computes the scaling factor alpha.
+
+        Calculates alpha based on the current iteration and total
+        iterations, ensuring it's capped at 1.0 and squared.
+
+        Returns
+        -------
+        tf.Tensor
+            The computed scaling factor alpha.
+        """
+        alpha = self.current_iteration / self.total_iterations
+        alpha = tf.minimum(alpha, 1.0)
+        alpha = alpha**2
+
+        return alpha
+
+    def step(self):
+        """Increments the current iteration counter by one."""
+        self.current_iteration.assign_add(1.0)
+        self.current_iteration.assign(
+            tf.minimum(self.current_iteration, self.total_iterations)
+        )
+
+    def reset(self):
+        """Resets the current iteration counter to 0.0."""
+        self.current_iteration.assign(0.0)
