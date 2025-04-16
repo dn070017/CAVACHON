@@ -1,1 +1,1 @@
-from .concatenate_integrator import ConcatenateIntegrator as ConcatenateIntegrator
+from .linear_integrator import LinearIntegrator as LinearIntegrator
