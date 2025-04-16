@@ -52,10 +52,10 @@ class ModelComponentConfig(BaseModel):
     modalities: List[str] = Field(
         description="modalities configured used in inputs and outputs"
     )
-    conditioned_on_z: List[str] | None = Field(
+    conditioned_on_z: List[str] = Field(
         default_factory=list, description="names of the conditioned components (of z)."
     )
-    conditioned_on_z_hat: List[str] | None = Field(
+    conditioned_on_z_hat: List[str] = Field(
         default_factory=list,
         description="names of the conditioned components (of z_hat).",
     )

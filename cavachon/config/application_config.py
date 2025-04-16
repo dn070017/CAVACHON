@@ -1,5 +1,5 @@
 import os
-from typing import List, Self
+from typing import Annotated, Self, Sequence
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -36,16 +36,19 @@ class ApplicationConfig(BaseModel):
 
     """
 
-    io: IOConfig | None = Field(
-        default_factory=IOConfig, description="io related config."
-    )
+    io: Annotated[  # to suppress mypy complaints
+        IOConfig | None,
+        Field(default_factory=IOConfig, description="io related config."),
+    ]
     model: ModelConfig = Field(description="model related config.")
-    analysis: AnalysisConfig = Field(
-        default_factory=AnalysisConfig, description="analysis related config."
-    )
-    training: TrainingConfig | None = Field(
-        default_factory=TrainingConfig, description="training related config."
-    )
+    analysis: Annotated[  # to suppress mypy complaints
+        AnalysisConfig,
+        Field(default_factory=AnalysisConfig, description="analysis related config."),
+    ]
+    training: Annotated[  # to suppress mypy complaints
+        TrainingConfig | None,
+        Field(default_factory=TrainingConfig, description="training related config."),
+    ]
     dataset: DatasetConfig = Field(description="dataset related config.")
 
     model_config = ConfigDict(
@@ -57,14 +60,17 @@ class ApplicationConfig(BaseModel):
 
     @staticmethod
     def check_list_of_base_model_contains_name(
-        base_models: List[BaseModel], name: str
+        base_models: Sequence[
+            BaseModel
+        ],  # although expecting a list, use Sequence to imply covariance of BaseModel
+        name: str,
     ) -> bool:
         """Check if a list of Pydantic BaseModels contains an instance
         with a specific name.
 
         Parameters
         ----------
-        base_models: List[BaseModel]
+        base_models: Sequence[BaseModel]
             list of Pydantic BaseModel instances. Each instance must
             have a 'name' attribute.
 
@@ -78,7 +84,7 @@ class ApplicationConfig(BaseModel):
             False otherwise.
         """
         for base_model in base_models:
-            if base_model.name == name:
+            if hasattr(base_model, "name") and base_model.name == name:
                 return True
         return False
 
@@ -270,7 +276,7 @@ class ApplicationConfig(BaseModel):
             self.check_modality(modality_name=visualize_embedding_config.modality)
 
     @model_validator(mode="after")
-    def validate_model(cls, instance: Self) -> Self:
+    def validate_model(self) -> Self:
         """Pydantic model validator executed after model initialization.
 
         Calls `validate_component_configs` and
@@ -287,10 +293,10 @@ class ApplicationConfig(BaseModel):
         ApplicationConfig
             The validated ApplicationConfig instance.
         """
-        instance.validate_component_configs()
-        instance.validate_analysis_configs()
+        self.validate_component_configs()
+        self.validate_analysis_configs()
 
-        return instance
+        return self
 
     @classmethod
     def from_yaml(cls, filename: str) -> Self:

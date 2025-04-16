@@ -1,4 +1,5 @@
 import warnings
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
@@ -31,9 +32,12 @@ class TrainingConfig(BaseModel):
 
     """
 
-    optimizer: TrainingOptimizerConfig | None = Field(
-        default_factory=TrainingOptimizerConfig, description="config for optimizer."
-    )
+    optimizer: Annotated[  # to suppress mypy complaints
+        TrainingOptimizerConfig,
+        Field(
+            default_factory=TrainingOptimizerConfig, description="config for optimizer."
+        ),
+    ]
     max_n_epochs: int | None = Field(
         default=500, description="maximum number of epochs for training."
     )

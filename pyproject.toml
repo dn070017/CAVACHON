@@ -39,4 +39,6 @@ pytest-cov = "^6.1.1"
 mypy = "^1.15.0"
 pandas-stubs = "^2.2.3.250308"
 types-tensorflow = "^2.18.0.20250404"
+pytest-mock = "^3.14.0"
+types-pyyaml = "^6.0.12.20250402"
 

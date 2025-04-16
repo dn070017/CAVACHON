@@ -165,7 +165,7 @@ class TrainingOptimizerConfig(BaseModel):
             the (potentially modified) data to be validated.
         """
         resulting_data = deepcopy(data)
-        if isinstance(data, dict | BaseModel):
+        if isinstance(data, dict):
             optimizer_kind = data.get("kind", "adam")
             optimizer_kind = optimizer_kind.lower()
             resulting_data["kind"] = optimizer_kind

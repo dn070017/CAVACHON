@@ -35,7 +35,7 @@ class DatasetModalityConfig(BaseModel):
     h5ad: str | None = Field(
         default=None, description="filename to the h5ad (if not provided with samples)"
     )
-    batch_effect_colnames: List[str] | None = Field(
+    batch_effect_colnames: List[str] = Field(
         default_factory=list,
         description="the column names of the batch effects that needs to be corrected.",
     )
