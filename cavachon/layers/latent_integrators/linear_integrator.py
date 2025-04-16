@@ -1,19 +1,21 @@
-from typing import Optional
+import warnings
+from typing import Dict
 
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.progressive_scaler import ProgressiveScaler
+from cavachon.layers.latent_integrators.progressive_scaler import ProgressiveScaler
 
 
-class HierarchicalEncoder(tf.keras.Model):
-    """HierarchicalEncoder
+class ConcatenateIntegrator(tf.keras.layers.Layer):
+    """ConcatenateIntegrator
 
-    HierarchicalEncoder used to encode z_hat hierarchically through
-    the dependency between components. It expects multiple tf.Tensor
-    as inputs. The key of the inputs are 'z', 'z_conditional' (if
-    applicable) and 'z_hat_conditional' (if applicable). This base
-    module is implemented using Tensorflow sequential API.
+    ConcatenateIntegrator used to integrate z from the component of
+    interests and z_hat or z from its parent components. It expects a
+    dictionary of tf.Tensor as inputs. The key of the inputs are 'z',
+    'z_conditional' (if applicable) and 'z_hat_conditional'
+    (if applicable). This base module is implemented using Tensorflow
+    sequential API.
 
     """
 
@@ -23,12 +25,10 @@ class HierarchicalEncoder(tf.keras.Model):
         is_conditioned_on_z: bool = False,
         is_conditioned_on_z_hat: bool = False,
         progressive_iterations: int = 5000,
-        name: str = "hierarchical_encoder",
+        name: str = "concatenate_integrator",
         **kwargs,
     ):
-        """Constructor for HierarchicalEncoder. Should not be called
-        directly most of the time. Please use make() to create the
-        model.
+        """Constructor for ConcatenateIntegrator.
 
         Parameters
         ----------
@@ -64,26 +64,22 @@ class HierarchicalEncoder(tf.keras.Model):
 
     def call(
         self,
-        inputs: tf.Tensor,
+        inputs: Dict[str, tf.Tensor],
         training: bool = False,
-        mask: Optional[tf.Tensor] = None,
+        **kwargs,
     ) -> tf.Tensor:
-        """Forward pass for HierarchicalEncoder.
+        """Forward pass for ConcatenateIntegrator.
 
         Parameters
         ----------
-        inputs: Mapping[str, tf.Tensor]
-            inputs Tensors for the HierarchicalEncoder, where keys are
-            'z', 'z_conditional' (if applicable) and 'z_hat_conditional'
-            (if applicable). (if applicable). (by defaults, expect the
-            outputs by HierarchicalEncoder)
+        inputs: Dict[str, tf.Tensor]
+            inputs Tensors for the ConcatenateIntegrator, where keys
+            are 'z', 'z_conditional' (if applicable) and
+            'z_hat_conditional' (if applicable).
 
         training: bool, optional
             whether to run the network in training mode. Defaults to
             False.
-
-        mask: tf.Tensor, optional
-            a mask or list of masks. Defaults to None.
 
         Returns
         -------
@@ -92,24 +88,33 @@ class HierarchicalEncoder(tf.keras.Model):
             the conditioned components)
 
         """
-        z_hat = self.r_network(inputs.get(Constants.MODEL_OUTPUTS_Z))
-        z_hat = self.progressive_scaler(z_hat)
+        z_hat = self.r_network(inputs[Constants.MODEL_OUTPUTS_Z])
+        z_hat = self.progressive_scaler(z_hat, training=training)
         concat_inputs = []
         if self.is_conditioned_on_z or self.is_conditioned_on_z_hat:
             if self.is_conditioned_on_z:
-                concat_inputs.append(
-                    inputs.get(Constants.MODULE_INPUTS_CONDITIONED_Z, None)
-                )
+                if Constants.MODULE_INPUTS_CONDITIONED_Z in inputs:
+                    concat_inputs.append(inputs[Constants.MODULE_INPUTS_CONDITIONED_Z])
+                else:
+                    warnings.warn(
+                        f"is_conditioned_on_z is set for {self.__class__.__name__} ({self.name}) "
+                        "but not provided in the inputs. Do nothing.",
+                        UserWarning,
+                    )
             if self.is_conditioned_on_z_hat:
-                concat_inputs.append(
-                    inputs.get(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT, None)
-                )
+                if Constants.MODULE_INPUTS_CONDITIONED_Z_HAT in inputs:
+                    concat_inputs.append(
+                        inputs[Constants.MODULE_INPUTS_CONDITIONED_Z_HAT]
+                    )
+                else:
+                    warnings.warn(
+                        f"is_conditioned_on_z_hat is set for {self.__class__.__name__} ({self.name}) "
+                        "but not provided in the inputs. Do nothing.",
+                        UserWarning,
+                    )
 
         concat_inputs.append(z_hat)
-        z_hat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(concat_inputs)
+        z_hat = tf.concat(concat_inputs, axis=-1)
         z_hat = self.b_network(z_hat)
 
         return z_hat
-
-    def train_step(self, data):
-        raise NotImplementedError()

@@ -4,9 +4,9 @@ import tensorflow as tf
 class ProgressiveScaler(tf.keras.layers.Layer):
     """ProgressiveScaler
 
-    ProgressiveScaler used to scale the inputs during training. The input
-    tensor will be scale as current_iteration/iteration * tensor. Do
-    nothing in inference mode.
+    ProgressiveScaler used to scale the inputs during training. The
+    input tensor will be scale as current_iteration/total_iteration *
+    input_tensor. Do nothing in inference mode.
 
     Attributes
     ----------
@@ -31,7 +31,9 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
         """
         super().__init__(name=name)
-        self.total_iterations = tf.Variable(total_iterations, trainable=False, dtype=tf.float32)
+        self.total_iterations = tf.Variable(
+            total_iterations * tf.ones(()), trainable=False, dtype=tf.float32
+        )
         self.current_iteration = tf.Variable(tf.ones(()), trainable=False)
 
     def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:
@@ -46,26 +48,26 @@ class ProgressiveScaler(tf.keras.layers.Layer):
         training: bool, optional
             whether to run the network in training mode. Defaults to False.
 
-        mask: tf.Tensor, optional
-            a mask or list of masks. Defaults to None.
-
         Returns
         -------
         tf.Tensor
             parameters for the latent distributions.
 
         """
-        alpha = (self.current_iteration + 1e-7) / (self.total_iterations + 1e-7)
-        alpha = tf.where(alpha > 1.0, tf.ones_like(alpha), alpha)
-        alpha = alpha**2
-        result = alpha * inputs
-        self.current_iteration.assign_add(1.0)
-        self.current_iteration.assign(
-            tf.where(
-                self.current_iteration > self.total_iterations,
-                self.total_iterations,
-                self.current_iteration,
+        if training:
+            alpha = (self.current_iteration + 1e-7) / (self.total_iterations + 1e-7)
+            alpha = tf.where(alpha > 1.0, tf.ones_like(alpha), alpha)
+            alpha = alpha**2
+            result = alpha * inputs
+            self.current_iteration.assign_add(1.0)
+            self.current_iteration.assign(
+                tf.where(
+                    self.current_iteration > self.total_iterations,
+                    self.total_iterations,
+                    self.current_iteration,
+                )
             )
-        )
+        else:
+            result = 1 * inputs
 
         return result
