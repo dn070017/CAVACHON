@@ -7,10 +7,10 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.latent_integrators.progressive_scaler import ProgressiveScaler
 
 
-class ConcatenateIntegrator(tf.keras.layers.Layer):
-    """ConcatenateIntegrator
+class LinearIntegrator(tf.keras.layers.Layer):
+    """LinearIntegrator
 
-    ConcatenateIntegrator used to integrate z from the component of
+    LinearIntegrator used to integrate z from the component of
     interests and z_hat or z from its parent components. It expects a
     dictionary of tf.Tensor as inputs. The key of the inputs are 'z',
     'z_conditional' (if applicable) and 'z_hat_conditional'
@@ -25,10 +25,10 @@ class ConcatenateIntegrator(tf.keras.layers.Layer):
         is_conditioned_on_z: bool = False,
         is_conditioned_on_z_hat: bool = False,
         progressive_iterations: int = 5000,
-        name: str = "concatenate_integrator",
+        name: str = "linear_integrator",
         **kwargs,
     ):
-        """Constructor for ConcatenateIntegrator.
+        """Constructor for LinearIntegrator.
 
         Parameters
         ----------
@@ -68,12 +68,12 @@ class ConcatenateIntegrator(tf.keras.layers.Layer):
         training: bool = False,
         **kwargs,
     ) -> tf.Tensor:
-        """Forward pass for ConcatenateIntegrator.
+        """Forward pass for LineareIntegrator.
 
         Parameters
         ----------
         inputs: Dict[str, tf.Tensor]
-            inputs Tensors for the ConcatenateIntegrator, where keys
+            inputs Tensors for the LinearIntegrator, where keys
             are 'z', 'z_conditional' (if applicable) and
             'z_hat_conditional' (if applicable).
 
