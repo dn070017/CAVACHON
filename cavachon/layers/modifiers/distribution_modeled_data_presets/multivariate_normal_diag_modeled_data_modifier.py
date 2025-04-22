@@ -32,7 +32,7 @@ class MultivariateNormalDiagModeledDataModifier(DistributionPresetModifier):
 
     """
 
-    def __init__(self, modality_name):
+    def __init__(self, modality_name: str):
         super().__init__()
         self.modality_name = modality_name
         self.modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"

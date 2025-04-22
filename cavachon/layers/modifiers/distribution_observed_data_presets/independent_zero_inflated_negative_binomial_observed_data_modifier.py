@@ -35,7 +35,7 @@ class IndependentZeroInflatedNegativeBinomialObservedDataModifier(
 
     """
 
-    def __init__(self, modality_name):
+    def __init__(self, modality_name: str):
         """Constructor for IndependentZeroInflatedNegativeBinomial
         (modifier for tf.data.Dataset)
 

@@ -1,4 +1,4 @@
-from typing import Hashable, MutableMapping
+from typing import Dict
 
 import tensorflow as tf
 
@@ -9,44 +9,43 @@ class ExpTransform(tf.keras.layers.Layer):
     """ExpTransform
 
     Modifier used to exponential transform the tf.Tensor stored in a
-    MutableMapping.
+    dictionary.
 
     Attributes
     ----------
-    key: Hashable
+    key: str
         key to access the data needed to be exponential transformed.
 
     """
 
-    def __init__(self, key: Hashable, *args, **kwargs):
+    def __init__(self, key: str, *args, **kwargs):
         """Constructor for ExpTransform
 
         Parameters
         ----------
-        key: Hashable
+        key: str
             key to access the data needed to be exponential transformed.
 
         """
         super().__init__(*args, **kwargs)
         self.key = key
 
-    def call(
-        self, inputs: MutableMapping[Hashable, tf.Tensor]
-    ) -> MutableMapping[Hashable, tf.Tensor]:
+    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         """Exponential transform tf.Tensor stored in inputs.
 
         Parameters
         ----------
-        inputs: MutableMapping[Hashable, tf.Tensor])
-            inputs MutableMapping of tf.Tensor contains self.key
+        inputs: Dict[str, tf.Tensor]
+            inputs dictionary of tf.Tensor contains self.key
 
         Returns
         -------
-        MutableMapping[Hashable, tf.Tensor]
-            processed MutableMapping of tf.Tensor
+        Dict[str, tf.Tensor]
+            processed dictionary of tf.Tensor
         """
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
         is_sparse = False
-        tensor = inputs[self.key]
+        tensor = outputs[self.key]
         if TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.to_dense(tensor)
 
@@ -57,5 +56,5 @@ class ExpTransform(tf.keras.layers.Layer):
         if is_sparse:
             tensor = tf.sparse.from_dense(tensor)
 
-        inputs[self.key] = tensor
-        return inputs
+        outputs[self.key] = tensor
+        return outputs

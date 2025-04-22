@@ -33,7 +33,7 @@ class IndependentBernoulliModeledDataModifier(DistributionPresetModifier):
 
     """
 
-    def __init__(self, modality_name):
+    def __init__(self, modality_name: str):
         """Constructor for IndependentBernoulli (modifier for
         tf.data.Dataset)
 

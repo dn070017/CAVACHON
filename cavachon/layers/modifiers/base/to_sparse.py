@@ -1,4 +1,4 @@
-from typing import Hashable, MutableMapping
+from typing import Dict
 
 import tensorflow as tf
 
@@ -8,50 +8,48 @@ from cavachon.utils.tensor_utils import TensorUtils
 class ToSparse(tf.keras.layers.Layer):
     """ToDense
 
-    Modifier used to convert tf.Tensor stored in a MutableMapping to
+    Modifier used to convert tf.Tensor stored in a dictionary to
     tf.SparseTensor.
 
     Attributes
     ----------
-    key: Hashable
+    key: str
         key to access the data needed to be transform to tf.SparseTensor.
 
     """
 
-    def __init__(self, key: Hashable, *args, **kwargs):
+    def __init__(self, key: str, *args, **kwargs):
         """Constructor for ToSparse
 
         Parameters
         ----------
-        key: Hashable
+        key: str
             key to access the data needed to be transformed.
 
         """
         super().__init__(*args, **kwargs)
         self.key = key
 
-    def call(
-        self, inputs: MutableMapping[str, tf.Tensor]
-    ) -> MutableMapping[str, tf.Tensor]:
+    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         """Transform tf.Tensor stored in inputs to tf.SparseTensor.
 
         Parameters
         ----------
-        inputs: MutableMapping[Hashable, tf.Tensor])
-            inputs MutableMapping of tf.Tensor contains self.key
+        inputs: Dict[str, tf.Tensor])
+            inputs dictionary of tf.Tensor contains self.key
 
         Returns
         -------
-        MutableMapping[Hashable, tf.Tensor]
-            processed MutableMapping of tf.Tensor
+        Dict[str, tf.Tensor]
+            processed dictionary of tf.Tensor
 
         """
-
-        tensor = inputs[self.key]
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
+        tensor = outputs[self.key]
         if isinstance(
-            tensor, (tf.keras.KerasTensor, tf.SparseTensor)
+            tensor, (tf.keras.KerasTensor, tf.Tensor)
         ) and not TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.from_dense(tensor)
 
-        inputs[self.key] = tensor
-        return inputs
+        outputs[self.key] = tensor
+        return outputs

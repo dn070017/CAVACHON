@@ -1,4 +1,4 @@
-from typing import Hashable, MutableMapping
+from typing import Dict
 
 import tensorflow as tf
 
@@ -8,48 +8,46 @@ from cavachon.utils.tensor_utils import TensorUtils
 class ToDense(tf.keras.layers.Layer):
     """ToDense
 
-    Modifier used to convert tf.SparseTensor stored in a MutableMapping
+    Modifier used to convert tf.SparseTensor stored in a dictionary
     to dense tf.Tensor.
 
     Attributes
     ----------
-    key: Hashable
+    key: str
         key to access the data needed to be transform to dense
         tf.Tensor.
 
     """
 
-    def __init__(self, key: Hashable, *args, **kwargs):
+    def __init__(self, key: str, *args, **kwargs):
         """Constructor for ToDense
 
         Parameters
         ----------
-        key: Hashable
+        key: str
             key to access the data needed to be transformed.
 
         """
         super().__init__(*args, **kwargs)
         self.key = key
 
-    def call(
-        self, inputs: MutableMapping[str, tf.Tensor]
-    ) -> MutableMapping[str, tf.Tensor]:
+    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         """Transform tf.SparseTensor stored in inputs to tf.Tensor.
 
         Parameters
         ----------
-        inputs: MutableMapping[Hashable, tf.Tensor])
-            inputs MutableMapping of tf.Tensor contains self.key
+        inputs: Dict[str, tf.Tensor])
+            inputs dictionary of tf.Tensor contains self.key
 
         Returns
         -------
-        MutableMapping[Hashable, tf.Tensor]
-            processed MutableMapping of tf.Tensor
+        Dict[str, tf.Tensor]
+            processed dictionary of tf.Tensor
 
         """
-
-        tensor = inputs[self.key]
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
+        tensor = outputs[self.key]
         if TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.to_dense(tensor)
-        inputs[self.key] = tensor
-        return inputs
+        outputs[self.key] = tensor
+        return outputs
