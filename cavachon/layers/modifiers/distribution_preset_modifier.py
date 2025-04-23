@@ -1,4 +1,4 @@
-import functools
+from typing import Dict
 
 import tensorflow as tf
 
@@ -29,21 +29,13 @@ class DistributionPresetModifier(tf.keras.layers.Layer):
     """
 
     def __init__(self):
-        """Constructor for IndependentBernoulli (modifier for
-        tf.data.Dataset)
-
-        Parameters
-        ----------
-        modality_name: str
-            the name of modality that needs to be processed.
-
-        """
+        """Constructor for distribution preset modifiers"""
         super().__init__()
         self.modality_name = ""
         self.modality_key = ""
         self.modifiers = []
 
-    def call(self, inputs):
+    def call(self, inputs: Dict[str, tf.Tensor]):
         """Processed the data created from tf.data.Dataset.
 
         Parameters
@@ -54,9 +46,11 @@ class DistributionPresetModifier(tf.keras.layers.Layer):
 
         Returns
         -------
-        Mapping[Any, tf.Tensor]
+        Dict[str, tf.Tensor]
             processed data.
 
         """
-        modifiers = self.modifiers
-        return functools.reduce(lambda x, modifier: modifier(x), modifiers, inputs)
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
+        for modifier in self.modifiers:
+            outputs = modifier(outputs)
+        return outputs
