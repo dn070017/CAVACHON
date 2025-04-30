@@ -1,1 +1,1 @@
-from .linear_integrator import LinearIntegrator as LinearIntegrator
+from .latent_linear_integrator import LatentLinearIntegrator as LatentLinearIntegrator

@@ -7,10 +7,10 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.integrators.progressive_scaler import ProgressiveScaler
 
 
-class LinearIntegrator(ProgressiveScaler):
-    """LinearIntegrator
+class LatentLinearIntegrator(ProgressiveScaler):
+    """LatentLinearIntegrator
 
-    LinearIntegrator used to integrate z from the component of
+    LatentLinearIntegrator used to integrate z from the component of
     interests and z_hat or z from its parent components. It expects a
     dictionary of tf.Tensor as inputs. The key of the inputs are 'z',
     'z_conditional' (if applicable) and 'z_hat_conditional'
@@ -28,7 +28,7 @@ class LinearIntegrator(ProgressiveScaler):
         name: str = "linear_integrator",
         **kwargs,
     ):
-        """Constructor for LinearIntegrator.
+        """Constructor for LatentLinearIntegrator.
 
         Parameters
         ----------
@@ -72,7 +72,7 @@ class LinearIntegrator(ProgressiveScaler):
         Parameters
         ----------
         inputs: tf.Tensor | Dict[str, tf.Tensor]
-            inputs Tensors for the LinearIntegrator, where keys
+            inputs Tensors for the LatentLinearIntegrator, where keys
             are 'z', 'z_conditional' (if applicable) and
             'z_hat_conditional' (if applicable). tf.Tensor is not
             supported (it merely exists for type checking).

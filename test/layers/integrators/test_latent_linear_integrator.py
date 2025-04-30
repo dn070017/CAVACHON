@@ -2,7 +2,7 @@ import pytest
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.integrators.linear_integrator import LinearIntegrator
+from cavachon.layers.integrators.latent_linear_integrator import LatentLinearIntegrator
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def z_hat_conditional(batch_size, n_latent_dims):
 
 @pytest.fixture
 def integrator_no_cond(n_latent_dims, progressive_iterations):
-    return LinearIntegrator(
+    return LatentLinearIntegrator(
         n_latent_dims=n_latent_dims,
         is_conditioned_on_z=False,
         is_conditioned_on_z_hat=False,
@@ -47,7 +47,7 @@ def integrator_no_cond(n_latent_dims, progressive_iterations):
 
 @pytest.fixture
 def integrator_cond_z(n_latent_dims, progressive_iterations):
-    return LinearIntegrator(
+    return LatentLinearIntegrator(
         n_latent_dims=n_latent_dims,
         is_conditioned_on_z=True,
         is_conditioned_on_z_hat=False,
@@ -57,7 +57,7 @@ def integrator_cond_z(n_latent_dims, progressive_iterations):
 
 @pytest.fixture
 def integrator_cond_z_hat(n_latent_dims, progressive_iterations):
-    return LinearIntegrator(
+    return LatentLinearIntegrator(
         n_latent_dims=n_latent_dims,
         is_conditioned_on_z=False,
         is_conditioned_on_z_hat=True,
@@ -67,7 +67,7 @@ def integrator_cond_z_hat(n_latent_dims, progressive_iterations):
 
 @pytest.fixture
 def integrator_cond_both(n_latent_dims, progressive_iterations):
-    return LinearIntegrator(
+    return LatentLinearIntegrator(
         n_latent_dims=n_latent_dims,
         is_conditioned_on_z=True,
         is_conditioned_on_z_hat=True,
@@ -76,7 +76,7 @@ def integrator_cond_both(n_latent_dims, progressive_iterations):
 
 
 def test_init(integrator_no_cond, n_latent_dims, progressive_iterations):
-    assert isinstance(integrator_no_cond, LinearIntegrator)
+    assert isinstance(integrator_no_cond, LatentLinearIntegrator)
     assert not integrator_no_cond.is_conditioned_on_z
     assert not integrator_no_cond.is_conditioned_on_z_hat
     assert integrator_no_cond.total_iterations == progressive_iterations
