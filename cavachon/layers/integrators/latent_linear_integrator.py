@@ -63,7 +63,7 @@ class LatentLinearIntegrator(ProgressiveScaler):
         training: bool = False,
         **kwargs,
     ) -> tf.Tensor:
-        """Forward pass for LineareIntegrator.
+        """Forward pass for LatentLinearIntegrator.
 
         Parameters
         ----------
