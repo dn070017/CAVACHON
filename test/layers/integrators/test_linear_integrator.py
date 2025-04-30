@@ -2,7 +2,7 @@ import pytest
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.latent_integrators.linear_integrator import LinearIntegrator
+from cavachon.layers.integrators.linear_integrator import LinearIntegrator
 
 
 @pytest.fixture

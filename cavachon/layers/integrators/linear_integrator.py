@@ -4,7 +4,7 @@ from typing import Dict
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.layers.latent_integrators.progressive_scaler import ProgressiveScaler
+from cavachon.layers.integrators.progressive_scaler import ProgressiveScaler
 
 
 class LinearIntegrator(ProgressiveScaler):

@@ -1,7 +1,7 @@
 import pytest
 import tensorflow as tf
 
-from cavachon.layers.latent_integrators.progressive_scaler import ProgressiveScaler
+from cavachon.layers.integrators.progressive_scaler import ProgressiveScaler
 
 
 @pytest.fixture
