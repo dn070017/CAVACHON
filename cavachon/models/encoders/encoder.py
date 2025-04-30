@@ -1,0 +1,143 @@
+from typing import Dict, List
+
+import tensorflow as tf
+
+from cavachon.environment.constants import Constants
+from cavachon.layers.integrators.modality_linear_integrator import (
+    ModalityLinearIntegrator,
+)
+from cavachon.layers.modifiers.distribution_preset_modifier import (
+    DistributionPresetModifier,
+)
+from cavachon.layers.parameterizers.multivariate_normal_diag_parameterizer_layer import (
+    MultivariateNormalDiagParameterizerLayer,
+)
+from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
+    MultivariateNormalDiagSampler,
+)
+from cavachon.utils.tensor_utils import TensorUtils
+
+
+class Encoder(tf.keras.Model):
+    """Encoder
+
+    Encoder model for encoding input data into latent representations.
+
+    Attributes
+    ----------
+    modality_names: List[str]
+        list of modality names.
+
+    modifiers: Dict[str, DistributionPresetModifier]
+        dictionary of modifiers for different modalities.
+
+    modifiers_backbone_adaptor: ModalityLinearIntegrator
+        integrator for modality tensors.
+
+    backbone_network: tf.keras.Model
+        backbone network for encoding.
+
+    z_parameterizer: MultivariateNormalDiagParameterizerLayer
+        parameterizer for latent variables.
+
+    z_sampler: MultivariateNormalDiagSampler
+        sampler for latent variables.
+
+    """
+
+    def __init__(
+        self,
+        modality_names: List[str],
+        modifiers: Dict[str, DistributionPresetModifier],
+        n_reduced_dims: int = 512,
+        n_layers: int = 3,
+        n_latent_dims: int = 5,
+        activation: str = "swish",
+        name: str = "encoder",
+    ):
+        """Constructor for Encoder
+
+        Parameters
+        ----------
+        modality_names: List[str]
+            list of modality names.
+
+        modifiers: Dict[str, DistributionPresetModifier]
+            dictionary of modifiers for different modalities.
+
+        n_reduced_dims: int, optional
+            number of reduced dimensions. Defaults to 512.
+
+        n_layers: int, optional
+            number of layers in the backbone network. Defaults to 3.
+
+        n_latent_dims: int, optional
+            number of latent dimensions. Defaults to 5.
+
+        activation: str, optional
+            activation function. Defaults to 'swish'.
+
+        name: str, optional
+            name for the tensorflow model. Defaults to 'encoder'.
+        """
+        super().__init__(name=name)
+        self.modality_names = modality_names
+        self.modifiers = modifiers
+        self.modifiers_backbone_adaptor = ModalityLinearIntegrator(
+            modality_keys=[
+                f"{modality}_{Constants.TENSOR_NAME_X_MODEL}"
+                for modality in modality_names
+            ],
+            output_dims=n_reduced_dims,
+        )
+        self.backbone_network = TensorUtils.create_backbone_layers(
+            n_layers=n_layers,
+            base_n_neurons=n_latent_dims,
+            reverse=True,
+            activation=activation,
+        )
+        self.z_parameterizer = MultivariateNormalDiagParameterizerLayer(
+            event_dims=n_latent_dims
+        )
+        self.z_sampler = MultivariateNormalDiagSampler()
+
+    def call(self, inputs: Dict[str, tf.Tensor], training: bool = False, **kwargs):
+        """Forward pass of the encoder.
+
+        Parameters
+        ----------
+        inputs: Dict[str, tf.Tensor]
+            input tensors.
+
+        training: bool, optional
+            whether the call is during training. Defaults to False.
+
+        Returns
+        -------
+        Dict[str, tf.Tensor]
+            output tensors.
+
+        """
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
+        for _, modifier in self.modifiers.items():
+            outputs = modifier(outputs)
+
+        modality_integrated_tensors = self.modifiers_backbone_adaptor(
+            outputs, training=training
+        )
+        encoded_tensor = self.backbone_network(
+            modality_integrated_tensors, training=training
+        )
+        z_parameters = self.z_parameterizer(encoded_tensor, training=training)
+        z = self.z_sampler(z_parameters, training=training)
+
+        outputs[Constants.MODEL_OUTPUTS_Z] = z
+        outputs[Constants.MODEL_OUTPUTS_Z_PARAMS] = z_parameters
+
+        return outputs
+
+    def train_step(self, *args, **kwargs):
+        raise NotImplementedError("train_step is not implemented for Encoder.")
+
+    def test_step(self, *args, **kwargs):
+        raise NotImplementedError("test_step is not implemented for Encoder.")
