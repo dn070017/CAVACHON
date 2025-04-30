@@ -48,18 +48,14 @@ class LatentLinearIntegrator(ProgressiveScaler):
             total iterations for progressive training. Defaults to 5000.
 
         name: str, optional:
-            Name for the tensorflow model. Defaults to
-            'hierarchical_encoder'.
+            name for the tensorflow model. Defaults to
+            "linear_integrator".
         """
         super().__init__(name=name, total_iterations=progressive_iterations)
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
-        self.r_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims)], name=Constants.MODULE_R_NETWORK
-        )
-        self.b_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims)], name=Constants.MODULE_B_NETWORK
-        )
+        self.r_network = tf.keras.layers.Dense(n_latent_dims)
+        self.b_network = tf.keras.layers.Dense(n_latent_dims)
 
     def call(
         self,

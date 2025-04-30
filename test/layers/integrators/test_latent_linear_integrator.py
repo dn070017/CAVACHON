@@ -80,8 +80,8 @@ def test_init(integrator_no_cond, n_latent_dims, progressive_iterations):
     assert not integrator_no_cond.is_conditioned_on_z
     assert not integrator_no_cond.is_conditioned_on_z_hat
     assert integrator_no_cond.total_iterations == progressive_iterations
-    assert integrator_no_cond.r_network.layers[0].units == n_latent_dims
-    assert integrator_no_cond.b_network.layers[0].units == n_latent_dims
+    assert integrator_no_cond.r_network.units == n_latent_dims
+    assert integrator_no_cond.b_network.units == n_latent_dims
 
 
 def test_call_no_cond(integrator_no_cond, z, batch_size, n_latent_dims):
