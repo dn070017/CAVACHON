@@ -7,7 +7,7 @@ class ModalityLinearIntegrator(tf.keras.layers.Layer):
     """ModalityLinearIntegrator
 
     ModalityLinearIntegrator used to integrate tensors from multiple
-    modalities into a single tensor representation by linear
+    modalities into a single tensor representation by robust linear
     combination.
 
     """
@@ -36,7 +36,10 @@ class ModalityLinearIntegrator(tf.keras.layers.Layer):
         """
         super().__init__(name=name)
         self.modality_keys = modality_keys
-        self.r_network = tf.keras.layers.Dense(output_dims)
+        self.r_networks = {
+            key: tf.keras.layers.Dense(output_dims) for key in self.modality_keys
+        }
+        self.b_network = tf.keras.layers.Dense(output_dims)
 
     def call(
         self,
@@ -64,6 +67,7 @@ class ModalityLinearIntegrator(tf.keras.layers.Layer):
         """
         concatenated_tensors: List[tf.Tensor] = list()
         for modality_key in self.modality_keys:
-            concatenated_tensors.append(inputs[modality_key])
+            transformed_tensor = self.r_networks[modality_key](inputs[modality_key])
+            concatenated_tensors.append(transformed_tensor)
 
-        return self.r_network(tf.concat(concatenated_tensors, axis=-1))
+        return self.b_network(tf.concat(concatenated_tensors, axis=-1))

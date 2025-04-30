@@ -14,8 +14,7 @@ class LatentLinearIntegrator(ProgressiveScaler):
     interests and z_hat or z from its parent components. It expects a
     dictionary of tf.Tensor as inputs. The key of the inputs are 'z',
     'z_conditional' (if applicable) and 'z_hat_conditional'
-    (if applicable). This base module is implemented using Tensorflow
-    sequential API.
+    (if applicable).
 
     """
 
