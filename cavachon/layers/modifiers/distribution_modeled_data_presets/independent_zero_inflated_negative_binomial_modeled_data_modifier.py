@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.base.log_transform import LogTransform
 from cavachon.layers.modifiers.base.normalize_library_size import NormalizeLibrarySize
@@ -7,6 +9,7 @@ from cavachon.layers.modifiers.distribution_preset_modifier import (
 )
 
 
+@tf.keras.utils.register_keras_serializable()
 class IndependentZeroInflatedNegativeBinomialModeledDataModifier(
     DistributionPresetModifier
 ):
@@ -37,7 +40,7 @@ class IndependentZeroInflatedNegativeBinomialModeledDataModifier(
 
     """
 
-    def __init__(self, modality_name: str):
+    def __init__(self, modality_name: str, **kwargs):
         """Constructor for IndependentZeroInflatedNegativeBinomial
         (modifier for tf.data.Dataset)
 
@@ -46,7 +49,7 @@ class IndependentZeroInflatedNegativeBinomialModeledDataModifier(
         modality_name: str
             the name of modality that needs to be processed.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.modality_name = modality_name
         self.modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
         self.modifiers = [

@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import tensorflow as tf
 
@@ -102,3 +104,35 @@ def test_encoder_predict(n_latent_dims, encoder, batch_size, inputs):
 
     assert z.shape == (batch_size, n_latent_dims)
     assert z_params.shape == (batch_size, n_latent_dims * 2)
+
+
+def test_encoder_save_and_load(tmp_path, encoder, inputs):
+    outputs = encoder.predict(inputs)
+    model_path = os.path.join(tmp_path, "test_encoder.keras")
+    encoder.save(model_path)
+    loaded_encoder = tf.keras.models.load_model(model_path)
+    loaded_outputs = loaded_encoder.predict(inputs)
+
+    assert isinstance(loaded_outputs, dict)
+    assert Constants.MODEL_OUTPUTS_Z in loaded_outputs
+    assert Constants.MODEL_OUTPUTS_Z_PARAMS in loaded_outputs
+
+    loaded_z = loaded_outputs[Constants.MODEL_OUTPUTS_Z]
+    loaded_z_params = loaded_outputs[Constants.MODEL_OUTPUTS_Z_PARAMS]
+
+    tf.debugging.assert_near(outputs[Constants.MODEL_OUTPUTS_Z], loaded_z)
+    tf.debugging.assert_near(outputs[Constants.MODEL_OUTPUTS_Z_PARAMS], loaded_z_params)
+
+
+def test_encoder_save_and_load_weights(tmp_path, encoder, inputs):
+    outputs = encoder.predict(inputs)
+    weights_path = os.path.join(tmp_path, "test_encoder.weights.h5")
+    encoder.save_weights(weights_path)
+    encoder.load_weights(weights_path)
+    loaded_outputs = encoder.predict(inputs)
+
+    loaded_z = loaded_outputs[Constants.MODEL_OUTPUTS_Z]
+    loaded_z_params = loaded_outputs[Constants.MODEL_OUTPUTS_Z_PARAMS]
+
+    tf.debugging.assert_near(outputs[Constants.MODEL_OUTPUTS_Z], loaded_z)
+    tf.debugging.assert_near(outputs[Constants.MODEL_OUTPUTS_Z_PARAMS], loaded_z_params)

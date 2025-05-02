@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Any, Dict, List, Self
 
 import tensorflow as tf
 
@@ -18,6 +18,7 @@ from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
 from cavachon.utils.tensor_utils import TensorUtils
 
 
+@tf.keras.utils.register_keras_serializable()
 class Encoder(tf.keras.Model):
     """Encoder
 
@@ -54,6 +55,7 @@ class Encoder(tf.keras.Model):
         n_latent_dims: int = 5,
         activation: str = "swish",
         name: str = "encoder",
+        **kwargs,
     ):
         """Constructor for Encoder
 
@@ -80,9 +82,14 @@ class Encoder(tf.keras.Model):
         name: str, optional
             name for the tensorflow model. Defaults to 'encoder'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.modality_names = modality_names
         self.modifiers = modifiers
+        self.n_reduced_dims = n_reduced_dims
+        self.n_layers = n_layers
+        self.n_latent_dims = n_latent_dims
+        self.activation = activation
+
         self.modifiers_backbone_adaptor = ModalityLinearIntegrator(
             modality_keys=[
                 f"{modality}_{Constants.TENSOR_NAME_X_MODEL}"
@@ -135,6 +142,52 @@ class Encoder(tf.keras.Model):
         outputs[Constants.MODEL_OUTPUTS_Z_PARAMS] = z_parameters
 
         return outputs
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the Encoder model.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "modality_names": self.modality_names,
+                "modifiers": {
+                    name: tf.keras.layers.serialize(modifier)
+                    for name, modifier in self.modifiers.items()
+                },
+                "n_reduced_dims": self.n_reduced_dims,
+                "n_layers": self.n_layers,
+                "n_latent_dims": self.n_latent_dims,
+                "activation": self.activation,
+                "name": self.name,
+            }
+        )
+        return config
+
+    @classmethod
+    def from_config(cls, config) -> Self:
+        """Creates an Encoder model from its configuration.
+
+        Parameters
+        ----------
+        config: Dict[str, Any]
+            The configuration dictionary.
+
+        Returns
+        -------
+        Encoder
+            The Encoder model instance.
+        """
+        modifiers = {
+            name: tf.keras.layers.deserialize(modifier_config)
+            for name, modifier_config in config["modifiers"].items()
+        }
+        config["modifiers"] = modifiers
+        return cls(**config)
 
     def train_step(self, *args, **kwargs):
         raise NotImplementedError("train_step is not implemented for Encoder.")

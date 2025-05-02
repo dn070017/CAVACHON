@@ -1,8 +1,9 @@
-from typing import Dict
+from typing import Any, Dict
 
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class ProgressiveScaler(tf.keras.layers.Layer):
     """ProgressiveScaler
 
@@ -20,7 +21,13 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self, total_iterations: int = 5000, name: str = "progressive_scaler"):
+    def __init__(
+        self,
+        total_iterations: int = 5000,
+        current_iteration: int = 0,
+        name: str = "progressive_scaler",
+        **kwargs,
+    ):
         """Constructor for ProgressiveScaler
 
         Parameters
@@ -28,6 +35,10 @@ class ProgressiveScaler(tf.keras.layers.Layer):
         total_iterations: int, optional
             total iterations in the progressive training. Defaults to
             5000.
+
+        current_iteration: int, optional
+            current iterations in the progressive training. Default to
+            0.
 
         name: str, optional
             Name for the tensorflow layer. Defaults to
@@ -39,7 +50,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             when total_iterations is equal to or smaller than 0.
 
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         if total_iterations <= 0:
             raise ValueError("total_iterations must be greater than 0")
 
@@ -47,8 +58,26 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             total_iterations * tf.ones(()), trainable=False, dtype=tf.float32
         )  # to ensure the total_iterations will be saved in the model
         self.current_iteration = tf.Variable(
-            tf.zeros(()), trainable=False
+            current_iteration * tf.ones(()), trainable=False, dtype=tf.float32
         )  # to ensure the total_iterations will be saved in the model
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "total_iterations": self.total_iterations.numpy(),
+                "current_iteration": self.current_iteration.numpy(),
+            }
+        )
+        return config
 
     def call(
         self, inputs: tf.Tensor | Dict[str, tf.Tensor], training: bool = False, **kwargs
@@ -93,7 +122,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
         Returns
         -------
         tf.Tensor
-            The computed scaling factor alpha.
+            the computed scaling factor alpha.
         """
         alpha = self.current_iteration / self.total_iterations
         alpha = tf.minimum(alpha, 1.0)
@@ -110,4 +139,5 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
     def reset(self):
         """Resets the current iteration counter to 0.0."""
+        self.current_iteration.assign(0.0)
         self.current_iteration.assign(0.0)

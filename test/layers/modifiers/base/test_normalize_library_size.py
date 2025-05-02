@@ -61,6 +61,12 @@ def test_call_sparse(normalize_library_size, key, libsize_key):
     tf.debugging.assert_equal(outputs[libsize_key], expected_outputs[libsize_key])
 
 
+def test_normalize_library_size_get_config(normalize_library_size, key):
+    config = normalize_library_size.get_config()
+    new_normalize_library_size = NormalizeLibrarySize.from_config(config)
+    assert new_normalize_library_size.key == key
+
+
 def test_call_dense_existing_libsize(normalize_library_size, key, libsize_key):
     inputs = {
         key: tf.convert_to_tensor([[5.0, 5.0, 10.0, 20.0, 10.0]]),

@@ -84,6 +84,19 @@ def test_progressive_scaler_call_training_iteration_cap(input_tensor):
     tf.debugging.assert_equal(scaler.current_iteration, total_iterations)
 
 
+def test_progressive_scaler_get_config(progressive_scaler_instance):
+    config = progressive_scaler_instance.get_config()
+    new_progressive_scaler = ProgressiveScaler.from_config(config)
+    assert (
+        new_progressive_scaler.total_iterations
+        == progressive_scaler_instance.total_iterations
+    )
+    assert (
+        new_progressive_scaler.current_iteration
+        == progressive_scaler_instance.current_iteration
+    )
+
+
 def test_progressive_scaler_compute_alpha(progressive_scaler_instance):
     total_iterations = progressive_scaler_instance.total_iterations
 

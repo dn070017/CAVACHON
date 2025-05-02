@@ -9,7 +9,7 @@ import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
-from cavachon.dataloader.dataloader import DataLoader
+from cavachon.dataset.dataloader import DatasetCreator
 from cavachon.environment.constants import Constants
 from cavachon.utils.reflection_handler import ReflectionHandler
 
@@ -257,6 +257,9 @@ class DifferentialAnalysis:
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
 
+        desc: str, optional
+            description for the progress bar, by default "".
+
         Returns
         -------
         pd.DataFrame
@@ -276,7 +279,7 @@ class DifferentialAnalysis:
         modality_names = self.mdata.mod.keys()
 
         batch_effect = dict()
-        dataloader = DataLoader(
+        dataloader = DatasetCreator(
             self.mdata,
             batch_size,
             self.batch_effect_colnames,
@@ -301,14 +304,14 @@ class DifferentialAnalysis:
             mdata_group_b = self.sample_mdata_x(
                 index=group_b_index, x_sampling_size=x_sampling_size
             )
-            dataloader_group_a = DataLoader(
+            dataloader_group_a = DatasetCreator(
                 mdata_group_a,
                 batch_size,
                 self.batch_effect_colnames,
                 self.distribution_names,
                 self.batch_effect_encoders,
             )
-            dataloader_group_b = DataLoader(
+            dataloader_group_b = DatasetCreator(
                 mdata_group_b,
                 batch_size,
                 self.batch_effect_colnames,
@@ -502,3 +505,60 @@ class DifferentialAnalysis:
             },
             index=index,
         )
+
+    def between_two_groups_with_latent_substitution(
+        self,
+        group_a_index: Union[pd.Index, Sequence[str]],
+        group_b_index: Union[pd.Index, Sequence[str]],
+        component: str,
+        modality: str,
+        z_sampling_size: int = 10,
+        x_sampling_size: int = 2500,
+        batch_size: int = 128,
+        desc: str = "",
+    ) -> pd.DataFrame:
+        """Perform the differential analysis between two groups.
+
+        Parameters
+        ----------
+        group_a_index : Union[pd.Index, Sequence[str]]
+            index of group one. Needs to meet the index in the obs of
+            the modality.
+
+        group_b_index : Union[pd.Index, Sequence[str]]
+            index of group two. Needs to meet the index in the obs of
+            the modality.
+
+        component : str
+            generative result of `modality` from which component to
+            used.
+
+        modality : str
+            which modality to used from the generative result of
+            `component`.
+
+        z_sampling_size: int, optional
+            how many z to sample, by default 10.
+
+        x_sampling_size: int, optional
+            how many x to sample, by default 2500.
+
+        batch_size: int, optional
+            batch size used for the forward pass. Defaults to 128.
+
+        desc: str, optional
+            description for the progress bar, by default "".
+
+        Returns
+        -------
+        pd.DataFrame
+            analysis result for differential analysis. The DataFrame
+            contains 6 columns:
+            1.  expected values of groups A
+            2.  expected values of groups B
+            3.  the probability P(A>B|Z)
+            4.  the probability P(B>A|Z)
+            5.  the Bayesian factor of K(A>B|Z)
+            6.  the Bayesian factor of K(B>A|Z)
+
+        """

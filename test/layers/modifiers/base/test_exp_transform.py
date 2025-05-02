@@ -51,3 +51,9 @@ def test_call_sparse(exp_transform, key):
     tf.debugging.assert_equal(
         outputs[key].dense_shape, expected_outputs[key].dense_shape
     )
+
+
+def test_exp_transform_get_config(exp_transform, key):
+    config = exp_transform.get_config()
+    new_exp_transform = ExpTransform.from_config(config)
+    assert new_exp_transform.key == key

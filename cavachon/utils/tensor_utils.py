@@ -116,12 +116,12 @@ class TensorUtils:
         layers would have number of neurons
         [`base_n_neurons`, `base_n_neurons`*`rate`, ...]. For instance,
         with default parameters, it creates layers of:
-        1. tf.keras.layers.Dense(128, activation='elu')
-        2. tf.keras.layers.BatchNormalization()
-        3. tf.keras.layers.Dense(256, activation='elu')
-        4. tf.keras.layers.BatchNormalization()
-        5. tf.keras.layers.Dense(512, activation='elu')
-        6. tf.keras.layers.BatchNormalization()
+        1. tf.keras.layers.Dense(128, activation='swish')
+        2. tf.keras.layers.LayerNormalization()
+        3. tf.keras.layers.Dense(256, activation='swish')
+        4. tf.keras.layers.LayerNormalization()
+        5. tf.keras.layers.Dense(512, activation='swish')
+        6. tf.keras.layers.LayerNormalization()
 
         Parameters
         ----------

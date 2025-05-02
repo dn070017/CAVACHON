@@ -25,3 +25,17 @@ def test_init(modifier, modality_name):
     assert len(modifier.modifiers) == 2
     assert isinstance(modifier.modifiers[0], ToDense)
     assert isinstance(modifier.modifiers[1], Binarize)
+
+
+def test_independent_bernoulli_modeled_data_modifier_get_config(
+    modifier, modality_name
+):
+    config = modifier.get_config()
+    new_modifier = IndependentBernoulliModeledDataModifier.from_config(config)
+    assert new_modifier.modality_name == modality_name
+    assert (
+        new_modifier.modality_key == f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
+    )
+    assert len(new_modifier.modifiers) == 2
+    assert isinstance(new_modifier.modifiers[0], ToDense)
+    assert isinstance(new_modifier.modifiers[1], Binarize)

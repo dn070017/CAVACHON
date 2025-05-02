@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
     """MultivariateNormalDiagSampler
 
@@ -8,7 +9,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self, name: str = "multivariate_normal_diag_sampler"):
+    def __init__(self, name: str = "multivariate_normal_diag_sampler", **kwargs):
         """Constructor for MultivariateNormalDiagSampler
 
         Parameters
@@ -17,7 +18,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
             Name for the tensorflow layer. Defaults to
             'multivariate_normal_diag_sampler'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         return
 
     def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:

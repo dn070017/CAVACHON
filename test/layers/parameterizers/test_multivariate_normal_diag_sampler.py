@@ -34,3 +34,9 @@ def test_multivariate_normal_diag_sampler_output_value_test_mode(sampler):
     loc, _ = tf.split(inputs, 2, axis=-1)
     output = sampler(inputs, training=False)
     tf.debugging.assert_equal(output, loc)
+
+
+def test_multivariate_normal_diag_sampler_get_config(sampler):
+    config = sampler.get_config()
+    new_sampler = MultivariateNormalDiagSampler.from_config(config)
+    assert isinstance(new_sampler, MultivariateNormalDiagSampler)

@@ -1,6 +1,9 @@
+from typing import Any, Dict
+
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.Layer):
     """IndependentZeroInflatedNegativeBinomialParameterizerLayer
 
@@ -14,6 +17,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         event_dims: int,
         use_shared_dispersion: bool = True,
         name: str = "independent_zero_inflated_negative_binomial_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for
         IndependentZeroInflatedNegativeBinomialParameterizerLayer
@@ -33,10 +37,28 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
             Name for the tensorflow layer. Defaults to
             'independent_zero_inflated_negative_binomial_parameterizer_layer'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         self.use_shared_dispersion: bool = use_shared_dispersion
         return
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "event_dims": self.event_dims,
+                "use_shared_dispersion": self.use_shared_dispersion,
+            }
+        )
+        return config
 
     def build(self, input_shape: tf.TensorShape) -> None:
         """Create necessary tf.Variable for the first time being

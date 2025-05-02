@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.base.to_dense import ToDense
 from cavachon.layers.modifiers.distribution_preset_modifier import (
@@ -5,6 +7,7 @@ from cavachon.layers.modifiers.distribution_preset_modifier import (
 )
 
 
+@tf.keras.utils.register_keras_serializable()
 class MultivariateNormalDiagModeledDataModifier(DistributionPresetModifier):
     """MultivariateNormalDiagModeledDataModifier
 
@@ -32,8 +35,8 @@ class MultivariateNormalDiagModeledDataModifier(DistributionPresetModifier):
 
     """
 
-    def __init__(self, modality_name: str):
-        super().__init__()
+    def __init__(self, modality_name: str, **kwargs):
+        super().__init__(**kwargs)
         self.modality_name = modality_name
         self.modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
         self.modifiers = [ToDense(self.modality_key)]

@@ -1,13 +1,14 @@
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class ModalityLinearIntegrator(tf.keras.layers.Layer):
     """ModalityLinearIntegrator
 
     ModalityLinearIntegrator used to integrate tensors from multiple
-    modalities into a single tensor representation by robust linear
+    modalities i【nto a single tensor representation by robust linear
     combination.
 
     """
@@ -36,10 +37,26 @@ class ModalityLinearIntegrator(tf.keras.layers.Layer):
         """
         super().__init__(name=name)
         self.modality_keys = modality_keys
+        self.output_dims = output_dims
         self.r_networks = {
             key: tf.keras.layers.Dense(output_dims) for key in self.modality_keys
         }
         self.b_network = tf.keras.layers.Dense(output_dims)
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {"modality_keys": self.modality_keys, "output_dims": self.output_dims}
+        )
+        return config
 
     def call(
         self,

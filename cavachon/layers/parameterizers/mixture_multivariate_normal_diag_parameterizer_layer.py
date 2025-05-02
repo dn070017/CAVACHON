@@ -1,6 +1,9 @@
+from typing import Any, Dict
+
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
     """MixtureMultivariateNormalDiagParameterizerLayer
 
@@ -15,6 +18,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         n_components: int,
         unit_variance: bool = False,
         name: str = "mixture_multivariate_normal_diag_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for MultivariateNormalDiagParameterizerLayer
 
@@ -35,12 +39,31 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
             'mixture_multivariate_normal_diag_parameterizer_layer'.
 
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         self.n_components: int = n_components
         self.unit_variance: bool = unit_variance
 
         return
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "event_dims": self.event_dims,
+                "n_components": self.n_components,
+                "unit_variance": self.unit_variance,
+            }
+        )
+        return config
 
     def build(self, input_shape: tf.TensorShape) -> None:
         """Create necessary tf.Variable for the first time being called.

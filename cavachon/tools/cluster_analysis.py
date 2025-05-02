@@ -10,7 +10,7 @@ from sklearn.metrics.cluster import contingency_matrix
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
-from cavachon.dataloader.dataloader import DataLoader
+from cavachon.dataset.dataloader import DatasetCreator
 from cavachon.distributions.mixture_multivariate_normal_diag_distribution import (
     MixtureMultivariateNormalDiagDistribution,
 )
@@ -100,7 +100,7 @@ class ClusterAnalysis:
         logpy = tf.math.log(tf.math.softmax(z_prior_parameters[..., 0]) + 1e-7)
 
         logpy_z = list()
-        dataloader = DataLoader(
+        dataloader = DatasetCreator(
             self.mdata, batch_size, batch_effect_colnames, distribution_names
         )
         for batch_data in tqdm(dataloader):

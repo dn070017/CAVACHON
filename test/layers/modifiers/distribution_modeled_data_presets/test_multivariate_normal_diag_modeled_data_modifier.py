@@ -23,3 +23,16 @@ def test_init(modifier, modality_name):
     assert modifier.modality_key == f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
     assert len(modifier.modifiers) == 1
     assert isinstance(modifier.modifiers[0], ToDense)
+
+
+def test_multivariate_normal_diag_modeled_data_modifier_get_config(
+    modifier, modality_name
+):
+    config = modifier.get_config()
+    new_modifier = MultivariateNormalDiagModeledDataModifier.from_config(config)
+    assert new_modifier.modality_name == modality_name
+    assert (
+        new_modifier.modality_key == f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
+    )
+    assert len(new_modifier.modifiers) == 1
+    assert isinstance(new_modifier.modifiers[0], ToDense)

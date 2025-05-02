@@ -38,6 +38,12 @@ def test_call_dense(to_sparse, key):
     )
 
 
+def test_to_sparse_get_config(to_sparse, key):
+    config = to_sparse.get_config()
+    new_to_sparse = ToSparse.from_config(config)
+    assert new_to_sparse.key == key
+
+
 def test_call_sparse(to_sparse, key):
     dense_tensor = tf.convert_to_tensor([0.0, 1.0, 0.0, 3.0])
     sparse_tensor = tf.sparse.from_dense(dense_tensor)

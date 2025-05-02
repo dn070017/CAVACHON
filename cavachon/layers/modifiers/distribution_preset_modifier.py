@@ -1,8 +1,9 @@
-from typing import Dict
+from typing import Any, Dict
 
 import tensorflow as tf
 
 
+@tf.keras.utils.register_keras_serializable()
 class DistributionPresetModifier(tf.keras.layers.Layer):
     """DistributionPresetModifier
 
@@ -28,14 +29,31 @@ class DistributionPresetModifier(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self):
+    def __init__(self, modality_name: str = "", **kwargs):
         """Constructor for distribution preset modifiers"""
-        super().__init__()
-        self.modality_name = ""
+        super().__init__(**kwargs)
+        self.modality_name = modality_name
         self.modality_key = ""
         self.modifiers = []
 
-    def call(self, inputs: Dict[str, tf.Tensor]):
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "modality_name": self.modality_name,
+            }
+        )
+        return config
+
+    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         """Processed the data created from tf.data.Dataset.
 
         Parameters
@@ -50,6 +68,7 @@ class DistributionPresetModifier(tf.keras.layers.Layer):
             processed data.
 
         """
+        # TODO: add training and kwargs
         outputs = {k: tf.identity(v) for k, v in inputs.items()}
         for modifier in self.modifiers:
             outputs = modifier(outputs)

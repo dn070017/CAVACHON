@@ -53,3 +53,16 @@ def test_modality_linear_integrator_output_dim_different_modality_dims():
     output = integrator(inputs)
 
     assert output.shape[-1] == output_dims
+
+
+def test_modality_linear_integrator_get_config():
+    modality_keys = ["modality1", "modality2"]
+    output_dims = 10
+
+    integrator = ModalityLinearIntegrator(
+        modality_keys=modality_keys, output_dims=output_dims
+    )
+    config = integrator.get_config()
+    new_integrator = ModalityLinearIntegrator.from_config(config)
+    assert new_integrator.modality_keys == modality_keys
+    assert new_integrator.output_dims == output_dims

@@ -1,5 +1,5 @@
 import warnings
-from typing import Dict
+from typing import Any, Dict
 
 import tensorflow as tf
 
@@ -7,6 +7,7 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.integrators.progressive_scaler import ProgressiveScaler
 
 
+@tf.keras.utils.register_keras_serializable()
 class LatentLinearIntegrator(ProgressiveScaler):
     """LatentLinearIntegrator
 
@@ -51,10 +52,32 @@ class LatentLinearIntegrator(ProgressiveScaler):
             "linear_integrator".
         """
         super().__init__(name=name, total_iterations=progressive_iterations)
+        self.n_latent_dims = n_latent_dims
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
+        self.progressive_iterations = progressive_iterations
         self.r_network = tf.keras.layers.Dense(n_latent_dims)
         self.b_network = tf.keras.layers.Dense(n_latent_dims)
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update(
+            {
+                "n_latent_dims": self.n_latent_dims,
+                "is_conditioned_on_z": self.is_conditioned_on_z,
+                "is_conditioned_on_z_hat": self.is_conditioned_on_z_hat,
+                "progressive_iterations": self.progressive_iterations,
+            }
+        )
+        return config
 
     def call(
         self,

@@ -6,7 +6,7 @@ import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
-from cavachon.dataloader.dataloader import DataLoader
+from cavachon.dataset.dataloader import DatasetCreator
 from cavachon.environment.constants import Constants
 from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler,
@@ -66,7 +66,7 @@ class AttributionAnalysis:
         """
         self.mdata = mdata
         self.model = model
-        self.dataloader = DataLoader(
+        self.dataloader = DatasetCreator(
             self.mdata,
             1,
             batch_effect_colnames,

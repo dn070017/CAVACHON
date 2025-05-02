@@ -84,6 +84,23 @@ def test_init(integrator_no_cond, n_latent_dims, progressive_iterations):
     assert integrator_no_cond.b_network.units == n_latent_dims
 
 
+def test_latent_linear_integrator_get_config(
+    integrator_no_cond, n_latent_dims, progressive_iterations
+):
+    config = integrator_no_cond.get_config()
+    new_integrator_no_cond = LatentLinearIntegrator.from_config(config)
+    assert new_integrator_no_cond.n_latent_dims == n_latent_dims
+    assert (
+        new_integrator_no_cond.is_conditioned_on_z
+        == integrator_no_cond.is_conditioned_on_z
+    )
+    assert (
+        new_integrator_no_cond.is_conditioned_on_z_hat
+        == integrator_no_cond.is_conditioned_on_z_hat
+    )
+    assert new_integrator_no_cond.total_iterations == progressive_iterations
+
+
 def test_call_no_cond(integrator_no_cond, z, batch_size, n_latent_dims):
     inputs = {Constants.MODEL_OUTPUTS_Z: z}
     # training mode

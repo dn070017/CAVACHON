@@ -60,6 +60,16 @@ def test_call_without_modifier(modifier, key):
     tf.debugging.assert_equal(outputs[key], expected_outputs[key])
 
 
+def test_distribution_preset_modifier_get_config(modifier):
+    config = modifier.get_config()
+    new_modifier = DistributionPresetModifier.from_config(config)
+    assert new_modifier.modality_name == modifier.modality_name
+    assert new_modifier.modality_key == modifier.modality_key
+    assert len(new_modifier.modifiers) == len(modifier.modifiers)
+    for new_submodifier, submodifier in zip(new_modifier.modifiers, modifier.modifiers):
+        assert new_submodifier.get_config() == submodifier.get_config()
+
+
 def test_call_with_single_modifier(one_modifier, key):
     inputs = {key: tf.convert_to_tensor([0.0, 1.0, 1.0, 0.2, 0.7])}
     outputs = one_modifier(inputs)

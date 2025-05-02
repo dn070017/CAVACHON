@@ -57,3 +57,10 @@ def test_call_sparse(log_transform, key, pseudocount):
     tf.debugging.assert_equal(
         outputs[key].dense_shape, expected_outputs[key].dense_shape
     )
+
+
+def test_log_transform_get_config(log_transform, key, pseudocount):
+    config = log_transform.get_config()
+    new_log_transform = LogTransform.from_config(config)
+    assert new_log_transform.key == key
+    assert new_log_transform.pseudocount == pseudocount

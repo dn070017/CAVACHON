@@ -1,10 +1,11 @@
-from typing import Dict
+from typing import Any, Dict
 
 import tensorflow as tf
 
 from cavachon.utils.tensor_utils import TensorUtils
 
 
+@tf.keras.utils.register_keras_serializable()
 class ToDense(tf.keras.layers.Layer):
     """ToDense
 
@@ -30,6 +31,19 @@ class ToDense(tf.keras.layers.Layer):
         """
         super().__init__(*args, **kwargs)
         self.key = key
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update({"key": self.key})
+        return config
 
     def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         """Transform tf.SparseTensor stored in inputs to tf.Tensor.

@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.base.binarize import Binarize
 from cavachon.layers.modifiers.base.to_dense import ToDense
@@ -6,6 +8,7 @@ from cavachon.layers.modifiers.distribution_preset_modifier import (
 )
 
 
+@tf.keras.utils.register_keras_serializable()
 class IndependentBernoulliModeledDataModifier(DistributionPresetModifier):
     """IndependentBernoulliModeledDataModifier
 
@@ -33,7 +36,7 @@ class IndependentBernoulliModeledDataModifier(DistributionPresetModifier):
 
     """
 
-    def __init__(self, modality_name: str):
+    def __init__(self, modality_name: str, **kwargs):
         """Constructor for IndependentBernoulli (modifier for
         tf.data.Dataset)
 
@@ -43,7 +46,7 @@ class IndependentBernoulliModeledDataModifier(DistributionPresetModifier):
             the name of modality that needs to be processed.
 
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.modality_name = modality_name
         self.modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
         self.modifiers = [ToDense(self.modality_key), Binarize(self.modality_key)]

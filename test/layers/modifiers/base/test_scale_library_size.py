@@ -68,6 +68,13 @@ def test_call_sparse(scale_library_size, key, libsize_key):
     tf.debugging.assert_equal(outputs[libsize_key], expected_outputs[libsize_key])
 
 
+def test_scale_library_size_get_config(scale_library_size, key):
+    config = scale_library_size.get_config()
+    new_scale_library_size = ScaleLibrarySize.from_config(config)
+    assert new_scale_library_size.key == key
+    assert new_scale_library_size.show_warning == scale_library_size.show_warning
+
+
 def test_call_dense_no_libsize(capsys, scale_library_size, key, libsize_key):
     inputs = {
         key: tf.convert_to_tensor([[0.1, 0.1, 0.2, 0.4, 0.2]]),

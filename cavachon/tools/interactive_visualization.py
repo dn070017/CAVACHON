@@ -2,6 +2,8 @@ import warnings
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import anndata
+import matplotlib
+import matplotlib.pyplot as plt
 import muon as mu
 import numpy as np
 import pandas as pd
@@ -101,6 +103,24 @@ class InteractiveVisualization:
                     error_y=dict(type="data", array=sem),
                 )
             )
+
+        return fig
+
+    @staticmethod
+    def static_scatter(*args, **kwargs) -> matplotlib.axes.Axes:
+        dpi = 300
+        fig, ax = plt.figure(figsize=(800 / dpi, 800 / dpi), dpi=dpi)
+        ax.scatter(
+            kwargs.get("x"),
+            kwargs.get("y"),
+            c=kwargs.get("color_discrete_sequence"),
+            label=kwargs.get("color"),
+        )
+        ax.title(kwargs.get("title"))
+        ax.xlabel(kwargs.get("label").get("x"))
+        ax.ylabel(kwargs.get("label").get("y"))
+        ax.legend()
+        ax.show()
 
         return fig
 

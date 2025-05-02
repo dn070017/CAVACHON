@@ -55,4 +55,10 @@ def test_call_sparse(binarize, key):
 def test_invalid_threshold():
     binarize = Binarize(key="test_key", threshold=1.5)
     assert binarize.threshold == 1.0
-    assert binarize.threshold == 1.0
+
+
+def test_binarize_get_config(binarize, key, threshold):
+    config = binarize.get_config()
+    new_binarize = Binarize.from_config(config)
+    assert new_binarize.key == key
+    assert new_binarize.threshold == threshold

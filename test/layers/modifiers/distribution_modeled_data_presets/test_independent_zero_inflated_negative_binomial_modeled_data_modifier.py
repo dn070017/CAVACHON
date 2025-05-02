@@ -31,3 +31,20 @@ def test_init(modifier, modality_name):
     assert isinstance(modifier.modifiers[0], ToDense)
     assert isinstance(modifier.modifiers[1], LogTransform)
     assert isinstance(modifier.modifiers[2], NormalizeLibrarySize)
+
+
+def test_independent_zero_inflated_negative_binomial_modeled_data_modifier_get_config(
+    modifier, modality_name
+):
+    config = modifier.get_config()
+    new_modifier = (
+        IndependentZeroInflatedNegativeBinomialModeledDataModifier.from_config(config)
+    )
+    assert new_modifier.modality_name == modality_name
+    assert (
+        new_modifier.modality_key == f"{modality_name}_{Constants.TENSOR_NAME_X_MODEL}"
+    )
+    assert len(new_modifier.modifiers) == 3
+    assert isinstance(new_modifier.modifiers[0], ToDense)
+    assert isinstance(new_modifier.modifiers[1], LogTransform)
+    assert isinstance(new_modifier.modifiers[2], NormalizeLibrarySize)

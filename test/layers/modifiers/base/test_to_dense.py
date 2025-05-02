@@ -40,3 +40,9 @@ def test_call_sparse(to_dense, key):
     assert key in outputs
     assert isinstance(outputs[key], tf.Tensor)
     tf.debugging.assert_equal(outputs[key], expected_outputs[key])
+
+
+def test_to_dense_get_config(to_dense, key):
+    config = to_dense.get_config()
+    new_to_dense = ToDense.from_config(config)
+    assert new_to_dense.key == key
