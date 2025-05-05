@@ -72,14 +72,14 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         """
         self.logits_weight = self.add_weight(
             name=f"{self.name}_logits_weight",
-            shape=(int(input_shape[-1]), self.event_dims),
+            shape=(input_shape[-1], self.event_dims),
         )
         self.logits_bias = self.add_weight(
             name=f"{self.name}_logits_bias", shape=(1, self.event_dims)
         )
         self.mean_weight = self.add_weight(
             name=f"{self.name}_mean_weight",
-            shape=(int(input_shape[-1]), self.event_dims),
+            shape=(input_shape[-1], self.event_dims),
         )
         self.mean_bias = self.add_weight(
             name=f"{self.name}_mean_bias", shape=(1, self.event_dims)
@@ -91,7 +91,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         else:
             self.dispersion_weight = self.add_weight(
                 name=f"{self.name}_dispersion_weight",
-                shape=(int(input_shape[-1]), self.event_dims),
+                shape=(input_shape[-1], self.event_dims),
             )
         self.dispersion_bias = self.add_weight(
             name=f"{self.name}_dispersion_bias", shape=(1, self.event_dims)

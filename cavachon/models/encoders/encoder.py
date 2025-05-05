@@ -108,8 +108,31 @@ class Encoder(tf.keras.Model):
         )
         self.z_sampler = MultivariateNormalDiagSampler()
 
-    def call(self, inputs: Dict[str, tf.Tensor], training: bool = False, **kwargs):
-        """Forward pass of the encoder.
+    def preprocess(
+        self, inputs: Dict[str, tf.Tensor], **kwargs
+    ) -> Dict[str, tf.Tensor]:
+        """Preprocess the tensor.
+
+        Parameters
+        ----------
+        inputs: Dict[str, tf.Tensor]
+            input tensors.
+
+        Returns
+        -------
+        Dict[str, tf.Tensor]
+            preprocessed tensor.
+
+        """
+        for _, modifier in self.modifiers.items():
+            inputs = modifier(inputs)
+
+        return inputs
+
+    def transform(
+        self, inputs: Dict[str, tf.Tensor], training: bool = False, **kwargs
+    ) -> tf.Tensor:
+        """Transform the processed tensor into the encoded tensor.
 
         Parameters
         ----------
@@ -121,25 +144,85 @@ class Encoder(tf.keras.Model):
 
         Returns
         -------
-        Dict[str, tf.Tensor]
-            output tensors.
+        tf.Tensor
+            encoded tensor.
 
         """
-        outputs = {k: tf.identity(v) for k, v in inputs.items()}
-        for _, modifier in self.modifiers.items():
-            outputs = modifier(outputs)
-
         modality_integrated_tensors = self.modifiers_backbone_adaptor(
-            outputs, training=training
+            inputs, training=training
         )
         encoded_tensor = self.backbone_network(
             modality_integrated_tensors, training=training
         )
-        z_parameters = self.z_parameterizer(encoded_tensor, training=training)
-        z = self.z_sampler(z_parameters, training=training)
+        return encoded_tensor
 
-        outputs[Constants.MODEL_OUTPUTS_Z] = z
-        outputs[Constants.MODEL_OUTPUTS_Z_PARAMS] = z_parameters
+    def parameterize(
+        self, inputs: tf.Tensor, training: bool = False, **kwargs
+    ) -> Dict[str, tf.Tensor]:
+        """Transform the encoded tensor into latent variables by
+        parameterization.
+
+        Parameters
+        ----------
+        inputs: tf.Tensor
+            encoded tensor.
+
+        training: bool, optional
+            whether the call is during training. Defaults to False.
+
+        Returns
+        -------
+        Dict[str, tf.Tensor]
+            output tensors.
+
+        """
+        z_parameters = self.z_parameterizer(inputs, training=training)
+        z = self.z_sampler(z_parameters, training=training)
+        return {
+            Constants.MODEL_OUTPUTS_Z: z,
+            Constants.MODEL_OUTPUTS_Z_PARAMS: z_parameters,
+        }
+
+    def call(
+        self,
+        inputs: Any,
+        training: bool | None = None,
+        mask: Any = None,
+        **kwargs,
+    ) -> Dict[str, tf.Tensor]:
+        """Forward pass of the encoder.
+
+        Parameters
+        ----------
+        inputs: Dict[str, tf.Tensor]
+            input tensors.
+
+        training: bool | None, optional
+            whether the call is during training. Defaults to False.
+
+        Returns
+        -------
+        Dict[str, tf.Tensor]
+            output tensors.
+
+        """
+        if not isinstance(inputs, dict):
+            raise NotImplementedError(
+                "inputs must be a dictionary with string keys and tf.Tensor values."
+            )
+
+        if training is None:
+            training = False
+
+        outputs = {k: tf.identity(v) for k, v in inputs.items()}
+        outputs = self.preprocess(outputs)
+        encoded_tensor = self.transform(outputs, training=training)
+        outputs_z = self.parameterize(encoded_tensor, training=training)
+
+        outputs[Constants.MODEL_OUTPUTS_Z] = outputs_z[Constants.MODEL_OUTPUTS_Z]
+        outputs[Constants.MODEL_OUTPUTS_Z_PARAMS] = outputs_z[
+            Constants.MODEL_OUTPUTS_Z_PARAMS
+        ]
 
         return outputs
 
@@ -169,7 +252,9 @@ class Encoder(tf.keras.Model):
         return config
 
     @classmethod
-    def from_config(cls, config) -> Self:
+    def from_config(
+        cls, config: Dict[str, Any], custom_objects: Any | None = None
+    ) -> Self:
         """Creates an Encoder model from its configuration.
 
         Parameters

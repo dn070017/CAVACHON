@@ -58,7 +58,7 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
         """
         self.logits_weight = self.add_weight(
             name=f"{self.name}_logits_weight",
-            shape=(int(input_shape[-1]), self.event_dims),
+            shape=(input_shape[-1], self.event_dims),
         )
         self.logits_bias = self.add_weight(
             name=f"{self.name}_logits_bias", shape=(1, self.event_dims)

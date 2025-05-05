@@ -59,14 +59,14 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         """
         self.loc_weight = self.add_weight(
             name=f"{self.name}_loc_weight",
-            shape=(int(input_shape[-1]), self.event_dims),
+            shape=(input_shape[-1], self.event_dims),
         )
         self.loc_bias = self.add_weight(
             name=f"{self.name}_loc_bias", shape=(1, self.event_dims)
         )
         self.scale_diag_weight = self.add_weight(
             name=f"{self.name}_scale_diag_weight",
-            shape=(int(input_shape[-1]), self.event_dims),
+            shape=(input_shape[-1], self.event_dims),
         )
         self.scale_diag_bias = self.add_weight(
             name=f"{self.name}_scale_diag_bias", shape=(1, self.event_dims)

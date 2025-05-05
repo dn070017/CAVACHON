@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import tensorflow as tf
 
@@ -34,7 +34,7 @@ class DistributionPresetModifier(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.modality_name = modality_name
         self.modality_key = ""
-        self.modifiers = []
+        self.modifiers: List[tf.keras.layers.Layer] = []
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
