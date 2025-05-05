@@ -32,6 +32,18 @@ class Encoder(tf.keras.Model):
     modifiers: Dict[str, DistributionPresetModifier]
         dictionary of modifiers for different modalities.
 
+    n_reduced_dims: int, optional
+        number of reduced dimensions
+
+    n_layers: int, optional
+        number of layers in the backbone network.
+
+    n_latent_dims: int, optional
+        number of latent dimensions.
+
+    activation: str, optional
+        activation function of backbone layer.
+
     modifiers_backbone_adaptor: ModalityLinearIntegrator
         integrator for modality tensors.
 
@@ -77,7 +89,7 @@ class Encoder(tf.keras.Model):
             number of latent dimensions. Defaults to 5.
 
         activation: str, optional
-            activation function. Defaults to 'swish'.
+            activation function of backbone layer. Defaults to 'swish'.
 
         name: str, optional
             name for the tensorflow model. Defaults to 'encoder'.
