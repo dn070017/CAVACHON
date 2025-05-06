@@ -8,7 +8,7 @@ class ModalityLinearIntegrator(tf.keras.layers.Layer):
     """ModalityLinearIntegrator
 
     ModalityLinearIntegrator used to integrate tensors from multiple
-    modalities i【nto a single tensor representation by robust linear
+    modalities into a single tensor representation by robust linear
     combination.
 
     """

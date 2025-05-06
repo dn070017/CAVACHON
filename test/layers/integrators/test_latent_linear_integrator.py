@@ -38,9 +38,9 @@ def z_hat_conditional(batch_size, n_latent_dims):
 @pytest.fixture
 def integrator_no_cond(n_latent_dims, progressive_iterations):
     return LatentLinearIntegrator(
+        z_key="z",
         n_latent_dims=n_latent_dims,
-        is_conditioned_on_z=False,
-        is_conditioned_on_z_hat=False,
+        conditioned_on_keys=None,
         progressive_iterations=progressive_iterations,
     )
 
@@ -48,9 +48,9 @@ def integrator_no_cond(n_latent_dims, progressive_iterations):
 @pytest.fixture
 def integrator_cond_z(n_latent_dims, progressive_iterations):
     return LatentLinearIntegrator(
+        z_key="z",
         n_latent_dims=n_latent_dims,
-        is_conditioned_on_z=True,
-        is_conditioned_on_z_hat=False,
+        conditioned_on_keys=["parent_z"],
         progressive_iterations=progressive_iterations,
     )
 
@@ -58,9 +58,9 @@ def integrator_cond_z(n_latent_dims, progressive_iterations):
 @pytest.fixture
 def integrator_cond_z_hat(n_latent_dims, progressive_iterations):
     return LatentLinearIntegrator(
+        z_key="z",
         n_latent_dims=n_latent_dims,
-        is_conditioned_on_z=False,
-        is_conditioned_on_z_hat=True,
+        conditioned_on_keys=["parent_z_hat"],
         progressive_iterations=progressive_iterations,
     )
 
@@ -68,18 +68,19 @@ def integrator_cond_z_hat(n_latent_dims, progressive_iterations):
 @pytest.fixture
 def integrator_cond_both(n_latent_dims, progressive_iterations):
     return LatentLinearIntegrator(
+        z_key="z",
         n_latent_dims=n_latent_dims,
-        is_conditioned_on_z=True,
-        is_conditioned_on_z_hat=True,
+        conditioned_on_keys=["parent_z", "parent_z_hat"],
         progressive_iterations=progressive_iterations,
     )
 
 
 def test_init(integrator_no_cond, n_latent_dims, progressive_iterations):
     assert isinstance(integrator_no_cond, LatentLinearIntegrator)
-    assert not integrator_no_cond.is_conditioned_on_z
-    assert not integrator_no_cond.is_conditioned_on_z_hat
-    assert integrator_no_cond.total_iterations == progressive_iterations
+    assert integrator_no_cond.z_key == "z"
+    assert isinstance(integrator_no_cond.conditioned_on_keys, list)
+    assert len(integrator_no_cond.conditioned_on_keys) == 0
+    assert integrator_no_cond.progressive_iterations == progressive_iterations
     assert integrator_no_cond.r_network.units == n_latent_dims
     assert integrator_no_cond.b_network.units == n_latent_dims
 
@@ -91,14 +92,10 @@ def test_latent_linear_integrator_get_config(
     new_integrator_no_cond = LatentLinearIntegrator.from_config(config)
     assert new_integrator_no_cond.n_latent_dims == n_latent_dims
     assert (
-        new_integrator_no_cond.is_conditioned_on_z
-        == integrator_no_cond.is_conditioned_on_z
+        new_integrator_no_cond.conditioned_on_keys
+        == integrator_no_cond.conditioned_on_keys
     )
-    assert (
-        new_integrator_no_cond.is_conditioned_on_z_hat
-        == integrator_no_cond.is_conditioned_on_z_hat
-    )
-    assert new_integrator_no_cond.total_iterations == progressive_iterations
+    assert new_integrator_no_cond.progressive_iterations == progressive_iterations
 
 
 def test_call_no_cond(integrator_no_cond, z, batch_size, n_latent_dims):
@@ -121,8 +118,8 @@ def test_call_no_cond(integrator_no_cond, z, batch_size, n_latent_dims):
 
 def test_call_cond_z(integrator_cond_z, z, z_conditional, batch_size, n_latent_dims):
     inputs = {
-        Constants.MODEL_OUTPUTS_Z: z,
-        Constants.MODULE_INPUTS_CONDITIONED_Z: z_conditional,
+        "z": z,
+        "parent_z": z_conditional,
     }
     z_hat = integrator_cond_z(inputs, training=False)
     assert z_hat.shape == (batch_size, n_latent_dims)
@@ -132,8 +129,8 @@ def test_call_cond_z_hat(
     integrator_cond_z_hat, z, z_hat_conditional, batch_size, n_latent_dims
 ):
     inputs = {
-        Constants.MODEL_OUTPUTS_Z: z,
-        Constants.MODULE_INPUTS_CONDITIONED_Z_HAT: z_hat_conditional,
+        "z": z,
+        "parent_z_hat": z_hat_conditional,
     }
     z_hat = integrator_cond_z_hat(inputs, training=False)
     assert z_hat.shape == (batch_size, n_latent_dims)
@@ -143,21 +140,21 @@ def test_call_cond_both(
     integrator_cond_both, z, z_conditional, z_hat_conditional, batch_size, n_latent_dims
 ):
     inputs = {
-        Constants.MODEL_OUTPUTS_Z: z,
-        Constants.MODULE_INPUTS_CONDITIONED_Z: z_conditional,
-        Constants.MODULE_INPUTS_CONDITIONED_Z_HAT: z_hat_conditional,
+        "z": z,
+        "parent_z": z_conditional,
+        "parent_z_hat": z_hat_conditional,
     }
     z_hat = integrator_cond_both(inputs, training=False)
     assert z_hat.shape == (batch_size, n_latent_dims)
 
 
 def test_progressive_scaling(integrator_no_cond, z, progressive_iterations):
-    inputs = {Constants.MODEL_OUTPUTS_Z: z}
+    inputs = {"z": z}
     integrator_no_cond.current_iteration.assign(1.0)
 
     # call multiple times in training mode
     outputs = []
-    for i in range(progressive_iterations + 5):  # Go slightly beyond total iterations
+    for i in range(progressive_iterations + 5):  # go slightly beyond total iterations
         z_hat = integrator_no_cond(inputs, training=True)
         outputs.append(z_hat)
         # check iteration counter increments correctly until total_iterations
@@ -176,18 +173,18 @@ def test_progressive_scaling(integrator_no_cond, z, progressive_iterations):
 
 
 def test_missing_cond_z_warning(integrator_cond_z, z):
-    inputs = {Constants.MODEL_OUTPUTS_Z: z}
+    inputs = {"z": z}
     with pytest.warns(UserWarning):
         integrator_cond_z(inputs, training=False)
 
 
 def test_missing_cond_z_hat_warning(integrator_cond_z_hat, z):
-    inputs = {Constants.MODEL_OUTPUTS_Z: z}
+    inputs = {"z": z}
     with pytest.warns(UserWarning):
         integrator_cond_z_hat(inputs, training=False)
 
 
 def test_missing_cond_both_warning(integrator_cond_both, z):
-    inputs = {Constants.MODEL_OUTPUTS_Z: z}
+    inputs = {"z": z}
     with pytest.warns(UserWarning):
         integrator_cond_both(inputs, training=False)

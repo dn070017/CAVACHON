@@ -1,9 +1,8 @@
 import warnings
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import tensorflow as tf
 
-from cavachon.environment.constants import Constants
 from cavachon.layers.integrators.progressive_scaler import ProgressiveScaler
 
 
@@ -13,17 +12,15 @@ class LatentLinearIntegrator(ProgressiveScaler):
 
     LatentLinearIntegrator used to integrate z from the component of
     interests and z_hat or z from its parent components. It expects a
-    dictionary of tf.Tensor as inputs. The key of the inputs are 'z',
-    'z_conditional' (if applicable) and 'z_hat_conditional'
-    (if applicable).
+    dictionary of tf.Tensor as inputs.
 
     """
 
     def __init__(
         self,
+        z_key: str,
         n_latent_dims: int = 5,
-        is_conditioned_on_z: bool = False,
-        is_conditioned_on_z_hat: bool = False,
+        conditioned_on_keys: List[str] | None = None,
         progressive_iterations: int = 5000,
         name: str = "linear_integrator",
         **kwargs,
@@ -32,17 +29,15 @@ class LatentLinearIntegrator(ProgressiveScaler):
 
         Parameters
         ----------
+        z_key: str
+            key to access the latent representation.
+
         n_latent_dims: int, optional
             number of latent dimensions for the input z. Defaults to 5.
 
-        is_conditioned_on_z: bool, optional
-            use latent representation from the conditioned components.
-            Defaults to False.
-
-        is_conditioned_on_z_hat: bool, optional
-            use transformed latent representation (contains information
-            of all ancestor of conditioned components) from the
-            conditioned components. Defaults to False.
+        conditioned_on_keys: List[str] | None, optional
+            key to access the parent latent representation (to be
+            conditioned on). Defaults to None.
 
         progressive_iterations: int, optional
             total iterations for progressive training. Defaults to 5000.
@@ -52,12 +47,15 @@ class LatentLinearIntegrator(ProgressiveScaler):
             "linear_integrator".
         """
         super().__init__(name=name, total_iterations=progressive_iterations)
+        self.z_key = z_key
         self.n_latent_dims = n_latent_dims
-        self.is_conditioned_on_z = is_conditioned_on_z
-        self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_iterations = progressive_iterations
         self.r_network = tf.keras.layers.Dense(n_latent_dims)
         self.b_network = tf.keras.layers.Dense(n_latent_dims)
+        if conditioned_on_keys is None:
+            self.conditioned_on_keys = []
+        else:
+            self.conditioned_on_keys = conditioned_on_keys
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
@@ -71,9 +69,9 @@ class LatentLinearIntegrator(ProgressiveScaler):
         config = super().get_config()
         config.update(
             {
+                "z_key": self.z_key,
                 "n_latent_dims": self.n_latent_dims,
-                "is_conditioned_on_z": self.is_conditioned_on_z,
-                "is_conditioned_on_z_hat": self.is_conditioned_on_z_hat,
+                "conditioned_on_keys": self.conditioned_on_keys,
                 "progressive_iterations": self.progressive_iterations,
             }
         )
@@ -109,35 +107,23 @@ class LatentLinearIntegrator(ProgressiveScaler):
         if not isinstance(inputs, dict):
             raise NotImplementedError
 
-        z = self.r_network(inputs[Constants.MODEL_OUTPUTS_Z])
+        z = self.r_network(inputs[self.z_key])
         if training:
             alpha = self.compute_alpha()
             z = alpha * z
             self.step()
 
         concat_inputs = [z]
-
-        if self.is_conditioned_on_z or self.is_conditioned_on_z_hat:
-            if self.is_conditioned_on_z:
-                if Constants.MODULE_INPUTS_CONDITIONED_Z in inputs:
-                    concat_inputs.append(inputs[Constants.MODULE_INPUTS_CONDITIONED_Z])
-                else:
-                    warnings.warn(
-                        f"is_conditioned_on_z is set for {self.__class__.__name__} ({self.name}) "
-                        "but not provided in the inputs. Do nothing.",
-                        UserWarning,
-                    )
-            if self.is_conditioned_on_z_hat:
-                if Constants.MODULE_INPUTS_CONDITIONED_Z_HAT in inputs:
-                    concat_inputs.append(
-                        inputs[Constants.MODULE_INPUTS_CONDITIONED_Z_HAT]
-                    )
-                else:
-                    warnings.warn(
-                        f"is_conditioned_on_z_hat is set for {self.__class__.__name__} ({self.name}) "
-                        "but not provided in the inputs. Do nothing.",
-                        UserWarning,
-                    )
+        for parent_component_key in self.conditioned_on_keys:
+            if parent_component_key in inputs:
+                concat_inputs.append(inputs[parent_component_key])
+            else:
+                warnings.warn(
+                    f"{parent_component_key} is set to be integrated "
+                    f"for {self.__class__.__name__} ({self.name}) "
+                    "but not provided in the inputs. Do nothing.",
+                    UserWarning,
+                )
 
         z_hat = self.b_network(tf.concat(concat_inputs, axis=-1))
 
