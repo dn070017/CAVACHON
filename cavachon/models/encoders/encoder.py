@@ -220,7 +220,8 @@ class Encoder(tf.keras.Model):
         """
         if not isinstance(inputs, dict):
             raise NotImplementedError(
-                "inputs must be a dictionary with string keys and tf.Tensor values."
+                "inputs must be a dictionary with string keys and tf.Tensor values ",
+                f"for {self.__class__.__name__} ({self.name})",
             )
 
         if training is None:
@@ -279,12 +280,13 @@ class Encoder(tf.keras.Model):
         Encoder
             The Encoder model instance.
         """
+        config_inputs = {k: tf.identity(v) for k, v in config.items()}
         modifiers = {
             name: tf.keras.layers.deserialize(modifier_config)
             for name, modifier_config in config["modifiers"].items()
         }
-        config["modifiers"] = modifiers
-        return cls(**config)
+        config_inputs["modifiers"] = modifiers
+        return cls(**config_inputs)
 
     def train_step(self, *args, **kwargs):
         raise NotImplementedError("train_step is not implemented for Encoder.")

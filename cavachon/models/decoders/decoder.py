@@ -104,9 +104,10 @@ class Decoder(tf.keras.Model):
             output tensors.
 
         """
-        if not isinstance(inputs, dict):
+        if not isinstance(inputs, tf.Tensor):
             raise NotImplementedError(
-                "inputs must be a dictionary with string keys and tf.Tensor values."
+                "inputs must be a tf.Tensor "
+                f"for {self.__class__.__name__} ({self.name})"
             )
 
         if training is None:
@@ -161,12 +162,13 @@ class Decoder(tf.keras.Model):
         Decoder
             The Decoder model instance.
         """
+        config_inputs = {k: tf.identity(v) for k, v in config.items()}
         x_parameterizers = {
             name: tf.keras.layers.deserialize(parameterizer_config)
             for name, parameterizer_config in config["x_parameterizers"].items()
         }
-        config["x_parameterizers"] = x_parameterizers
-        return cls(**config)
+        config_inputs["x_parameterizers"] = x_parameterizers
+        return cls(**config_inputs)
 
     def train_step(self, *args, **kwargs):
         raise NotImplementedError("train_step is not implemented for Decoder.")
