@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import tensorflow as tf
 
@@ -16,7 +16,11 @@ class VerifyIOLayer(tf.keras.layers.Layer):
     """
 
     def __init__(
-        self, input_keys: List[str] | None, output_keys: List[str] | None, **kwargs
+        self,
+        input_keys: List[str] | None = None,
+        output_keys: List[str] | None = None,
+        *args,
+        **kwargs,
     ):
         """Constructor for VerifyIOLayer.
 
@@ -29,7 +33,7 @@ class VerifyIOLayer(tf.keras.layers.Layer):
             The expected keys in the output dictionary. Defaults to None.
 
         """
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
         self.input_keys = input_keys
         self.output_keys = output_keys
 
@@ -143,3 +147,16 @@ class VerifyIOLayer(tf.keras.layers.Layer):
             self.verify_tensor_like(outputs, "outputs")
         else:
             self.verify_io_keys(outputs, self.output_keys, "outputs")
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns the configuration of the layer.
+
+        Returns
+        -------
+        Dict[str, Any]
+            a dictionary containing the configuration of the layer.
+
+        """
+        config = super().get_config()
+        config.update({"input_keys": self.input_keys, "output_keys": self.output_keys})
+        return config

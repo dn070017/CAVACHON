@@ -53,3 +53,17 @@ def test_verify_outputs():
     layer = VerifyIOLayer(input_keys=None, output_keys=None)
     with pytest.raises(TypeError):
         layer.verify_outputs({"key1": tf.constant(1.0)})
+
+
+def test_binarize_get_config():
+    layer = VerifyIOLayer(input_keys=None, output_keys=["key1", "key2"])
+    config = layer.get_config()
+    new_layer = VerifyIOLayer.from_config(config)
+    assert new_layer.input_keys is None
+    assert new_layer.output_keys == ["key1", "key2"]
+
+    layer = VerifyIOLayer(input_keys=["key1", "key2"], output_keys=None)
+    config = layer.get_config()
+    new_layer = VerifyIOLayer.from_config(config)
+    assert new_layer.input_keys == ["key1", "key2"]
+    assert new_layer.output_keys is None
