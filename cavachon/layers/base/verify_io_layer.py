@@ -37,6 +37,26 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         self.expected_input_keys = expected_input_keys
         self.expected_output_keys = expected_output_keys
 
+    def whether_expecting_input_as_dict(self) -> bool:
+        """Whether the layer is expecting input as dict
+
+        Returns
+        -------
+        bool
+            whether the layer is expecting input as dict
+        """
+        return self.expected_input_keys is not None
+
+    def whether_expecting_output_as_dict(self) -> bool:
+        """Whether the layer is expecting output as dict
+
+        Returns
+        -------
+        bool
+            whether the layer is expecting output as dict
+        """
+        return self.expected_output_keys is not None
+
     def verify_tensor_like(
         self,
         value: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike,
@@ -115,7 +135,7 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         Raises
         ------
         TypeError
-            if the input is not a dictionary.
+            if the input is not a dictionary when expected_input_keys is not None.
 
         KeyError
             if any of the expected keys are not present in the input dictionary.
@@ -138,15 +158,156 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         Raises
         ------
         TypeError
-            if the output is not a dictionary.
+            if the output is not a dictionary when expected_output_keys
+            is not None.
 
         KeyError
-            if any of the expected keys are not present in the output dictionary.
+            if any of the expected keys are not present in the output
+            dictionary.
         """
         if self.expected_output_keys is None:
             self.verify_tensor_like(outputs, "outputs")
         else:
             self.verify_io_keys(outputs, self.expected_output_keys, "outputs")
+
+    def check_n_expected_keys(self, n_expected_inputs: int, n_expected_outputs: int):
+        """Check that the number of expected inputs and outputs is
+        correct.
+
+        Parameters
+        ----------
+        n_expected_inputs : int
+            number of expected input keys.
+
+        n_expected_outputs : int
+            number of expected output keys.
+
+        Raises
+        ------
+        ValueError
+            if the number of expected inputs or outputs is not correct.
+
+        """
+        if (
+            isinstance(self.expected_input_keys, list)
+            and len(self.expected_input_keys) != n_expected_inputs
+        ):
+            raise ValueError(
+                "if provided with expected_input_keys, the length of expected_input_keys "
+                f"must be {n_expected_inputs}. ({self.__class__.__name__}: {self.name})",
+            )
+        if (
+            isinstance(self.expected_output_keys, list)
+            and len(self.expected_output_keys) != n_expected_outputs
+        ):
+            raise ValueError(
+                "if provided with expected_output_keys, the length of expeceted_output_keys "
+                f"must be {n_expected_outputs}. ({self.__class__.__name__}: {self.name})",
+            )
+
+    def get_tensor_with_single_key(
+        self, inputs: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
+    ) -> TensorUtils.TensorLike:
+        """Get the tensor when the layer access the tensor through a
+        single key.
+
+        Parameters
+        ----------
+        inputs : Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
+            the inputs to the layer.
+
+        Returns
+        -------
+        TensorUtils.TensorLike
+            the tensor.
+
+        Raises
+        ------
+        NotImplementedError
+            if the layer does not access the tensor through a single key.
+
+        TypeError
+            if the input is not a dictionary when expected_input_keys
+            is not None.
+
+        KeyError
+            if any of the expected keys are not present in the input
+            dictionary.
+        """
+        if (
+            isinstance(self.expected_input_keys, list)
+            and len(self.expected_input_keys) != 1
+        ):
+            raise NotImplementedError(
+                "access_tensor_with_single_key is only implemented for layers "
+                f"with a single input key. {self.__class__.__name__}: {self.name} "
+                f"has {len(self.expected_input_keys)}"
+            )
+
+        self.verify_inputs(inputs)
+
+        if isinstance(inputs, dict) and isinstance(self.expected_input_keys, list):
+            tensor = inputs[self.expected_input_keys[0]]
+        else:
+            tensor = inputs
+
+        return tensor
+
+    def set_tensor_with_single_key(
+        self,
+        inputs: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike,
+        tensor: TensorUtils.TensorLike,
+    ):
+        """Set the tensor as proper outputs when the layer expect to
+        output a single tensor or through adding the tensor to the
+        inputs by a single key.
+
+        Parameters
+        ----------
+        inputs : Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
+            the inputs to the layer.
+
+        tensor : TensorUtils.TensorLike
+            the (output) tensor to set.
+
+        Returns
+        -------
+        Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
+            the outputs of the layer.
+
+        Raises
+        ------
+        NotImplementedError
+            if the layer does not expect to output a single tensor or
+            through adding the tensor to the inputs by a single key.
+
+        TypeError
+            if the output is not a dictionary when expected_output_keys
+            is not None.
+
+        KeyError
+            if any of the expected keys are not present in the output
+            dictionary.
+        """
+        if (
+            isinstance(self.expected_output_keys, list)
+            and len(self.expected_output_keys) != 1
+        ):
+            raise NotImplementedError(
+                "set_tensor_with_single_key is only implemented for layers "
+                f"with a single output key. {self.__class__.__name__}: {self.name} "
+                f"has {len(self.expected_output_keys)}"
+            )
+
+        if isinstance(inputs, dict) and isinstance(self.expected_output_keys, list):
+            outputs = {k: tf.identity(v) for k, v in inputs.items()}
+            outputs[self.expected_output_keys[0]] = tensor
+        else:
+            outputs = tensor
+
+        self.verify_outputs(outputs)
+
+        return outputs
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
