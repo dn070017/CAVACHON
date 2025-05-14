@@ -17,8 +17,8 @@ class VerifyIOLayer(tf.keras.layers.Layer):
 
     def __init__(
         self,
-        input_keys: List[str] | None = None,
-        output_keys: List[str] | None = None,
+        expected_input_keys: List[str] | None = None,
+        expected_output_keys: List[str] | None = None,
         *args,
         **kwargs,
     ):
@@ -26,16 +26,16 @@ class VerifyIOLayer(tf.keras.layers.Layer):
 
         Parameters
         ----------
-        input_keys: List[str] | None, optional
-            The expected keys in the input dictionary. Defaults to None.
+        expected_input_keys: List[str] | None, optional
+            the expected keys in the input dictionary. Defaults to None.
 
-        output_keys: List[str] | None, optional
-            The expected keys in the output dictionary. Defaults to None.
+        expected_output_keys: List[str] | None, optional
+            the expected keys in the output dictionary. Defaults to None.
 
         """
         super().__init__(*args, **kwargs)
-        self.input_keys = input_keys
-        self.output_keys = output_keys
+        self.expected_input_keys = expected_input_keys
+        self.expected_output_keys = expected_output_keys
 
     def verify_tensor_like(
         self,
@@ -47,15 +47,15 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         Parameters
         ----------
         value: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
-            The input value to verify.
+            the input value to verify.
 
         name: str
-            The name of the input value.
+            the name of the input value.
 
         Raises
         ------
         TypeError
-            If the input is not a tf.Tensor or tf.keras.KerasTensor.
+            if the input is not a tf.Tensor or tf.keras.KerasTensor.
         """
         if not isinstance(value, (tf.Tensor, tf.keras.KerasTensor)):
             raise TypeError(
@@ -110,20 +110,20 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         Parameters
         ----------
         inputs: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
-            The inputs to verify.
+            the inputs to verify.
 
         Raises
         ------
         TypeError
-            If the input is not a dictionary.
+            if the input is not a dictionary.
 
         KeyError
-            If any of the expected keys are not present in the input dictionary.
+            if any of the expected keys are not present in the input dictionary.
         """
-        if self.input_keys is None:
+        if self.expected_input_keys is None:
             self.verify_tensor_like(inputs, "inputs")
         else:
-            self.verify_io_keys(inputs, self.input_keys, "inputs")
+            self.verify_io_keys(inputs, self.expected_input_keys, "inputs")
 
     def verify_outputs(
         self, outputs: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
@@ -133,20 +133,20 @@ class VerifyIOLayer(tf.keras.layers.Layer):
         Parameters
         ----------
         outputs: Dict[str, TensorUtils.TensorLike] | TensorUtils.TensorLike
-            The outputs to verify.
+            the outputs to verify.
 
         Raises
         ------
         TypeError
-            If the output is not a dictionary.
+            if the output is not a dictionary.
 
         KeyError
-            If any of the expected keys are not present in the output dictionary.
+            if any of the expected keys are not present in the output dictionary.
         """
-        if self.output_keys is None:
+        if self.expected_output_keys is None:
             self.verify_tensor_like(outputs, "outputs")
         else:
-            self.verify_io_keys(outputs, self.output_keys, "outputs")
+            self.verify_io_keys(outputs, self.expected_output_keys, "outputs")
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
@@ -158,5 +158,10 @@ class VerifyIOLayer(tf.keras.layers.Layer):
 
         """
         config = super().get_config()
-        config.update({"input_keys": self.input_keys, "output_keys": self.output_keys})
+        config.update(
+            {
+                "expected_input_keys": self.expected_input_keys,
+                "expected_output_keys": self.expected_output_keys,
+            }
+        )
         return config
