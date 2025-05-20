@@ -1,44 +1,65 @@
+import math
+import warnings
 from typing import Any, Dict
 
 import tensorflow as tf
-
-from cavachon.utils.tensor_utils import TensorUtils
 
 
 @tf.keras.utils.register_keras_serializable()
 class LogTransform(tf.keras.layers.Layer):
     """LogTransform
 
-    Modifier used to log-transform the tf.Tensor stored in a
-    dictionary.
+    Modifier used to log-transform the tf.Tensor.
 
     Attributes
     ----------
-    pseudocount: float
-        values added to the tf.Tensor before log-transformation (to avoid
-        -inf outcome)
+    base: float, optional
+        the base used for log transform.
 
-    key: Hashable
-        key to access the data needed to be log-transformed.
+    pseudocount: float
+        values added to the tf.Tensor before log-transformation (to
+        avoid -inf outcome)
 
     """
 
-    def __init__(self, key: str, pseudocount: float = 1.0, *args, **kwargs):
+    def __init__(
+        self,
+        base: float = math.e,
+        pseudocount: float = 1.0,
+        **kwargs,
+    ):
         """Constructor for LogTransform
 
         Parameters
         ----------
-        key: str
-            key to access the data needed to be binarized.
+        base: float, optional
+            the base used for logarithmic transform. Defaults to natural
+            exponent e.
 
         pseudocount: float, optional
             values added to the tf.Tensor before log-transformation (to
             avoid -inf outcome)
 
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
+        if base < 0.0:
+            message = (
+                f"invalid range for base. Expected 0 ≤ base, "
+                f"get {base}. Set to natural exponent e"
+            )
+            warnings.warn(message, UserWarning)
+            base = math.e
+
+        if pseudocount < 0.0:
+            message = (
+                f"invalid range for pseudocount. Expected 0 ≤ "
+                f"pseudocount, get {pseudocount}. Set to 1.0"
+            )
+            warnings.warn(message, UserWarning)
+            pseudocount = 1.0
+
+        self.base = base
         self.pseudocount = pseudocount
-        self.key = key
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
@@ -50,38 +71,22 @@ class LogTransform(tf.keras.layers.Layer):
 
         """
         config = super().get_config()
-        config.update(
-            {
-                "key": self.key,
-                "pseudocount": self.pseudocount,
-            }
-        )
+        config.update({"pseudocount": self.pseudocount, "base": self.base})
         return config
 
-    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        """Log-transform tf.Tensor stored in inputs.
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        """Logarithmic transform tf.Tensor.
 
         Parameters
         ----------
-        inputs: Dict[str, tf.Tensor]
-            inputs dictionary of tf.Tensor contains self.key
+        inputs: tf.Tensor
+            input tf.Tensor.
 
         Returns
         -------
-        Dict[str, tf.Tensor]
-            processed dictionary of tf.Tensor
+        tf.Tensor
+            logarithmic transformed tf.Tensor
         """
-        outputs = {k: tf.identity(v) for k, v in inputs.items()}
-        is_sparse = False
-        tensor = outputs[self.key]
-        if TensorUtils.is_sparse_tensor(tensor):
-            tensor = tf.sparse.to_dense(tensor)
-            is_sparse = True
+        outputs = tf.math.log(inputs + self.pseudocount) / tf.math.log(self.base)
 
-        tensor = tf.math.log(tensor + self.pseudocount)
-
-        if is_sparse:
-            tensor = tf.sparse.from_dense(tensor)
-
-        outputs[self.key] = tensor
         return outputs

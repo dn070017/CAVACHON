@@ -1,9 +1,4 @@
-from typing import Any, Dict
-
 import tensorflow as tf
-
-from cavachon.environment.constants import Constants
-from cavachon.utils.tensor_utils import TensorUtils
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -11,76 +6,30 @@ class NormalizeLibrarySize(tf.keras.layers.Layer):
     """NormalizedLibrarySize
 
     Modifier used to normalize (read / library size) the tf.Tensor with
-    library size (the sum of values in the last dimension)
-
-    Attributes
-    ----------
-    key: str
-        key to access the data needed to be normalized.
+    library size (the reduced sum of the last dimension)
 
     """
 
-    def __init__(self, key: str, *args, **kwargs):
-        """Constructor for NormalizeLibrarySize
+    def __init__(self, **kwargs):
+        """Constructor for NormalizeLibrarySize"""
+        super().__init__(**kwargs)
 
-        Parameters
-        ----------
-        key: str
-            key to access the data needed to be normalized.
-
-        """
-        super().__init__(*args, **kwargs)
-        self.key = key
-
-    def get_config(self) -> Dict[str, Any]:
-        """Returns the configuration of the layer.
-
-        Returns
-        -------
-        Dict[str, Any]
-            a dictionary containing the configuration of the layer.
-
-        """
-        config = super().get_config()
-        config.update({"key": self.key})
-        return config
-
-    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         """Normalize tf.Tensor stored in input with library size (the sum
         of values in the last dimension)
 
         Parameters
         ----------
-        inputs: Dict[str, tf.Tensor])
-            inputs dictionary of tf.Tensor contains self.key
+        inputs: tf.Tensor
+            input tf.Tensor.
 
         Returns
         -------
-        Dict[str, tf.Tensor]
-            processed dictionary of tf.Tensor, where the library size
-            used to normalize the data will be stored in
-            (self.key, 'libsize'). This can be used to scale back to the
-            original data.
+        tf.Tensor
+            library size normalized tf.Tensor.
 
         """
-        outputs = {k: tf.identity(v) for k, v in inputs.items()}
-        is_sparse = False
-        tensor = outputs[self.key]
-        if TensorUtils.is_sparse_tensor(tensor):
-            tensor = tf.sparse.to_dense(tensor)
-            is_sparse = True
-
-        libsize_key = f"{self.key}_{Constants.TENSOR_NAME_LIBSIZE}"
-        if libsize_key in outputs:
-            libsize = outputs[libsize_key]
-            tensor = tensor / libsize
-        else:
-            libsize = tf.expand_dims(tf.reduce_sum(tensor, axis=-1), -1)
-            tensor = tensor / libsize
-            outputs[libsize_key] = libsize
-
-        if is_sparse:
-            tensor = tf.sparse.from_dense(tensor)
-        outputs[self.key] = tensor
+        libsize = tf.expand_dims(tf.reduce_sum(inputs, axis=-1), -1)
+        outputs = inputs / libsize
 
         return outputs

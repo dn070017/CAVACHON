@@ -1,17 +1,15 @@
+import warnings
 from typing import Any, Dict
 
 import tensorflow as tf
 
-from cavachon.environment.constants import Constants
-from cavachon.utils.tensor_utils import TensorUtils
-
 
 @tf.keras.utils.register_keras_serializable()
-class ScaleLibrarySize(tf.keras.layers.Layer):
-    """ScaleLibrarySize
+class ScaleConstantFactor(tf.keras.layers.Layer):
+    """ScaleConstantFactor
 
-    Modifier used to scale up (read × library size) the tf.Tensor with
-    library size (the sum of values in the last dimension).
+    Modifier used to scale up the tf.Tensor with a constant factor (the
+    normalized library size)
 
     Attributes
     ----------
@@ -19,22 +17,26 @@ class ScaleLibrarySize(tf.keras.layers.Layer):
         key to access the data needed to be normalized.
     """
 
-    def __init__(self, key: str, show_warning: bool = True, *args, **kwargs):
-        """Constructor for NormalizeLibrarySize
+    def __init__(self, scaling_factor: float = 1e7, **kwargs):
+        """Constructor for ScaleConstantFactor
 
         Parameters
         ----------
-        key: str
-            key to access the data needed to be normalized.
-
-        show_warning: bool, optional
-            whether to show warning messages (with tf.print) when
-            calling the layer. Defaults to True.
+        scale_libsize: float, optional
+            the scaling factor used to scale up the tf.Tensor. Defaults
+            to 1e7.
 
         """
-        super().__init__(*args, **kwargs)
-        self.key = key
-        self.show_warning = show_warning
+        super().__init__(**kwargs)
+        if scaling_factor < 0.0:
+            message = (
+                f"invalid range for scale_libsize. Expected 0 ≤ "
+                f"scale_libsize, get {scaling_factor}. Set to 1e7"
+            )
+            warnings.warn(message, UserWarning)
+            scaling_factor = 1e7
+
+        self.scaling_factor = scaling_factor
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
@@ -46,54 +48,23 @@ class ScaleLibrarySize(tf.keras.layers.Layer):
 
         """
         config = super().get_config()
-        config.update(
-            {
-                "key": self.key,
-                "show_warning": self.show_warning,
-            }
-        )
+        config.update({"scaling_factor": self.scaling_factor})
         return config
 
-    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        """Scale tf.Tensor stored in input with library size (the sum
-        of values in the last dimension)
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        """Scale tf.Tensor with a constant scaling factor.
 
         Parameters
         ----------
-        inputs: Dict[str, tf.Tensor]
-            inputs dictionary of tf.Tensor contains self.key
+        inputs: tf.Tensor
+            input tf.Tensor.
 
         Returns
         -------
-        Dict[str, tf.Tensor]
-            processed dictionary of tf.Tensor.
+        tf.Tensor
+            scaled tf.Tensor.
 
         """
-        outputs = {k: tf.identity(v) for k, v in inputs.items()}
-        is_sparse = False
-        tensor = outputs[self.key]
-        if TensorUtils.is_sparse_tensor(tensor):
-            tensor = tf.sparse.to_dense(tensor)
-            is_sparse = True
 
-        libsize_key = f"{self.key}_{Constants.TENSOR_NAME_LIBSIZE}"
-
-        if self.show_warning and libsize_key not in inputs:
-            message = "".join(
-                (
-                    f"WARNING: {libsize_key} is not in batched data, ignore process in ",
-                    f"{self.__class__.__name__}. Please use NormalizeLibrarySize ",
-                    "in preprocessing.",
-                )
-            )
-            tf.print(message)
-
-        libsize = inputs.get(libsize_key, tf.ones((tf.shape(tensor)[0], 1)))
-        tensor = tensor * libsize
-
-        if is_sparse:
-            tensor = tf.sparse.from_dense(tensor)
-
-        outputs[self.key] = tensor
-        outputs[libsize_key] = libsize
+        outputs = inputs * self.scaling_factor
         return outputs

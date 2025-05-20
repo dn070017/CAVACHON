@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -6,61 +8,56 @@ from cavachon.layers.modifiers.base.log_transform import LogTransform
 
 
 @pytest.fixture
-def key():
-    return "test_key"
-
-
-@pytest.fixture
 def pseudocount():
     return 1.0
 
 
 @pytest.fixture
-def log_transform(key, pseudocount):
-    return LogTransform(key=key, pseudocount=pseudocount)
+def log_transform(pseudocount):
+    return LogTransform(pseudocount=pseudocount)
 
 
-def test_init(log_transform, key, pseudocount):
+@pytest.fixture
+def log_transform_base2(pseudocount):
+    return LogTransform(base=2.0, pseudocount=pseudocount)
+
+
+def test_init(log_transform, pseudocount):
     assert isinstance(log_transform, LogTransform)
-    assert log_transform.key == key
+    assert log_transform.base == math.e
     assert log_transform.pseudocount == pseudocount
 
 
-def test_call_dense(log_transform, key):
-    inputs = {key: tf.convert_to_tensor([0.0, 1.0, 2.0, 3.0])}
+def test_call(log_transform):
+    inputs = tf.convert_to_tensor([0.0, 1.0, 2.0, 3.0])
     outputs = log_transform(inputs)
-    expected_outputs = {
-        key: tf.convert_to_tensor([0.0, np.log(2.0), np.log(3.0), np.log(4.0)])
-    }
-    assert isinstance(outputs, dict)
-    assert key in outputs
-    tf.debugging.assert_near(outputs[key], expected_outputs[key], rtol=1e-6)
-
-
-def test_call_sparse(log_transform, key, pseudocount):
-    dense_tensor = tf.convert_to_tensor([0.0, 1.0, 2.0, 3.0])
-    sparse_tensor = tf.sparse.from_dense(dense_tensor)
-    inputs = {key: sparse_tensor}
-    outputs = log_transform(inputs)
-    expected_outputs = {
-        key: tf.sparse.from_dense(
-            tf.convert_to_tensor([0.0, np.log(2.0), np.log(3.0), np.log(4.0)])
-        )
-    }
-    assert isinstance(outputs, dict)
-    assert key in outputs
-    assert isinstance(outputs[key], tf.SparseTensor)
-    tf.debugging.assert_equal(outputs[key].indices, expected_outputs[key].indices)
-    tf.debugging.assert_near(
-        outputs[key].values, expected_outputs[key].values, rtol=1e-6
+    expected_outputs = tf.convert_to_tensor(
+        [0.0, np.log(2.0), np.log(3.0), np.log(4.0)]
     )
-    tf.debugging.assert_equal(
-        outputs[key].dense_shape, expected_outputs[key].dense_shape
-    )
+    tf.debugging.assert_near(outputs, expected_outputs, rtol=1e-6)
 
 
-def test_log_transform_get_config(log_transform, key, pseudocount):
+def test_call_base2(log_transform_base2):
+    inputs = tf.convert_to_tensor([0.0, 1.0, 3.0, 7.0])
+    outputs = log_transform_base2(inputs)
+    expected_outputs = tf.convert_to_tensor([0.0, 1.0, 2.0, 3.0])
+    tf.debugging.assert_near(outputs, expected_outputs, rtol=1e-6)
+
+
+def test_log_transform_get_config(log_transform, pseudocount):
     config = log_transform.get_config()
     new_log_transform = LogTransform.from_config(config)
-    assert new_log_transform.key == key
+    assert new_log_transform.base == math.e
     assert new_log_transform.pseudocount == pseudocount
+
+
+def test_invalid_base():
+    with pytest.warns():
+        log_transform = LogTransform(base=-1.0)
+        assert log_transform.base == math.e
+
+
+def test_invalid_pseudocount():
+    with pytest.warns():
+        log_transform = LogTransform(pseudocount=-1.0)
+        assert log_transform.pseudocount == 1.0

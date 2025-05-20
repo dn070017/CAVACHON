@@ -1,35 +1,38 @@
+import math
 from typing import Any, Dict
 
 import tensorflow as tf
-
-from cavachon.utils.tensor_utils import TensorUtils
 
 
 @tf.keras.utils.register_keras_serializable()
 class ExpTransform(tf.keras.layers.Layer):
     """ExpTransform
 
-    Modifier used to exponential transform the tf.Tensor stored in a
-    dictionary.
+    Modifier used to exponential transform the tf.Tensor.
 
     Attributes
     ----------
-    key: str
-        key to access the data needed to be exponential transformed.
+    base: float
+        the base used for exponential transform.
 
     """
 
-    def __init__(self, key: str, *args, **kwargs):
+    def __init__(
+        self,
+        base: float = math.e,
+        **kwargs,
+    ):
         """Constructor for ExpTransform
 
         Parameters
         ----------
-        key: str
-            key to access the data needed to be exponential transformed.
+        base: float, optional
+            the base used for exponential transform. Defaults to natural
+            exponent e.
 
         """
-        super().__init__(*args, **kwargs)
-        self.key = key
+        super().__init__(**kwargs)
+        self.base = base
 
     def get_config(self) -> Dict[str, Any]:
         """Returns the configuration of the layer.
@@ -41,34 +44,23 @@ class ExpTransform(tf.keras.layers.Layer):
 
         """
         config = super().get_config()
-        config.update({"key": self.key})
+        config.update({"base": self.base})
         return config
 
-    def call(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        """Exponential transform tf.Tensor stored in inputs.
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        """Exponential transform tf.Tensor.
 
         Parameters
         ----------
-        inputs: Dict[str, tf.Tensor]
-            inputs dictionary of tf.Tensor contains self.key
+        inputs: tf.Tensor
+            input tf.Tensor.
 
         Returns
         -------
-        Dict[str, tf.Tensor]
-            processed dictionary of tf.Tensor
+        tf.Tensor
+            exponential transformed tf.Tensor
+
         """
-        outputs = {k: tf.identity(v) for k, v in inputs.items()}
-        is_sparse = False
-        tensor = outputs[self.key]
-        if TensorUtils.is_sparse_tensor(tensor):
-            tensor = tf.sparse.to_dense(tensor)
+        outputs = tf.math.pow(self.base, inputs)
 
-            is_sparse = True
-
-        tensor = tf.math.exp(tensor)
-
-        if is_sparse:
-            tensor = tf.sparse.from_dense(tensor)
-
-        outputs[self.key] = tensor
         return outputs
