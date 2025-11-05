@@ -64,7 +64,7 @@ class Workflow:
 
         """
         self.config: ApplicationConfig = ApplicationConfig(filename)
-        self.mdata: Optional[mu.Mudata] = None
+        self.mdata: Optional[mu.MuData] = None
         self.dataloader: Optional[DataLoader] = None
         self.anndata_filters: AnnDataFilterHandler = AnnDataFilterHandler.from_config(
             self.config
@@ -86,6 +86,7 @@ class Workflow:
         self.model = Model.make(
             component_configs=self.config.components, name=self.config.model.name
         )
+        # print(f"LATENT OTOTJEDLKJSLFDSJ: {self.model.n_latent_dims}")
 
         self.setup_train_scheduler()
         if self.config.model.load_weights:
@@ -253,7 +254,7 @@ class Workflow:
             Constants.CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING
         )
         self.train_scheduler = SequentialTrainingScheduler(
-            self.model, optimizer, learning_rate, early_stopping
+            self.model, self.mdata, optimizer, learning_rate, early_stopping
         )
 
         return

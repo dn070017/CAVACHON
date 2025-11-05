@@ -1,12 +1,95 @@
 import itertools
+import os
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, List, Mapping, Optional, Tuple
 
 import mlflow
+import muon as mu
+import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
+from cavachon.dataloader.dataloader import DataLoader
+from cavachon.distributions.mixture_multivariate_normal_diag_distribution import (
+    MixtureMultivariateNormalDiagDistribution,
+)
+from cavachon.distributions.multivariate_normal_diag_distribution import (
+    MultivariateNormalDiagDistribution,
+)
 from cavachon.environment.constants import Constants
+
+
+class PeriodicTSNECallback(tf.keras.callbacks.Callback):
+    """
+    new test callback to save logpy_z and z per n epoch
+    then append the callback in fit()
+    """
+
+    def __init__(
+        self,
+        mdata: mu.MuData,  # we need to pass mdata into it
+        component: str,
+        outdir: str,
+        batch_size: int,
+        every: int = 100,
+        batch_effect_colnames: Optional[Mapping[str, List[str]]] = None,
+        distribution_names: Optional[Mapping[str, str]] = None,
+    ):
+        super().__init__()
+        self.mdata = mdata
+        self.component = component
+        self.every = int(every)
+        self.batch_effect_colnames = batch_effect_colnames
+        self.distribution_names = distribution_names
+        self.output_dir = outdir
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    def on_epoch_end(self, epoch, logs=None):
+        # here we adjust the freq of saving the snaphot
+        if (epoch + 1) % self.every != 0:
+            return
+
+        component = self.component
+
+        # extract mean latent z
+        outputs = self.model.predict(self.mdata, batch_size=self.batch_size)
+        z_full = outputs[f"{self.component}_z"]
+
+        # compute logpy_z (copied from cluster_analysis.py)
+        z_prior_parameterizer = self.model.components[component].z_prior_parameterizer
+        z_prior_parameters = tf.squeeze(z_prior_parameterizer(tf.ones((1, 1))))
+
+        dist_z_y = MultivariateNormalDiagDistribution.from_parameterizer_output(
+            z_prior_parameters[..., 1:]
+        )
+        dist_z = MixtureMultivariateNormalDiagDistribution.from_parameterizer_output(
+            z_prior_parameters
+        )
+        logpy = tf.math.log(tf.math.softmax(z_prior_parameters[..., 0]) + 1e-7)
+
+        logpy_z_parts = []
+        dataloader = DataLoader(
+            self.mdata,
+            self.batch_size,
+            self.batch_effect_colnames,
+            self.distribution_names,
+        )
+        for batch_data in tqdm(dataloader, desc=f"Epoch {epoch}: computing logpy_z"):
+            outs = self.model(batch_data, training=False)
+            z = outs[f"{self.component}_z"]
+            logpz_y = dist_z_y.log_prob(tf.expand_dims(z, -2))
+            logpz = tf.expand_dims(dist_z.log_prob(z), -1)
+            logpy_z_parts.append(logpy + logpz_y - logpz)
+
+        logpy_z = np.vstack([x.numpy() for x in logpy_z_parts])
+
+        # 3) Save z and logpy_z in the configured results directory
+        np.save(os.path.join(self.output_dir, f"{epoch}_z.h5"), z_full)
+        np.save(os.path.join(self.output_dir, f"{epoch}_logpy_z.h5"), logpy_z)
+
+
+# -------------------------------------
 
 
 class SequentialTrainingScheduler:
@@ -44,6 +127,7 @@ class SequentialTrainingScheduler:
 
     def __init__(
         self,
+        mdata,
         model: tf.keras.Model,
         optimizer: str = "adam",
         learning_rate: float = 1e-4,
@@ -69,6 +153,7 @@ class SequentialTrainingScheduler:
 
         """
         self.model = model
+        self.mdata = mdata
         self.component_configs = self.model.component_configs
         self.optimizer = optimizer
         self.learning_rate = learning_rate
@@ -250,7 +335,19 @@ class SequentialTrainingScheduler:
                         patience=max(10, int(kwargs.get("epochs", 1) / 20)),
                         restore_best_weights=True,
                         verbose=1,
-                    )
+                    ),
+                    callbacks.append(
+                        PeriodicTSNECallback(
+                            mdata=self.mdata,
+                            model=self.model,
+                            component=train_components[0],
+                            batch_size=self.config.dataset.get("batch_size", 128)
+                            if hasattr(self, "config")
+                            else 128,
+                            output_dir=os.path.join(self.model.name, "tsne_snapshots"),
+                            every=100,
+                        )
+                    ),
                 )
             history.append(self.model.fit(x, callbacks=callbacks, **kwargs))
             mlflow.end_run()
