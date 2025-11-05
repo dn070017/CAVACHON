@@ -127,8 +127,8 @@ class SequentialTrainingScheduler:
 
     def __init__(
         self,
-        mdata,
         model: tf.keras.Model,
+        mdata,
         optimizer: str = "adam",
         learning_rate: float = 1e-4,
         early_stopping: bool = True,
