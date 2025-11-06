@@ -254,7 +254,7 @@ class Workflow:
             Constants.CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING
         )
         self.train_scheduler = SequentialTrainingScheduler(
-            self.model, self.mdata, optimizer, learning_rate, early_stopping
+            self.model, self.mdata, optimizer, learning_rate, early_stopping, batch_size, outdir
         )
 
         return
