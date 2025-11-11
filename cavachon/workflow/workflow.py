@@ -254,7 +254,15 @@ class Workflow:
             Constants.CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING
         )
         self.train_scheduler = SequentialTrainingScheduler(
-            self.model, self.mdata, optimizer, learning_rate, early_stopping, batch_size, outdir
+            self.model,
+            self.mdata,
+            optimizer,
+            learning_rate,
+            early_stopping,
+            self.dataloader.batch_size,
+            self.config.io.outdir,
+            self.batch_effect_colnames,
+            self.distribution_names,
         )
 
         return

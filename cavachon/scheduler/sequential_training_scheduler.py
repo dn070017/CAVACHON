@@ -31,7 +31,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         mdata: mu.MuData,  # we need to pass mdata into it
         component: str,
         outdir: str,
-        batch_size = int,
+        batch_size=int,
         every: int = 100,
         batch_effect_colnames: Optional[Mapping[str, List[str]]] = None,
         distribution_names: Optional[Mapping[str, str]] = None,
@@ -135,6 +135,8 @@ class SequentialTrainingScheduler:
         early_stopping: bool = True,
         batch_size: int = 128,
         outdir: Optional[str] = None,
+        distribution_names: Optional[Mapping[str, str]] = None,
+        batch_effect_colnames: Optional[Mapping[str, List[str]]] = None,
     ):
         """Constructor for SequentialTrainingScheduler.
 
@@ -165,6 +167,8 @@ class SequentialTrainingScheduler:
         self.modality_weight = self.compute_modality_weight()
         self.batch_size = batch_size
         self.outdir = outdir
+        self.distibrution_names = distribution_names
+        self.batch_effect_colnames = batch_effect_colnames
 
     def compute_component_training_order(self) -> Mapping[int, List[str]]:
         """Compute the training order of the components based on the
@@ -346,13 +350,13 @@ class SequentialTrainingScheduler:
                 PeriodicTSNECallback(
                     mdata=self.mdata,
                     component=train_components[0],
-                    outdir=os.path.join(self.model.name, "tsne_snapshots"),
+                    outdir=os.path.join(self.outputdir, "tsne_snapshots"),
                     batch_size=self.batch_size,
-                    every=100,
-                    batch_effect_colnames=getattr(self, "batch_effect_colnames", None),
-                    distribution_names=getattr(self, "distribution_names", None),
-                    )
+                    every=1,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
                 )
+            )
             history.append(self.model.fit(x, callbacks=callbacks, **kwargs))
             mlflow.end_run()
 
