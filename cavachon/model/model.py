@@ -406,6 +406,16 @@ class Model(tf.keras.Model):
                         x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
                             outputs.get(f"{component_name}_z_hat")
                         )
+                        
+                    # new code to save z1 and z2--    
+                    z_prior_parameterizer = self.components[component_name].z_prior_parameterizer
+                    z_prior_parameters = tf.squeeze(z_prior_parameterizer(tf.ones((1, 1))))
+                    #  z_prior_parameters[..., 0]: pi (prob of the components)
+                    #  z_prior_parameters[..., 1:n_latent+1]: `u (mean of the components)
+                    #  z_prior_parameters[..., n_latent+1:2*n_latent+1]: sigma (std of the components)
+                    x.mod[modality_name].uns[f"z_prior_parameter_{component_name}"] = z_prior_parameters.numpy()
+                    # new code snippet ends here---    
+                        
                     if save_x.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
                             outputs.get(
@@ -541,6 +551,10 @@ class Model(tf.keras.Model):
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             gradients = tape.gradient(loss, self.trainable_variables)
             gradients = TensorUtils.remove_nan_gradients(gradients)
+            # find the variables related to mixture gaussian (prior)
+            print(self.trainable_variables)
+            # check their gradient if zero or np.nan
+            print(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
             loss_metrics = {"loss": loss}

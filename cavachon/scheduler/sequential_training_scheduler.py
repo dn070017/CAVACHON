@@ -48,6 +48,9 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         # here we adjust the freq of saving the snaphot
+        # below is start from 500
+        #if epoch < 499 or ((epoch - 499) % self.every) != 0:
+    
         if (epoch + 1) % self.every != 0:
             return
 
@@ -86,8 +89,10 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         logpy_z = np.vstack([x.numpy() for x in logpy_z_parts])
 
         # 3) Save z and logpy_z in the configured results directory
-        np.save(os.path.join(self.output_dir, f"{epoch}_z.h5"), z_full)
-        np.save(os.path.join(self.output_dir, f"{epoch}_logpy_z.h5"), logpy_z)
+        np.save(os.path.join(self.output_dir, f"{epoch +1}_z.h5"), z_full) #because of zero indexing 
+        np.save(os.path.join(self.output_dir, f"{epoch +1}_logpy_z.h5"), logpy_z)
+        np.save(os.path.join(self.output_dir, f"{epoch +1}_prior_params.npy"),
+        z_prior_parameters.numpy())
 
 
 # -------------------------------------
@@ -166,8 +171,8 @@ class SequentialTrainingScheduler:
         self.training_order = self.compute_component_training_order()
         self.modality_weight = self.compute_modality_weight()
         self.batch_size = batch_size
-        self.outdir = outdir
-        self.distibrution_names = distribution_names
+        self.output_dir = outdir
+        self.distribution_names = distribution_names
         self.batch_effect_colnames = batch_effect_colnames
 
     def compute_component_training_order(self) -> Mapping[int, List[str]]:
@@ -350,9 +355,9 @@ class SequentialTrainingScheduler:
                 PeriodicTSNECallback(
                     mdata=self.mdata,
                     component=train_components[0],
-                    outdir=os.path.join(self.outputdir, "tsne_snapshots"),
+                    outdir=os.path.join(self.output_dir, "tsne_snapshots"),
                     batch_size=self.batch_size,
-                    every=1,
+                    every=100,
                     batch_effect_colnames=self.batch_effect_colnames,
                     distribution_names=self.distribution_names,
                 )

@@ -22,7 +22,6 @@ from cavachon.tools.differential_analysis import DifferentialAnalysis
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
 
-
 class Workflow:
     """Workflow
 
