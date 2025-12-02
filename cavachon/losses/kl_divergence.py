@@ -111,6 +111,7 @@ class KLDivergence(tf.keras.losses.Loss):
         ]  # mean and std of posterior
         # y_pred_prior needs to reshape back into its original form (currently it is flattened)
         # because for each cluster we need event dims (mean and std) + 1 logit
+        y_pred_prior = y_pred_prior[0:1, :]   # remove batch dimension
         y_pred_prior = tf.reshape(
             y_pred_prior, (1, self.n_cluster, 2 * event_dims + 1)
         )  # corrected to tf.reshape
