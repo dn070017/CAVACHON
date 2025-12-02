@@ -16,7 +16,14 @@ class KLDivergence(tf.keras.losses.Loss):
     𝚺_j𝚺_y[py_z(logpc_z)]
     """
 
-    def __init__(self, weight: float = 1.0, name: str = "kl_divergence", **kwargs):
+    def __init__(
+        self,
+        event_dims: int,
+        n_cluster: int,
+        weight: float = 1.0,
+        name: str = "kl_divergence",
+        **kwargs,
+    ):
         """Constructor for KLDivergence
 
         Parameters
@@ -35,6 +42,8 @@ class KLDivergence(tf.keras.losses.Loss):
 
         """
         self.weight = weight
+        self.event_dims = event_dims
+        self.n_cluster = n_cluster
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
@@ -83,10 +92,31 @@ class KLDivergence(tf.keras.losses.Loss):
         # or
         # NegativeLogDataLikelihood + KLDivergence (minimizing the loss)
 
-        event_dims = y_pred.shape[1] // 3
-        z = y_pred[..., 0:event_dims]
-        dist_z_x_params = y_pred[..., event_dims:]
-        logits_prior = y_true[..., 0]
+        # y_true.shape = (n_cluster, 2 * event_dims + 1)
+        # y_pred.shape = (batch, event_dims * 3)
+        # y_true_transform = (batch, n_cluster * (2 * event_dims + 1))
+        # y_pred_new = tf.concat([y_pred, y_true], axis=1)
+        # y_pred_new = (batch, event_dims * 3 + n_cluster * (2 * event_dims + 1))
+
+        # logits_prior = y_true[..., 0]
+        event_dims = self.event_dims
+        # we split y_pred into 2, first part posterior, second part prior
+        y_pred_posterior, y_pred_prior = tf.split(
+            y_pred, [event_dims * 3, y_pred.shape[1] - event_dims * 3], axis=1
+        )
+        # posterior = first 3 * event_dims entries
+        z = y_pred_posterior[..., 0:event_dims]  # z(latent space)
+        dist_z_x_params = y_pred_posterior[
+            ..., event_dims:
+        ]  # mean and std of posterior
+        # y_pred_prior needs to reshape back into its original form (currently it is flattened)
+        # because for each cluster we need event dims (mean and std) + 1 logit
+        y_pred_prior = tf.reshape(
+            y_pred_prior, (1, self.n_clusters, 2 * event_dims + 1)
+        )  # corrected to tf.reshape
+        logits_prior = y_pred_prior[
+            ..., 0
+        ]  # extracts all mixture logits (one per cluster)
 
         # batch_shape: (batch, ), event_shape: (event_dims, )
         dist_z_x = MultivariateNormalDiagDistribution.from_parameterizer_output(
@@ -97,11 +127,11 @@ class KLDivergence(tf.keras.losses.Loss):
         # set of priors with n_componetns for each layer)
         # batch_shape: (1, n_components), event_shape: (event_dims, )
         dist_z_y = MultivariateNormalDiagDistribution.from_parameterizer_output(
-            y_true[..., 1:]
+            y_pred_prior[..., 1:]
         )
         # batch_shape: (1, ), event_shape: (event_dims, )
         dist_z = MixtureMultivariateNormalDiagDistribution.from_parameterizer_output(
-            y_true
+            y_pred_prior
         )
 
         # change the shape of z from (batch, event_dims) to (batch, 1, event_dims) to make the

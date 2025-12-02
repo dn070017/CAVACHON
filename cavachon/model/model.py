@@ -406,16 +406,22 @@ class Model(tf.keras.Model):
                         x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
                             outputs.get(f"{component_name}_z_hat")
                         )
-                        
-                    # new code to save z1 and z2--    
-                    z_prior_parameterizer = self.components[component_name].z_prior_parameterizer
-                    z_prior_parameters = tf.squeeze(z_prior_parameterizer(tf.ones((1, 1))))
+
+                    # new code to save z1 and z2--
+                    z_prior_parameterizer = self.components[
+                        component_name
+                    ].z_prior_parameterizer
+                    z_prior_parameters = tf.squeeze(
+                        z_prior_parameterizer(tf.ones((1, 1)))
+                    )
                     #  z_prior_parameters[..., 0]: pi (prob of the components)
                     #  z_prior_parameters[..., 1:n_latent+1]: `u (mean of the components)
                     #  z_prior_parameters[..., n_latent+1:2*n_latent+1]: sigma (std of the components)
-                    x.mod[modality_name].uns[f"z_prior_parameter_{component_name}"] = z_prior_parameters.numpy()
-                    # new code snippet ends here---    
-                        
+                    x.mod[modality_name].uns[f"z_prior_parameter_{component_name}"] = (
+                        z_prior_parameters.numpy()
+                    )
+                    # new code snippet ends here---
+
                     if save_x.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
                             outputs.get(
@@ -530,10 +536,29 @@ class Model(tf.keras.Model):
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
                 z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
 
+                y_pred_old = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                    [results.get(z_key), results.get(z_params_key)]  ##
+                )
+                y_true.setdefault(
+                    kl_divergence_name,
+                    tf.zeros_like(
+                        y_pred_old
+                    ),  # component.z_prior_parameterizer(tf.ones((1, 1)))
+                )
+
                 y_pred.setdefault(
                     kl_divergence_name,
                     tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                        [results.get(z_key), results.get(z_params_key)]
+                        [
+                            y_pred_old,
+                            tf.repeat(
+                                tf.keras.layers.Flatten(
+                                    component.z_prior_parameterizer(tf.ones((1, 1)))
+                                ),
+                                y_pred_old.shape[0],
+                                axis=0,
+                            ),
+                        ]
                     ),
                 )
                 for modality_name in modality_names:
