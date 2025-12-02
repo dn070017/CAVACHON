@@ -552,22 +552,18 @@ class Model(tf.keras.Model):
                         y_pred_old
                     ),  # component.z_prior_parameterizer(tf.ones((1, 1)))
                 )
-
+                
+                prior = component.z_prior_parameterizer(tf.ones((1, 1)))  # (1, K, 2*event_dims+1)
+                prior_flat = tf.keras.layers.Flatten()(prior)             # (1, K*(2*event_dims+1))
+                dynamic_batch_size = tf.shape(y_pred_old)[0]  # dynamic batch dimension
+                prior_flat_tiled = tf.repeat(prior_flat, dynamic_batch_size, axis=0)  # (batch, ...)
                 y_pred.setdefault(
                     kl_divergence_name,
                     tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                        [
-                            y_pred_old,
-                            tf.repeat(
-                                tf.keras.layers.Flatten(
-                                    component.z_prior_parameterizer(tf.ones((1, 1)))
-                                ),
-                                y_pred_old.shape[0],
-                                axis=0,
-                            ),
-                        ]
+                        [y_pred_old, prior_flat_tiled],
                     ),
                 )
+
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
