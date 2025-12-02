@@ -455,10 +455,17 @@ class Model(tf.keras.Model):
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
+                # pull them here from component config
+                # to tell KLDivergence what event_dims and n_cluster are when its constructed
+                event_dims = component_config.get("n_latent_dims")
+                n_cluster = component_config.get("n_latent_priors")
+                
                 loss.setdefault(
                     kl_divergence_name,
                     KLDivergence(
-                        loss_weights.get(kl_divergence_name, 1.0),
+                        event_dims=event_dims, 
+                        n_cluster=n_cluster, 
+                        weight = loss_weights.get(kl_divergence_name, 1.0),
                         name=kl_divergence_name,
                     ),
                 )
