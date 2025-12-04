@@ -532,7 +532,7 @@ class Model(tf.keras.Model):
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
                 component = self.components.get(component_name)
-
+                
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
@@ -577,14 +577,32 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            gradients = tape.gradient(loss, self.trainable_variables)
+            #gradients = tape.gradient(loss, self.trainable_variables)
+            #gradients = TensorUtils.remove_nan_gradients(gradients)
+            #self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+            
+            # -- test if below works::::
+            trainable_vars = list(self.trainable_variables)
+            for component_config in self.component_configs:
+                component_name = component_config.get("name")
+                component = self.components.get(component_name)
+                prior_vars = component.z_prior_parameterizer.trainable_variables
+                for v in prior_vars:
+                    if not any(v is tv for tv in trainable_vars):
+                        trainable_vars.append(v)
+            
+            gradients = tape.gradient(loss, trainable_vars)
             gradients = TensorUtils.remove_nan_gradients(gradients)
-            # find the variables related to mixture gaussian (prior)
-            print(self.trainable_variables)
-            # check their gradient if zero or np.nan
-            print(gradients)
-            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+            grad_var_pairs = [(g, v) for g, v in zip(gradients, trainable_vars) if g is not None] #filter our none gradient
+            self.optimizer.apply_gradients(grad_var_pairs)
+            print("num trainable vars:", len(trainable_vars))
+            # -- test if above works::::
 
+            # find the variables related to mixture gaussian (prior)
+            # print(self.trainable_variables)
+            # check their gradient if zero or np.nan
+            # print(gradients)
+            
             loss_metrics = {"loss": loss}
             for key in y_true:
                 loss_fn = self.loss.get(key)
