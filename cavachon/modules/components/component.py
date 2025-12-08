@@ -535,6 +535,7 @@ class Component(tf.keras.Model):
         preprocessor: tf.keras.Model,
         encoder: tf.keras.Model,
         hierarchical_encoder: tf.keras.Model,
+        z_prior_parameterizer: tf.keras.layers.Layer,
         z_sampler: Union[tf.keras.Model, tf.keras.layers.Layer],
         decoders: Mapping[str, tf.keras.Model],
         **kwargs,
@@ -592,10 +593,15 @@ class Component(tf.keras.Model):
             inputs, z
         )
         z_hat = hierarchical_encoder(hierarchical_encoder_inputs)
+        z_prior = z_prior_parameterizer(tf.ones((1, 1)))
+        z_prior_flat = tf.reshape(z_prior, (1, -1))
+        batch_size = tf.shape(z)[0]
+        z_prior_parameters = tf.repeat(z_prior_flat, batch_size, axis=0)
 
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PARAMS, z_parameters)
+        outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PRIOR, z_prior_parameters)
 
         for modality_name in modality_names:
             decoder_inputs = Component.prepare_decoder_inputs(
@@ -765,6 +771,7 @@ class Component(tf.keras.Model):
             modality_names=modality_names,
             preprocessor=preprocessor,
             encoder=encoder,
+            z_prior_parameterizer=z_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
             z_sampler=z_sampler,
             decoders=decoders,

@@ -459,13 +459,13 @@ class Model(tf.keras.Model):
                 # to tell KLDivergence what event_dims and n_cluster are when its constructed
                 event_dims = component_config.get("n_latent_dims")
                 n_cluster = component_config.get("n_latent_priors")
-                
+
                 loss.setdefault(
                     kl_divergence_name,
                     KLDivergence(
-                        event_dims=event_dims, 
-                        n_cluster=n_cluster, 
-                        weight = loss_weights.get(kl_divergence_name, 1.0),
+                        event_dims=event_dims,
+                        n_cluster=n_cluster,
+                        weight=loss_weights.get(kl_divergence_name, 1.0),
                         name=kl_divergence_name,
                     ),
                 )
@@ -532,7 +532,7 @@ class Model(tf.keras.Model):
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
                 component = self.components.get(component_name)
-                
+
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
@@ -542,27 +542,24 @@ class Model(tf.keras.Model):
 
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
                 z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
+                z_prior_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR}"
 
-                y_pred_old = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                    [results.get(z_key), results.get(z_params_key)]  ##
+                z_tensor = results.get(z_key)
+                z_params_tensor = results.get(z_params_key)
+                z_prior_flat_tiled = results.get(z_prior_key)
+
+                # Concatenate posterior sample, posterior params, and prior params
+                y_pred_kl = tf.concat(
+                    [z_tensor, z_params_tensor, z_prior_flat_tiled],
+                    axis=-1,
                 )
+
+                # y_true is unused by KLDivergence.call(), so we just give a dummy tensor
                 y_true.setdefault(
                     kl_divergence_name,
-                    tf.zeros_like(
-                        y_pred_old
-                    ),  # component.z_prior_parameterizer(tf.ones((1, 1)))
+                    tf.zeros_like(y_pred_kl),
                 )
-                
-                prior = component.z_prior_parameterizer(tf.ones((1, 1)))  # (1, K, 2*event_dims+1)
-                prior_flat = tf.keras.layers.Flatten()(prior)             # (1, K*(2*event_dims+1))
-                dynamic_batch_size = tf.shape(y_pred_old)[0]  # dynamic batch dimension
-                prior_flat_tiled = tf.repeat(prior_flat, dynamic_batch_size, axis=0)  # (batch, ...)
-                y_pred.setdefault(
-                    kl_divergence_name,
-                    tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                        [y_pred_old, prior_flat_tiled],
-                    ),
-                )
+                y_pred.setdefault(kl_divergence_name, y_pred_kl)
 
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
@@ -577,32 +574,15 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            #gradients = tape.gradient(loss, self.trainable_variables)
-            #gradients = TensorUtils.remove_nan_gradients(gradients)
-            #self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-            
-            # -- test if below works::::
-            trainable_vars = list(self.trainable_variables)
-            for component_config in self.component_configs:
-                component_name = component_config.get("name")
-                component = self.components.get(component_name)
-                prior_vars = component.z_prior_parameterizer.trainable_variables
-                for v in prior_vars:
-                    if not any(v is tv for tv in trainable_vars):
-                        trainable_vars.append(v)
-            
-            gradients = tape.gradient(loss, trainable_vars)
+            gradients = tape.gradient(loss, self.trainable_variables)
             gradients = TensorUtils.remove_nan_gradients(gradients)
-            grad_var_pairs = [(g, v) for g, v in zip(gradients, trainable_vars) if g is not None] #filter our none gradient
-            self.optimizer.apply_gradients(grad_var_pairs)
-            print("num trainable vars:", len(trainable_vars))
-            # -- test if above works::::
+            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
             # find the variables related to mixture gaussian (prior)
             # print(self.trainable_variables)
             # check their gradient if zero or np.nan
             # print(gradients)
-            
+
             loss_metrics = {"loss": loss}
             for key in y_true:
                 loss_fn = self.loss.get(key)

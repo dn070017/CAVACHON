@@ -13,6 +13,7 @@ class Constants:
     MODEL_OUTPUTS_Z = "z"
     MODEL_OUTPUTS_Z_PARAMS = "z_parameters"
     MODEL_OUTPUTS_X_PARAMS = "x_parameters"
+    MODEL_OUTPUTS_Z_PRIOR = "z_prior_parameters"
     MODEL_LOSS_KL_POSTFIX = "kl_divergence"
     MODEL_LOSS_DATA_POSTFIX = "negative_log_data_likelihood"
 
