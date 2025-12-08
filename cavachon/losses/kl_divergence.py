@@ -100,15 +100,23 @@ class KLDivergence(tf.keras.losses.Loss):
 
         # logits_prior = y_true[..., 0]
         event_dims = self.event_dims
+        
+        # split y_pred into posterior and prior using dynamic shape
+        total_dim = tf.shape(y_pred)[1]
+        posterior_dim = event_dims * 3
+        prior_dim = total_dim - posterior_dim
+        
         # we split y_pred into 2, first part posterior, second part prior
         y_pred_posterior, y_pred_prior = tf.split(
-            y_pred, [event_dims * 3, y_pred.shape[1] - event_dims * 3], axis=1
+        y_pred, [posterior_dim, prior_dim], axis=1
         )
+        
         # posterior = first 3 * event_dims entries
         z = y_pred_posterior[..., 0:event_dims]  # z(latent space)
-        dist_z_x_params = y_pred_posterior[
-            ..., event_dims:
-        ]  # mean and std of posterior
+        dist_z_x_params = y_pred_posterior[..., event_dims:]  # mean and std of posterior
+        
+        
+        
         # y_pred_prior needs to reshape back into its original form (currently it is flattened)
         # because for each cluster we need event dims (mean and std) + 1 logit
         y_pred_prior = y_pred_prior[0:1, :]   # remove batch dimension

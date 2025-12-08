@@ -593,11 +593,15 @@ class Component(tf.keras.Model):
             inputs, z
         )
         z_hat = hierarchical_encoder(hierarchical_encoder_inputs)
-        z_prior = z_prior_parameterizer(tf.ones((1, 1)))
-        z_prior_flat = tf.reshape(z_prior, (1, -1))
-        batch_size = tf.shape(z)[0]
-        z_prior_parameters = tf.repeat(z_prior_flat, batch_size, axis=0)
-
+        
+        z_prior = z_prior_parameterizer(tf.ones((1, 1)))  # (1, K, 2*event_dims+1)
+        def tile_prior(z_tensor):
+            batch_size = tf.shape(z_tensor)[0]
+            prior_flat = tf.reshape(z_prior, (1, -1))              # (1, K*(2*event_dims+1))
+            prior_tiled = tf.repeat(prior_flat, batch_size, axis=0)  # (batch, ...)
+            return prior_tiled
+        z_prior_parameters = tf.keras.layers.Lambda(tile_prior)(z)
+            
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PARAMS, z_parameters)
