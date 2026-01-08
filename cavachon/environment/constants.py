@@ -11,6 +11,7 @@ class Constants:
     MODEL_INPUTS_Z_HAT_CONDITIONAL_DIMS = "z_hat_conditional_dims"
     MODEL_OUTPUTS_Z_HAT = "z_hat"
     MODEL_OUTPUTS_Z = "z"
+    MODEL_OUTPUTS_Z_PRIOR_PARAMS = "z_prior_parameters"
     MODEL_OUTPUTS_Z_PARAMS = "z_parameters"
     MODEL_OUTPUTS_X_PARAMS = "x_parameters"
     MODEL_LOSS_KL_POSTFIX = "kl_divergence"

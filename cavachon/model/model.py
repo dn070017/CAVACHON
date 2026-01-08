@@ -514,7 +514,10 @@ class Model(tf.keras.Model):
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
                 y_true.setdefault(
-                    kl_divergence_name, component.z_prior_parameterizer(tf.ones((1, 1)))
+                    kl_divergence_name,
+                    results.get(
+                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
+                    ),
                 )
 
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
@@ -539,7 +542,10 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
+            t = self.components["ATAC"].z_prior_parameterizer(tf.ones((1, 1)))[:, 1:]
+            print(tf.split(t, 2, 1)[0])
             gradients = tape.gradient(loss, self.trainable_variables)
+            # print(gradients)
             gradients = TensorUtils.remove_nan_gradients(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
