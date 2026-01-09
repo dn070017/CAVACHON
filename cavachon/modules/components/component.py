@@ -395,7 +395,7 @@ class Component(tf.keras.Model):
             Name for the tensorflow model. Defaults to 'encoder'.
 
         kwargs: Mapping[str, Any]
-            additional parameters used for custom setup_encoders()
+            additional parameters used for custom setup_encoder()
 
         Returns
         -------
@@ -593,19 +593,18 @@ class Component(tf.keras.Model):
             inputs, z
         )
         z_hat = hierarchical_encoder(hierarchical_encoder_inputs)
-        
-        z_prior = z_prior_parameterizer(tf.ones((1, 1)))  # (1, K, 2*event_dims+1)
-        def tile_prior(z_tensor):
-            batch_size = tf.shape(z_tensor)[0]
-            prior_flat = tf.reshape(z_prior, (1, -1))              # (1, K*(2*event_dims+1))
-            prior_tiled = tf.repeat(prior_flat, batch_size, axis=0)  # (batch, ...)
-            return prior_tiled
-        z_prior_parameters = tf.keras.layers.Lambda(tile_prior)(z)
-            
+
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PARAMS, z_parameters)
-        outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PRIOR, z_prior_parameters)
+
+        dummy_input = tf.keras.layers.Lambda(
+            lambda x: tf.ones((1, 1)), name="z_prior_dummy_input"
+        )(z)
+        outputs.setdefault(
+            Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS,
+            z_prior_parameterizer(dummy_input),
+        )
 
         for modality_name in modality_names:
             decoder_inputs = Component.prepare_decoder_inputs(
@@ -766,7 +765,7 @@ class Component(tf.keras.Model):
             distribution_names=distribution_names,
             n_vars=n_vars,
             n_decoder_layers=n_decoder_layers,
-            name_prefix=name,
+            name=name,
             **kwargs,
         )
 
@@ -775,8 +774,8 @@ class Component(tf.keras.Model):
             modality_names=modality_names,
             preprocessor=preprocessor,
             encoder=encoder,
-            z_prior_parameterizer=z_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
+            z_prior_parameterizer=z_prior_parameterizer,
             z_sampler=z_sampler,
             decoders=decoders,
             **kwargs,
@@ -876,7 +875,7 @@ class Component(tf.keras.Model):
             y_pred = dict()
             kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
             y_true.setdefault(
-                kl_divergence_name, self.z_prior_parameterizer(tf.ones((1, 1)))
+                kl_divergence_name, results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
             )
 
             z_key = Constants.MODEL_OUTPUTS_Z

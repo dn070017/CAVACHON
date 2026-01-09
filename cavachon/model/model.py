@@ -406,22 +406,6 @@ class Model(tf.keras.Model):
                         x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
                             outputs.get(f"{component_name}_z_hat")
                         )
-
-                    # new code to save z1 and z2--
-                    z_prior_parameterizer = self.components[
-                        component_name
-                    ].z_prior_parameterizer
-                    z_prior_parameters = tf.squeeze(
-                        z_prior_parameterizer(tf.ones((1, 1)))
-                    )
-                    #  z_prior_parameters[..., 0]: pi (prob of the components)
-                    #  z_prior_parameters[..., 1:n_latent+1]: `u (mean of the components)
-                    #  z_prior_parameters[..., n_latent+1:2*n_latent+1]: sigma (std of the components)
-                    x.mod[modality_name].uns[f"z_prior_parameter_{component_name}"] = (
-                        z_prior_parameters.numpy()
-                    )
-                    # new code snippet ends here---
-
                     if save_x.get(f"{component_name}_{modality_name}"):
                         x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
                             outputs.get(
@@ -455,17 +439,10 @@ class Model(tf.keras.Model):
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
-                # pull them here from component config
-                # to tell KLDivergence what event_dims and n_cluster are when its constructed
-                event_dims = component_config.get("n_latent_dims")
-                n_cluster = component_config.get("n_latent_priors")
-
                 loss.setdefault(
                     kl_divergence_name,
                     KLDivergence(
-                        event_dims=event_dims,
-                        n_cluster=n_cluster,
-                        weight=loss_weights.get(kl_divergence_name, 1.0),
+                        loss_weights.get(kl_divergence_name, 1.0),
                         name=kl_divergence_name,
                     ),
                 )
@@ -537,31 +514,21 @@ class Model(tf.keras.Model):
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
                 y_true.setdefault(
-                    kl_divergence_name, component.z_prior_parameterizer(tf.ones((1, 1)))
+                    kl_divergence_name,
+                    results.get(
+                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
+                    ),
                 )
 
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
                 z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
-                
-                z_tensor = results.get(z_key)
-                z_params_tensor = results.get(z_params_key)
 
-                y_pred_old = tf.concat([z_tensor, z_params_tensor], axis=-1)
-
-                # compute prior ONCE
-                prior = component.z_prior_parameterizer(tf.ones((1, 1)))   # (1, K, ...)
-                prior_flat = tf.reshape(prior, (1, -1))                    # (1, *)
-                d_batch_size = tf.shape(y_pred_old)[0]
-                prior_flat_tiled = tf.repeat(prior_flat, d_batch_size, axis=0)
-                
-                # KL prediction input
-                y_pred_kl = tf.concat([y_pred_old, prior_flat_tiled], axis=-1)
-                
-                # y_true is unused by KLDivergence.call(), so we just give a dummy tensor
-                y_true.setdefault(kl_divergence_name, tf.zeros_like(y_pred_kl))
-                y_pred.setdefault(kl_divergence_name, y_pred_kl)
-                
-                
+                y_pred.setdefault(
+                    kl_divergence_name,
+                    tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                        [results.get(z_key), results.get(z_params_key)]
+                    ),
+                )
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
@@ -575,24 +542,12 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            # ---- ADD THIS BLOCK HERE ----
-            trainable_vars = list(self.trainable_variables)
-            
-            for cfg in self.component_configs:
-                comp = self.components[cfg["name"]]
-                for v in comp.z_prior_parameterizer.trainable_variables:
-                    if all(v is not tv for tv in trainable_vars):
-                        trainable_vars.append(v)
-            # ---- END BLOCK ----
-
-            gradients = tape.gradient(loss, trainable_vars)
-            gradients = TensorUtils.remove_nan_gradients(gradients)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-
-            # find the variables related to mixture gaussian (prior)
-            # print(self.trainable_variables)
-            # check their gradient if zero or np.nan
+            t = self.components["ATAC"].z_prior_parameterizer(tf.ones((1, 1)))[:, 1:]
+            print(tf.split(t, 2, 1)[0])
+            gradients = tape.gradient(loss, self.trainable_variables)
             # print(gradients)
+            gradients = TensorUtils.remove_nan_gradients(gradients)
+            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
             loss_metrics = {"loss": loss}
             for key in y_true:

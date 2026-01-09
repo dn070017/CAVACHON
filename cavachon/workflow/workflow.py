@@ -298,7 +298,7 @@ class Workflow:
 
         # shuffle dataset if needed
         if self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_SHUFFLE):
-            self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(batch_size)
+            train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(batch_size)
         else:
             train_dataset = self.dataloader.dataset.batch(batch_size)
 

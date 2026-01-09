@@ -50,8 +50,9 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # here we adjust the freq of saving the snaphot
         # below is start from 500
         #if epoch < 499 or ((epoch - 499) % self.every) != 0:
-    
-        if (epoch + 1) % self.every != 0:
+        #if (epoch + 1) % self.every != 0:
+        save_epochs = {0}
+        if epoch not in save_epochs:
             return
 
         component = self.component

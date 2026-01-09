@@ -1,5 +1,5 @@
 import tensorflow as tf
-
+import numpy as np
 
 class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
     """MixtureMultivariateNormalDiagParameterizerLayer
@@ -41,6 +41,40 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         self.unit_variance: bool = unit_variance
 
         return
+    
+    def _make_grid_positions(self,radius: float = 5) -> np.ndarray:
+        K = self.n_components
+        D = self.event_dims
+        # side length of the grid along each dimension (hypercube)
+        side = int(np.ceil(K ** (1.0 / D)))
+        if side < 1:
+            side = 1
+
+        coords = []
+        for idx in range(K):
+            # represent idx in base `side` with D digits
+            digits = []
+            tmp = idx
+            for _ in range(D):
+                digits.append(tmp % side)
+                tmp //= side
+            # digits is in reverse order; reverse back
+            digits = digits[::-1]
+            digits = np.array(digits, dtype=np.float32)
+
+            # center the grid around 0 and scale to roughly [-1, 1]* radius (depends on radius)
+            center = (side - 1) / 2.0
+            if center > 0:
+                coord = (digits - center) / center
+            else:
+                coord = np.zeros_like(digits)
+            
+            coord = coord * radius
+            coords.append(coord)
+
+        coords = np.stack(coords, axis=0)  # (K, D)
+        return coords
+        
 
     def build(self, input_shape: tf.TensorShape) -> None:
         """Create necessary tf.Variable for the first time being called.
@@ -68,30 +102,45 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         if not self.unit_variance:
             self.scale_diag_weight = []
             self.scale_diag_bias = []
+        # --- NEW: compute grid coordinates for all components ---
+        grid_coords = self._make_grid_positions()  # shape (K, event_dims)
+        # --------------------------------------------------------
 
         for i in range(self.n_components):
+            # means should not depend on input -> weights = 0
             self.loc_weight.append(
                 self.add_weight(
                     name=f"{self.name}_loc_weight_{i}",
                     shape=(int(input_shape[-1]), self.event_dims),
+                    initializer=tf.keras.initializers.Constant(0.0),
                 )
             )
+
+            # bias = initial mean for component i (grid position)
             self.loc_bias.append(
                 self.add_weight(
-                    name=f"{self.name}_loc_bias_{i}", shape=(1, self.event_dims)
+                    name=f"{self.name}_loc_bias_{i}",
+                    shape=(1, self.event_dims),
+                    initializer=tf.keras.initializers.Constant(
+                        grid_coords[i][None, :]  # shape (1, D)
+                    ),
                 )
             )
+            ####
+            
             if not self.unit_variance:
                 self.scale_diag_weight.append(
                     self.add_weight(
                         name=f"{self.name}_scale_diag_weight_{i}",
                         shape=(int(input_shape[-1]), self.event_dims),
+                        initializer=tf.keras.initializers.Constant(0.0),# test
                     )
                 )
                 self.scale_diag_bias.append(
                     self.add_weight(
                         name=f"{self.name}_scale_diag_bias_{i}",
                         shape=(1, self.event_dims),
+                        initializer=tf.keras.initializers.Constant(0.5),# test
                     )
                 )
 
