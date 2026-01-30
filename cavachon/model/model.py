@@ -18,7 +18,6 @@ from cavachon.modules.components.component import Component
 from cavachon.utils.general_utils import GeneralUtils
 from cavachon.utils.tensor_utils import TensorUtils
 
-
 class Model(tf.keras.Model):
     """Model
 
@@ -417,7 +416,7 @@ class Model(tf.keras.Model):
         else:
             return super.__predict__(x=x, batch_size=batch_size, **kwargs)
 
-    def compile(self, **kwargs) -> None:
+    def compile(self, disable_kl=False, **kwargs) -> None:
         """Compile the model before training. Note that the 'metrics'
         will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
@@ -425,10 +424,16 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
+        disable_kl: bool, optional
+        If True, disables KL divergence loss by multiplying by 0.
+        Used for debugging/testing. Defaults to False.
+        
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
 
         """
+        self.disable_kl = disable_kl  #attribute
+        
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
 
@@ -436,16 +441,32 @@ class Model(tf.keras.Model):
             loss = dict()
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
+                
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
-                loss.setdefault(
-                    kl_divergence_name,
+                loss.setdefault(kl_divergence_name,
                     KLDivergence(
                         loss_weights.get(kl_divergence_name, 1.0),
                         name=kl_divergence_name,
                     ),
                 )
+                
+                
+                #-------added here ----
+                #if not self.disable_kl:
+                #    kl_divergence_name = (
+                #        f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
+                #    )
+                #    loss.setdefault(
+                #        kl_divergence_name,
+                #        KLDivergence(
+                #            loss_weights.get(kl_divergence_name, 1.0),
+                #            name=kl_divergence_name,
+                #        ),
+                #    )
+                #---------
+                
 
                 for modality_name in component_config.get("modality_names"):
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
@@ -505,14 +526,16 @@ class Model(tf.keras.Model):
 
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
+                
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
                 component = self.components.get(component_name)
-
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
+                
+                
                 y_true.setdefault(
                     kl_divergence_name,
                     results.get(
@@ -529,6 +552,29 @@ class Model(tf.keras.Model):
                         [results.get(z_key), results.get(z_params_key)]
                     ),
                 )
+                
+                
+                # ------if disable_kl is true----- 
+                #if not self.disable_kl:
+                #    y_true.setdefault(
+                #        kl_divergence_name,
+                #        results.get(
+                #            f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
+                #        ),
+                #    )
+
+                #    z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
+                #    z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
+
+                #    y_pred.setdefault(
+                #        kl_divergence_name,
+                #        tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                #            [results.get(z_key), results.get(z_params_key)]
+                #        ),
+                #    )
+                # -----------
+               
+                
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
@@ -542,8 +588,6 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            t = self.components["ATAC"].z_prior_parameterizer(tf.ones((1, 1)))[:, 1:]
-            print(tf.split(t, 2, 1)[0])
             gradients = tape.gradient(loss, self.trainable_variables)
             # print(gradients)
             gradients = TensorUtils.remove_nan_gradients(gradients)

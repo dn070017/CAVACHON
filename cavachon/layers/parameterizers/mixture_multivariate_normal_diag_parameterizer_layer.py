@@ -42,7 +42,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
         return
     
-    def _make_grid_positions(self,radius: float = 5) -> np.ndarray:
+    def _make_grid_positions(self,radius: float = 4) -> np.ndarray:
         K = self.n_components
         D = self.event_dims
         # side length of the grid along each dimension (hypercube)
