@@ -51,7 +51,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0}
+        save_epochs = {0, 149,299,499,699}
         if epoch not in save_epochs:
             return
 
@@ -89,7 +89,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
 
         logpy_z = np.vstack([x.numpy() for x in logpy_z_parts])
 
-        # 3) Save z and logpy_z in the configured results directory
+        # Save z and logpy_z in the configured results directory
         np.save(
             os.path.join(self.output_dir, f"{epoch + 1}_z.h5"), z_full
         )  # because of zero indexing
@@ -287,96 +287,138 @@ class SequentialTrainingScheduler:
         experiment = mlflow.get_experiment_by_name(experiment_name)
 
         for component_order, train_components in enumerate(self.training_order):
-            # progressive training --- NOW RUNS FOR ALL COMPONENTS
-            if self.run_progressive_training.get(train_components[0]):
-                loss_weights, max_n_progressive_epochs = (
-                    self.setup_component_and_loss_weights(
-                        train_components=train_components,
-                        n_batches=n_batches,
-                        initial_iteration=0.0,
-                    )
+        
+            # Set up loss weights for progressive training 
+            loss_weights, max_n_progressive_epochs = (
+                self.setup_component_and_loss_weights(
+                    train_components=train_components,
+                    n_batches=n_batches,
+                    initial_iteration=0.0,
+                )
+            )
+
+            # Force progressive training even if max_n_progressive_epochs is 0
+            if max_n_progressive_epochs == 0:
+                component_config = [
+                    c
+                    for c in self.component_configs
+                    if c.get("name") == train_components[0]
+                ][0]
+                max_n_progressive_epochs = component_config.get(
+                    "n_progressive_epochs", 100
                 )
 
-                # Force progressive training even if max_n_progressive_epochs is 0
-                if max_n_progressive_epochs == 0:
-                    component_config = [
-                        c
-                        for c in self.component_configs
-                        if c.get("name") == train_components[0]
-                    ][0]
-                    max_n_progressive_epochs = component_config.get(
-                        "n_progressive_epochs", 100
-                    )
+            # Split progressive epochs: 70% vanilla KL, 30% GMM KL
+            vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.7)
+            gmm_progressive_epochs = (
+                max_n_progressive_epochs - vanilla_progressive_epochs
+            )
+            
+            # Print training plan
+            print(f"\n{'='*70}")
+            print(f"Training Component: {train_components[0]}")
+            print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
+            print(f"  → Vanilla KL Phase: {vanilla_progressive_epochs} epochs")
+            print(f"  → GMM KL Phase: {gmm_progressive_epochs} epochs")
+            print(f"{'='*70}\n")
 
-                    # Split progressive epochs: 20% vanilla KL, 80% GMM KL
-                    vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.2)
-                    gmm_progressive_epochs = (
-                        max_n_progressive_epochs - vanilla_progressive_epochs
-                    )
+            # PHASE 1: VANILLA KL
+            run_name = f"Training/{component_order}/Progressive/VanillaKL/{'/'.join(train_components)}"
+            mlflow.start_run(
+                experiment_id=experiment.experiment_id, run_name=run_name
+            )
+            mlflow.tensorflow.autolog(
+                log_every_n_steps=1,
+                log_every_epoch=False,
+                log_models=False,
+                checkpoint=False,
+                checkpoint_save_best_only=False,
+                registered_model_name=f"Model/{run_name}",
+            )
+            print(f"[VANILLA KL] Starting training for {vanilla_progressive_epochs} epochs...")
+        
+            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                learning_rate=learning_rate
+            )
+            self.model.compile(
+                use_vanilla_kl=True,  # ← Turn ON vanilla KL,
+                optimizer=optimizer,
+                loss_weights=loss_weights,
+            )
 
-                    # PHASE 1: VANILLA KL
-                    run_name = f"Training/{component_order}/Progressive/VanillaKL/{'/'.join(train_components)}"
-                    mlflow.start_run(
-                        experiment_id=experiment.experiment_id, run_name=run_name
+            kwargs_progressive = deepcopy(kwargs)
+            kwargs_progressive.pop("epochs", None)
+            
+            callbacks_vanilla = deepcopy(kwargs.get("callbacks", []))
+            callbacks_vanilla.append(
+                PeriodicTSNECallback(
+                    mdata=self.mdata,
+                    component=train_components[0],
+                    outdir=os.path.join(self.output_dir, "tsne_snapshots_vanilla"),  # ← vanilla folder
+                    batch_size=self.batch_size,
+                    every=100,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
                     )
-                    mlflow.tensorflow.autolog(
-                        log_every_n_steps=1,
-                        log_every_epoch=False,
-                        log_models=False,
-                        checkpoint=False,
-                        checkpoint_save_best_only=False,
-                        registered_model_name=f"Model/{run_name}",
-                    )
-                    optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                        learning_rate=learning_rate
-                    )
-                    self.model.compile(
-                        use_vanilla_kl=True,  # ← Turn ON vanilla KL,
-                        optimizer=optimizer,
-                        loss_weights=loss_weights,
-                    )
+            )
 
-                    kwargs_progressive = deepcopy(kwargs)
-                    kwargs_progressive.pop("epochs", None)
-                    history.append(
-                        self.model.fit(
-                            x, epochs=max_n_progressive_epochs, **kwargs_progressive
-                        )
-                    )
-                    mlflow.end_run()
+            history.append(
+                self.model.fit(
+                    x, epochs=vanilla_progressive_epochs, callbacks =callbacks_vanilla, **kwargs_progressive
+                )
+            )
+            print(f"[VANILLA KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n")
+            mlflow.end_run()
 
-                    # PHASE 2: GMM KL
-                    run_name = f"Training/{component_order}/Progressive/GMMKL/{'/'.join(train_components)}"
-                    mlflow.start_run(
-                        experiment_id=experiment.experiment_id, run_name=run_name
-                    )
-                    mlflow.tensorflow.autolog(
-                        log_every_n_steps=1,
-                        log_every_epoch=False,
-                        log_models=False,
-                        checkpoint=False,
-                        checkpoint_save_best_only=False,
-                        registered_model_name=f"Model/{run_name}",
-                    )
-                    optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                        learning_rate=learning_rate
-                    )
-                    self.model.compile(
-                        use_vanilla_kl=False,  # ← Turn OFF vanilla, use GMM
-                        optimizer=optimizer,
-                        loss_weights=loss_weights,
-                    )
+            # PHASE 2: GMM KL
+            run_name = f"Training/{component_order}/Progressive/GMMKL/{'/'.join(train_components)}"
+            mlflow.start_run(
+                experiment_id=experiment.experiment_id, run_name=run_name
+            )
+            mlflow.tensorflow.autolog(
+                log_every_n_steps=1,
+                log_every_epoch=False,
+                log_models=False,
+                checkpoint=False,
+                checkpoint_save_best_only=False,
+                registered_model_name=f"Model/{run_name}",
+            )
+            print(f"[GMM KL] Starting training for {gmm_progressive_epochs} epochs...")
+            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                learning_rate=learning_rate
+            )
+            self.model.compile(
+                use_vanilla_kl=False,  # ← Turn OFF vanilla, use GMM
+                optimizer=optimizer,
+                loss_weights=loss_weights,
+            )
 
-                    kwargs_progressive = deepcopy(kwargs)
-                    kwargs_progressive.pop("epochs", None)
-                    history.append(
-                        self.model.fit(
-                            x, epochs=gmm_progressive_epochs, **kwargs_progressive
-                        )
+            kwargs_progressive = deepcopy(kwargs)
+            kwargs_progressive.pop("epochs", None)
+            
+            callbacks_gmm = deepcopy(kwargs.get("callbacks", []))
+            callbacks_gmm.append(
+                PeriodicTSNECallback(
+                    mdata=self.mdata,
+                    component=train_components[0],
+                    outdir=os.path.join(self.output_dir, "tsne_snapshots_gmm"),  # ← gmm folder
+                    batch_size=self.batch_size,
+                    every=100,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
                     )
-                    mlflow.end_run()
+            )
+            history.append(
+                self.model.fit(
+                    x, epochs=gmm_progressive_epochs, callbacks=callbacks_gmm, **kwargs_progressive
+                )
+            )
+            print(f"[GMM KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n")
+            mlflow.end_run()
 
+            
             # non-progressive training
+            """
             run_name = f"Training/{component_order}/{'/'.join(train_components)}"
             mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
@@ -422,6 +464,7 @@ class SequentialTrainingScheduler:
             )
             history.append(self.model.fit(x, callbacks=callbacks, **kwargs))
             mlflow.end_run()
+            """
 
         return history
 

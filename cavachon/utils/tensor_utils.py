@@ -107,7 +107,7 @@ class TensorUtils:
         base_n_neurons: int = 32, #128
         max_n_neurons: int = 128,  #2048
         rate: int = 2,
-        activation: str = "swish",
+        activation: str = "swish", #"linear"
         reverse: bool = False,
         name: Optional[str] = "backbone_network",
     ) -> tf.keras.Model:
