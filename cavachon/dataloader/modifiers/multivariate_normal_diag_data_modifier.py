@@ -10,9 +10,9 @@ from cavachon.layers.modifiers.to_dense import ToDense
 class MultivariateNormalDiagDataModifier(tf.keras.Model):
     """MultivariateNormalDiagDataModifier
 
-    Modifiers for the modality which follows a MultivariateNormalDiag 
+    Modifiers for the modality which follows a MultivariateNormalDiag
     distribution (Normal distribution with diagonal covariance).
-    The instance will be used right after the tf.data.Dataset is 
+    The instance will be used right after the tf.data.Dataset is
     created using the DataLoader.
 
     Attributes

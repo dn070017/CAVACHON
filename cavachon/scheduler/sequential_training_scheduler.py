@@ -49,8 +49,8 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         # here we adjust the freq of saving the snaphot
         # below is start from 500
-        #if epoch < 499 or ((epoch - 499) % self.every) != 0:
-        #if (epoch + 1) % self.every != 0:
+        # if epoch < 499 or ((epoch - 499) % self.every) != 0:
+        # if (epoch + 1) % self.every != 0:
         save_epochs = {0}
         if epoch not in save_epochs:
             return
@@ -90,10 +90,14 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         logpy_z = np.vstack([x.numpy() for x in logpy_z_parts])
 
         # 3) Save z and logpy_z in the configured results directory
-        np.save(os.path.join(self.output_dir, f"{epoch +1}_z.h5"), z_full) #because of zero indexing 
-        np.save(os.path.join(self.output_dir, f"{epoch +1}_logpy_z.h5"), logpy_z)
-        np.save(os.path.join(self.output_dir, f"{epoch +1}_prior_params.npy"),
-        z_prior_parameters.numpy())
+        np.save(
+            os.path.join(self.output_dir, f"{epoch + 1}_z.h5"), z_full
+        )  # because of zero indexing
+        np.save(os.path.join(self.output_dir, f"{epoch + 1}_logpy_z.h5"), logpy_z)
+        np.save(
+            os.path.join(self.output_dir, f"{epoch + 1}_prior_params.npy"),
+            z_prior_parameters.numpy(),
+        )
 
 
 # -------------------------------------
@@ -283,7 +287,7 @@ class SequentialTrainingScheduler:
         experiment = mlflow.get_experiment_by_name(experiment_name)
 
         for component_order, train_components in enumerate(self.training_order):
-            # progressive training
+            # progressive training --- NOW RUNS FOR ALL COMPONENTS
             if self.run_progressive_training.get(train_components[0]):
                 loss_weights, max_n_progressive_epochs = (
                     self.setup_component_and_loss_weights(
@@ -293,8 +297,25 @@ class SequentialTrainingScheduler:
                     )
                 )
 
-                if max_n_progressive_epochs != 0:
-                    run_name = f"Training/{component_order}/Progressive/{'/'.join(train_components)}"
+                # Force progressive training even if max_n_progressive_epochs is 0
+                if max_n_progressive_epochs == 0:
+                    component_config = [
+                        c
+                        for c in self.component_configs
+                        if c.get("name") == train_components[0]
+                    ][0]
+                    max_n_progressive_epochs = component_config.get(
+                        "n_progressive_epochs", 100
+                    )
+
+                    # Split progressive epochs: 20% vanilla KL, 80% GMM KL
+                    vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.2)
+                    gmm_progressive_epochs = (
+                        max_n_progressive_epochs - vanilla_progressive_epochs
+                    )
+
+                    # PHASE 1: VANILLA KL
+                    run_name = f"Training/{component_order}/Progressive/VanillaKL/{'/'.join(train_components)}"
                     mlflow.start_run(
                         experiment_id=experiment.experiment_id, run_name=run_name
                     )
@@ -309,12 +330,48 @@ class SequentialTrainingScheduler:
                     optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
                         learning_rate=learning_rate
                     )
-                    self.model.compile(optimizer=optimizer, loss_weights=loss_weights)
+                    self.model.compile(
+                        use_vanilla_kl=True,  # ← Turn ON vanilla KL,
+                        optimizer=optimizer,
+                        loss_weights=loss_weights,
+                    )
+
                     kwargs_progressive = deepcopy(kwargs)
                     kwargs_progressive.pop("epochs", None)
                     history.append(
                         self.model.fit(
                             x, epochs=max_n_progressive_epochs, **kwargs_progressive
+                        )
+                    )
+                    mlflow.end_run()
+
+                    # PHASE 2: GMM KL
+                    run_name = f"Training/{component_order}/Progressive/GMMKL/{'/'.join(train_components)}"
+                    mlflow.start_run(
+                        experiment_id=experiment.experiment_id, run_name=run_name
+                    )
+                    mlflow.tensorflow.autolog(
+                        log_every_n_steps=1,
+                        log_every_epoch=False,
+                        log_models=False,
+                        checkpoint=False,
+                        checkpoint_save_best_only=False,
+                        registered_model_name=f"Model/{run_name}",
+                    )
+                    optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                        learning_rate=learning_rate
+                    )
+                    self.model.compile(
+                        use_vanilla_kl=False,  # ← Turn OFF vanilla, use GMM
+                        optimizer=optimizer,
+                        loss_weights=loss_weights,
+                    )
+
+                    kwargs_progressive = deepcopy(kwargs)
+                    kwargs_progressive.pop("epochs", None)
+                    history.append(
+                        self.model.fit(
+                            x, epochs=gmm_progressive_epochs, **kwargs_progressive
                         )
                     )
                     mlflow.end_run()
@@ -346,8 +403,8 @@ class SequentialTrainingScheduler:
                 callbacks.append(
                     tf.keras.callbacks.EarlyStopping(
                         monitor="loss",
-                        min_delta=50, #5
-                        patience=1100, #max(10, int(kwargs.get("epochs", 1) / 20)),
+                        min_delta=50,  # 5
+                        patience=1100,  # max(10, int(kwargs.get("epochs", 1) / 20)),
                         restore_best_weights=True,
                         verbose=1,
                     )

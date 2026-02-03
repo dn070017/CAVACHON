@@ -1,5 +1,6 @@
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
 
 class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
     """MixtureMultivariateNormalDiagParameterizerLayer
@@ -41,8 +42,8 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         self.unit_variance: bool = unit_variance
 
         return
-    
-    def _make_grid_positions(self,radius: float = 4) -> np.ndarray:
+
+    def _make_grid_positions(self, radius: float = 4) -> np.ndarray:
         K = self.n_components
         D = self.event_dims
         # side length of the grid along each dimension (hypercube)
@@ -68,13 +69,12 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
                 coord = (digits - center) / center
             else:
                 coord = np.zeros_like(digits)
-            
+
             coord = coord * radius
             coords.append(coord)
 
         coords = np.stack(coords, axis=0)  # (K, D)
         return coords
-        
 
     def build(self, input_shape: tf.TensorShape) -> None:
         """Create necessary tf.Variable for the first time being called.
@@ -127,20 +127,20 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
                 )
             )
             ####
-            
+
             if not self.unit_variance:
                 self.scale_diag_weight.append(
                     self.add_weight(
                         name=f"{self.name}_scale_diag_weight_{i}",
                         shape=(int(input_shape[-1]), self.event_dims),
-                        initializer=tf.keras.initializers.Constant(0.0),# test
+                        initializer=tf.keras.initializers.Constant(0.0),  # test
                     )
                 )
                 self.scale_diag_bias.append(
                     self.add_weight(
                         name=f"{self.name}_scale_diag_bias_{i}",
                         shape=(1, self.event_dims),
-                        initializer=tf.keras.initializers.Constant(0.5),# test
+                        initializer=tf.keras.initializers.Constant(0.5),  # test
                     )
                 )
 
