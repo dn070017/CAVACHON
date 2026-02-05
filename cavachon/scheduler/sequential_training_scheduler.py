@@ -51,7 +51,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0, 149,299,499,699}
+        save_epochs = {0}
         if epoch not in save_epochs:
             return
 
@@ -309,7 +309,7 @@ class SequentialTrainingScheduler:
                 )
 
             # Split progressive epochs: 70% vanilla KL, 30% GMM KL
-            vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.7)
+            vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.35)
             gmm_progressive_epochs = (
                 max_n_progressive_epochs - vanilla_progressive_epochs
             )
@@ -328,8 +328,8 @@ class SequentialTrainingScheduler:
                 experiment_id=experiment.experiment_id, run_name=run_name
             )
             mlflow.tensorflow.autolog(
-                log_every_n_steps=1,
-                log_every_epoch=False,
+                log_every_n_steps=None, #1
+                log_every_epoch=True,
                 log_models=False,
                 checkpoint=False,
                 checkpoint_save_best_only=False,
@@ -376,8 +376,8 @@ class SequentialTrainingScheduler:
                 experiment_id=experiment.experiment_id, run_name=run_name
             )
             mlflow.tensorflow.autolog(
-                log_every_n_steps=1,
-                log_every_epoch=False,
+                log_every_n_steps=None, #1
+                log_every_epoch=True,
                 log_models=False,
                 checkpoint=False,
                 checkpoint_save_best_only=False,
