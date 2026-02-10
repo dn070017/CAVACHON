@@ -51,14 +51,23 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0}
+        save_epochs = {0, 149, 299, 499, 699}
         if epoch not in save_epochs:
             return
 
         component = self.component
 
-        # extract mean latent z
-        outputs = self.model.predict(self.mdata, batch_size=self.batch_size)
+        # First temporarily freeze the model
+        # this prevents layers from updating internal states (like Batch Norm) during the predict call
+        original_trainable_state = self.model.trainable
+        self.model.trainable = False
+
+        # Then, extract mean latent z
+        # By calling predict with verbose=0 and the model's training state as False,
+        # Model will return the Mean (μ) and skip the sampling (ϵ) step.
+        # This gives the stable "Mean Z"
+        outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
+        # outputs = self.model.predict(self.mdata, batch_size=self.batch_size)
         z_full = outputs[f"{self.component}_z"]
 
         # compute logpy_z (copied from cluster_analysis.py)
@@ -81,6 +90,8 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
             self.distribution_names,
         )
         for batch_data in tqdm(dataloader, desc=f"Epoch {epoch}: computing logpy_z"):
+            # use training=False here as well to ensure we get the MEAN Z
+            # and don't accidentally update any model weights.
             outs = self.model(batch_data, training=False)
             z = outs[f"{self.component}_z"]
             logpz_y = dist_z_y.log_prob(tf.expand_dims(z, -2))
@@ -88,6 +99,9 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
             logpy_z_parts.append(logpy + logpz_y - logpz)
 
         logpy_z = np.vstack([x.numpy() for x in logpy_z_parts])
+
+        # restore the model state back
+        self.model.trainable = original_trainable_state
 
         # Save z and logpy_z in the configured results directory
         np.save(
@@ -287,8 +301,7 @@ class SequentialTrainingScheduler:
         experiment = mlflow.get_experiment_by_name(experiment_name)
 
         for component_order, train_components in enumerate(self.training_order):
-        
-            # Set up loss weights for progressive training 
+            # Set up loss weights for progressive training
             loss_weights, max_n_progressive_epochs = (
                 self.setup_component_and_loss_weights(
                     train_components=train_components,
@@ -313,30 +326,30 @@ class SequentialTrainingScheduler:
             gmm_progressive_epochs = (
                 max_n_progressive_epochs - vanilla_progressive_epochs
             )
-            
+
             # Print training plan
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print(f"Training Component: {train_components[0]}")
             print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
             print(f"  → Vanilla KL Phase: {vanilla_progressive_epochs} epochs")
             print(f"  → GMM KL Phase: {gmm_progressive_epochs} epochs")
-            print(f"{'='*70}\n")
+            print(f"{'=' * 70}\n")
 
             # PHASE 1: VANILLA KL
             run_name = f"Training/{component_order}/Progressive/VanillaKL/{'/'.join(train_components)}"
-            mlflow.start_run(
-                experiment_id=experiment.experiment_id, run_name=run_name
-            )
+            mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
-                log_every_n_steps=None, #1
+                log_every_n_steps=None,  # 1
                 log_every_epoch=True,
                 log_models=False,
                 checkpoint=False,
                 checkpoint_save_best_only=False,
                 registered_model_name=f"Model/{run_name}",
             )
-            print(f"[VANILLA KL] Starting training for {vanilla_progressive_epochs} epochs...")
-        
+            print(
+                f"[VANILLA KL] Starting training for {vanilla_progressive_epochs} epochs..."
+            )
+
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
                 learning_rate=learning_rate
             )
@@ -348,35 +361,40 @@ class SequentialTrainingScheduler:
 
             kwargs_progressive = deepcopy(kwargs)
             kwargs_progressive.pop("epochs", None)
-            
+
             callbacks_vanilla = deepcopy(kwargs.get("callbacks", []))
             callbacks_vanilla.append(
                 PeriodicTSNECallback(
                     mdata=self.mdata,
                     component=train_components[0],
-                    outdir=os.path.join(self.output_dir, "tsne_snapshots_vanilla"),  # ← vanilla folder
+                    outdir=os.path.join(
+                        self.output_dir, "tsne_snapshots_vanilla"
+                    ),  # ← vanilla folder
                     batch_size=self.batch_size,
                     every=100,
                     batch_effect_colnames=self.batch_effect_colnames,
                     distribution_names=self.distribution_names,
-                    )
+                )
             )
 
             history.append(
                 self.model.fit(
-                    x, epochs=vanilla_progressive_epochs, callbacks =callbacks_vanilla, **kwargs_progressive
+                    x,
+                    epochs=vanilla_progressive_epochs,
+                    callbacks=callbacks_vanilla,
+                    **kwargs_progressive,
                 )
             )
-            print(f"[VANILLA KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n")
+            print(
+                f"[VANILLA KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
+            )
             mlflow.end_run()
 
             # PHASE 2: GMM KL
             run_name = f"Training/{component_order}/Progressive/GMMKL/{'/'.join(train_components)}"
-            mlflow.start_run(
-                experiment_id=experiment.experiment_id, run_name=run_name
-            )
+            mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
-                log_every_n_steps=None, #1
+                log_every_n_steps=None,  # 1
                 log_every_epoch=True,
                 log_models=False,
                 checkpoint=False,
@@ -395,28 +413,34 @@ class SequentialTrainingScheduler:
 
             kwargs_progressive = deepcopy(kwargs)
             kwargs_progressive.pop("epochs", None)
-            
+
             callbacks_gmm = deepcopy(kwargs.get("callbacks", []))
             callbacks_gmm.append(
                 PeriodicTSNECallback(
                     mdata=self.mdata,
                     component=train_components[0],
-                    outdir=os.path.join(self.output_dir, "tsne_snapshots_gmm"),  # ← gmm folder
+                    outdir=os.path.join(
+                        self.output_dir, "tsne_snapshots_gmm"
+                    ),  # ← gmm folder
                     batch_size=self.batch_size,
                     every=100,
                     batch_effect_colnames=self.batch_effect_colnames,
                     distribution_names=self.distribution_names,
-                    )
+                )
             )
             history.append(
                 self.model.fit(
-                    x, epochs=gmm_progressive_epochs, callbacks=callbacks_gmm, **kwargs_progressive
+                    x,
+                    epochs=gmm_progressive_epochs,
+                    callbacks=callbacks_gmm,
+                    **kwargs_progressive,
                 )
             )
-            print(f"[GMM KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n")
+            print(
+                f"[GMM KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
+            )
             mlflow.end_run()
 
-            
             # non-progressive training
             """
             run_name = f"Training/{component_order}/{'/'.join(train_components)}"
