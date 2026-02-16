@@ -43,7 +43,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
         return
 
-    def _make_grid_positions(self, radius: float = 4) -> np.ndarray:
+    def _make_grid_positions(self, radius: float = 1.5) -> np.ndarray:
         K = self.n_components
         D = self.event_dims
         # side length of the grid along each dimension (hypercube)
@@ -140,7 +140,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
                     self.add_weight(
                         name=f"{self.name}_scale_diag_bias_{i}",
                         shape=(1, self.event_dims),
-                        initializer=tf.keras.initializers.Constant(0.5),  # test
+                        initializer=tf.keras.initializers.Constant(0.02),  # it was 0.5
                     )
                 )
 

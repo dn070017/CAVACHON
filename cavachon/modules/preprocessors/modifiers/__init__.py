@@ -7,3 +7,6 @@ from .independent_zero_inflated_negative_binomial_modifier import (
 from .multivariate_normal_diag_modifier import (
     MultivariateNormalDiagModifier as MultivariateNormalDiagModifier,
 )
+from .student_t_modifier import (
+    StudentTModifier as StudentTModifier,
+)

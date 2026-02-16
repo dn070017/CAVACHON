@@ -13,7 +13,7 @@ class VanillaKLDivergence(tf.keras.losses.Loss):
     """
 
     def __init__(
-        self, weight: float = 1.0, name: str = "vanilla_kl_divergence", **kwargs
+        self, weight: float = 3.0, name: str = "vanilla_kl_divergence", **kwargs
     ):
         """Constructor for VanillaKLDivergence
 
