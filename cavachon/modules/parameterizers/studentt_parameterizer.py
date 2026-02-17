@@ -1,7 +1,7 @@
 from cavachon.modules.parameterizers.parameterizer import Parameterizer
 
 
-class StudentTParameterizer(Parameterizer):
+class StudenttParameterizer(Parameterizer):
     """Module for Student-T parameterization."""
 
     default_libsize_scaling = False

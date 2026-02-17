@@ -11,6 +11,6 @@ from .multivariate_normal_diag_parameterizer import (
     MultivariateNormalDiagParameterizer as MultivariateNormalDiagParameterizer,
 )
 from .parameterizer import Parameterizer as Parameterizer
-from .student_t_parameterizer import (
-    StudentTParameterizer as StudentTParameterizer,
+from .studentt_parameterizer import (
+    StudenttParameterizer as StudenttParameterizer,
 )

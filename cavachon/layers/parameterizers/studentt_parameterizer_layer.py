@@ -1,11 +1,11 @@
 import tensorflow as tf
 
 
-class StudentTParameterizerLayer(tf.keras.layers.Layer):
+class StudenttParameterizerLayer(tf.keras.layers.Layer):
     def __init__(
         self,
         event_dims: int,
-        name: str = "student_t_parameterizer_layer",
+        name: str = "studentt_parameterizer_layer",
     ):
         super().__init__(name=name)
         self.event_dims = event_dims

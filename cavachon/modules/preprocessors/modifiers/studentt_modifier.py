@@ -6,7 +6,7 @@ from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.to_dense import ToDense
 
 
-class StudentTModifier(tf.keras.Model):
+class StudenttModifier(tf.keras.Model):
     """
     Modifier for Student-T modalities used during the model's preprocessing
     step. This ensures that the data is converted to a Dense tensor

@@ -13,6 +13,9 @@ from .multivariate_normal_diag_parameterizer_layer import (
 from .multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler as MultivariateNormalDiagSampler,
 )
-from .student_t_parameterizer_layer import (
-    StudentTParameterizerLayer as StudentTParameterizerLayer,
+from .studentt_parameterizer_layer import (
+    StudenttParameterizerLayer as StudenttParameterizerLayer,
+)
+from .studentt_sampler import (
+    StudenttSampler as StudenttSampler,
 )
