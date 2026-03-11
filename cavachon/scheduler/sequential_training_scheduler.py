@@ -114,6 +114,79 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         )
 
 
+class KLAnnealingCallback(tf.keras.callbacks.Callback):
+    """Callback to anneal KL loss weight during training.
+
+    For vanilla phase: decreases weight from start_weight → 0
+    For GMM phase: increases weight from 0 → end_weight
+    """
+
+    def __init__(
+        self,
+        loss_name: str,
+        start_weight: float,
+        end_weight: float,
+        total_epochs: int,
+        anneal_epochs: int,
+        phase: str = "vanilla",  # "vanilla" or "gmm"
+    ):
+        """
+        Parameters
+        ----------
+        loss_name: str
+            Name of the KL loss to modify (e.g., "RNA_kl_divergence")
+        start_weight: float
+            Starting weight value
+        end_weight: float
+            Ending weight value
+        total_epochs: int
+            Total number of epochs in this phase
+        anneal_epochs: int
+            Number of epochs over which to anneal
+        phase: str
+            "vanilla" (decrease at end) or "gmm" (increase at start)
+        """
+        super().__init__()
+        self.loss_name = loss_name
+        self.start_weight = start_weight
+        self.end_weight = end_weight
+        self.total_epochs = total_epochs
+        self.anneal_epochs = anneal_epochs
+        self.phase = phase
+
+        # Calculate when annealing starts/ends
+        if phase == "vanilla":
+            # Anneal in last 15% of vanilla phase
+            self.anneal_start = total_epochs - anneal_epochs
+            self.anneal_end = total_epochs
+        else:  # gmm
+            # Anneal in first 15% of GMM phase
+            self.anneal_start = 0
+            self.anneal_end = anneal_epochs
+
+    def on_epoch_begin(self, epoch, logs=None):
+        """Update KL weight at the beginning of each epoch"""
+
+        # Check if we're in annealing period
+        if self.anneal_start <= epoch < self.anneal_end:
+            # Linear interpolation
+            progress = (epoch - self.anneal_start) / self.anneal_epochs
+            current_weight = self.start_weight + progress * (
+                self.end_weight - self.start_weight
+            )
+
+            print(f"  [Annealing] Epoch {epoch}: KL weight = {current_weight:.4f}")
+        elif epoch < self.anneal_start:
+            current_weight = self.start_weight
+        else:
+            current_weight = self.end_weight
+
+        # Update the loss weight
+        loss_fn = self.model.loss.get(self.loss_name)
+        if loss_fn:
+            loss_fn.weight = current_weight
+
+
 # -------------------------------------
 
 
@@ -321,18 +394,30 @@ class SequentialTrainingScheduler:
                     "n_progressive_epochs", 100
                 )
 
-            # Split progressive epochs: 70% vanilla KL, 30% GMM KL
-            vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.40)
+            # Split progressive epochs: 50% vanilla KL, 50% GMM KL
+            vanilla_progressive_epochs = int(max_n_progressive_epochs * 0.50)
             gmm_progressive_epochs = (
                 max_n_progressive_epochs - vanilla_progressive_epochs
             )
+
+            # Calculate annealing epochs (15% of each phase)
+            vanilla_anneal_epochs = int(vanilla_progressive_epochs * 0.15)
+            gmm_anneal_epochs = int(gmm_progressive_epochs * 0.15)
 
             # Print training plan
             print(f"\n{'=' * 70}")
             print(f"Training Component: {train_components[0]}")
             print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
             print(f"  → Vanilla KL Phase: {vanilla_progressive_epochs} epochs")
+            print(
+                f"     - Constant (beta=3.0): {vanilla_progressive_epochs - vanilla_anneal_epochs} epochs"
+            )
+            print(f"     - Annealing (3.0→0.0): {vanilla_anneal_epochs} epochs")
             print(f"  → GMM KL Phase: {gmm_progressive_epochs} epochs")
+            print(f"     - Annealing (0.0→1.0): {gmm_anneal_epochs} epochs")
+            print(
+                f"     - Constant (beta=1.0): {gmm_progressive_epochs - gmm_anneal_epochs} epochs"
+            )
             print(f"{'=' * 70}\n")
 
             # PHASE 1: VANILLA KL
@@ -363,6 +448,16 @@ class SequentialTrainingScheduler:
             kwargs_progressive.pop("epochs", None)
 
             callbacks_vanilla = deepcopy(kwargs.get("callbacks", []))
+            callbacks_vanilla.append(
+                KLAnnealingCallback(
+                    loss_name=f"{train_components[0]}_kl_divergence",
+                    start_weight=3.0,
+                    end_weight=0.0,
+                    total_epochs=vanilla_progressive_epochs,
+                    anneal_epochs=vanilla_anneal_epochs,
+                    phase="vanilla",
+                )
+            )
             callbacks_vanilla.append(
                 PeriodicTSNECallback(
                     mdata=self.mdata,
@@ -415,6 +510,16 @@ class SequentialTrainingScheduler:
             kwargs_progressive.pop("epochs", None)
 
             callbacks_gmm = deepcopy(kwargs.get("callbacks", []))
+            callbacks_gmm.append(
+                KLAnnealingCallback(
+                    loss_name=f"{train_components[0]}_kl_divergence",
+                    start_weight=0.0,
+                    end_weight=1.0,
+                    total_epochs=gmm_progressive_epochs,
+                    anneal_epochs=gmm_anneal_epochs,
+                    phase="gmm",
+                )
+            )
             callbacks_gmm.append(
                 PeriodicTSNECallback(
                     mdata=self.mdata,

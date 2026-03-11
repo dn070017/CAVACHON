@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 from cavachon.distributions.distribution import Distribution
 
 
-class StudentTDistribution(Distribution, tfp.distributions.StudentT):
+class StudenttDistribution(Distribution, tfp.distributions.StudentT):
     """StudentT distribution for continuous data with heavy tails (e.g. CNV)."""
 
     def __init__(self, *args, **kwargs):
