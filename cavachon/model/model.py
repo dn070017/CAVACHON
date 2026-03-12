@@ -438,6 +438,15 @@ class Model(tf.keras.Model):
             additional parameters used to compile the model.
 
         """
+        # Create a shared variable for KL weight that callbacks can modify
+        if not hasattr(self, '_kl_weight_var'):
+           self._kl_weight_var = tf.Variable(
+           1.0, 
+           trainable=False, 
+           dtype=tf.float32,
+           name='kl_annealing_weight'
+           )
+        
         self.disable_kl = disable_kl
         self.use_vanilla_kl = use_vanilla_kl
 
@@ -459,7 +468,7 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         kl_divergence_name,
                         VanillaKLDivergence(
-                            loss_weights.get(kl_divergence_name, 1.0),
+                            weight_var=self._kl_weight_var,  # ← Pass the shared variable
                             name=kl_divergence_name,
                         ),
                     )
@@ -468,7 +477,7 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         kl_divergence_name,
                         KLDivergence(
-                            loss_weights.get(kl_divergence_name, 1.0),
+                            weight_var=self._kl_weight_var,  # ← Pass the shared variable
                             name=kl_divergence_name,
                         ),
                     )

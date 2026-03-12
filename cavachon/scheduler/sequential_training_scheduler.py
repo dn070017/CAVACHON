@@ -51,7 +51,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0, 249, 599, 839}
+        save_epochs = {0, 199, 499, 699}
         if epoch not in save_epochs:
             return
 
@@ -181,11 +181,9 @@ class KLAnnealingCallback(tf.keras.callbacks.Callback):
         else:
             current_weight = self.end_weight
 
-        # Update the loss weight
-        loss_fn = self.model.loss.get(self.loss_name)
-        if loss_fn:
-            loss_fn.weight = current_weight
-
+        # Update the shared variable using .assign()
+        if hasattr(self.model, '_kl_weight_var'):
+            self.model._kl_weight_var.assign(current_weight)
 
 # -------------------------------------
 
@@ -443,6 +441,9 @@ class SequentialTrainingScheduler:
                 optimizer=optimizer,
                 loss_weights=loss_weights,
             )
+            
+            # Set initial weight for vanilla phase
+            self.model._kl_weight_var.assign(3.0)
 
             kwargs_progressive = deepcopy(kwargs)
             kwargs_progressive.pop("epochs", None)
@@ -505,6 +506,9 @@ class SequentialTrainingScheduler:
                 optimizer=optimizer,
                 loss_weights=loss_weights,
             )
+            
+            # Set initial weight for GMM phase
+            self.model._kl_weight_var.assign(0.0)
 
             kwargs_progressive = deepcopy(kwargs)
             kwargs_progressive.pop("epochs", None)

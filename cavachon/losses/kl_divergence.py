@@ -16,12 +16,17 @@ class KLDivergence(tf.keras.losses.Loss):
     𝚺_j𝚺_y[py_z(logpc_z)]
     """
 
-    def __init__(self, weight: float = 1.0, name: str = "kl_divergence", **kwargs):
+    def __init__(
+        self,
+        weight_var=None,  # ← Accept a tf.Variable
+        name: str = "kl_divergence", 
+        **kwargs
+    ):
         """Constructor for KLDivergence
 
         Parameters
         ----------
-        weight: float, optional
+        weight_var: float, optional
             the scaling factor for the loss. The output will be
             weight * loss. Defaults to 1.0.
 
@@ -34,10 +39,14 @@ class KLDivergence(tf.keras.losses.Loss):
             additional parameters for tf.keras.losses.Loss
 
         """
-        self.weight = weight
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
+        # Use the provided variable, or create a constant
+        if weight_var is not None:
+            self.weight = weight_var
+        else:
+            self.weight = tf.constant(1.0, dtype=tf.float32)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Compute the KLDivergence loss

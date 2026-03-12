@@ -13,24 +13,32 @@ class VanillaKLDivergence(tf.keras.losses.Loss):
     """
 
     def __init__(
-        self, weight: float = 3.0, name: str = "vanilla_kl_divergence", **kwargs
+        self, 
+        weight_var=None,  # ← Accept a tf.Variable,
+        name: str = "vanilla_kl_divergence", 
+        **kwargs
     ):
         """Constructor for VanillaKLDivergence
 
         Parameters
         ----------
-        weight: float, optional
+        weight_var: float, optional
             Scaling factor for the loss. Defaults to 1.0.
 
         name: str, optional
             Name for the loss (shows up in training logs). Defaults to 'vanilla_kl_divergence'.
         """
-        self.weight = weight
+        
         super().__init__(
             name=name,
             reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE,  # Average over batch
             **kwargs,
         )
+        # Use the provided variable, or create a constant
+        if weight_var is not None:
+            self.weight = weight_var
+        else:
+            self.weight = tf.constant(3.0, dtype=tf.float32)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Compute the vanilla KL divergence loss
