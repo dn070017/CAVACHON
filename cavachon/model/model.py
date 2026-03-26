@@ -418,7 +418,7 @@ class Model(tf.keras.Model):
         else:
             return super.__predict__(x=x, batch_size=batch_size, **kwargs)
 
-    def compile(self, disable_kl=False, use_vanilla_kl=False, **kwargs) -> None:
+    def compile(self, use_vanilla_kl=False, use_both_kl=False, **kwargs) -> None:
         """Compile the model before training. Note that the 'metrics'
         will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
@@ -426,29 +426,27 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
-        disable_kl: bool, optional
-        If True, disables KL divergence loss by multiplying by 0.
-        Used for debugging/testing. Defaults to False.
-
         use_vanilla_kl: bool, optional
         If True, uses vanilla N(0,1) KL divergence instead of GMM KL.
         Used for progressive training phase. Defaults to False.
+
+        use_both_kl: bool, optional
+        If True, use BOTH vanilla and GMM KL losses (Phase 2 - Transition)
+        If both False, use only GMM KL loss (Phase 3)
 
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
 
         """
-        # Create a shared variable for KL weight that callbacks can modify
-        if not hasattr(self, '_kl_weight_var'):
-           self._kl_weight_var = tf.Variable(
-           1.0, 
-           trainable=False, 
-           dtype=tf.float32,
-           name='kl_annealing_weight'
-           )
-        
-        self.disable_kl = disable_kl
-        self.use_vanilla_kl = use_vanilla_kl
+        # Create two separate weight variables
+        if not hasattr(self, "_vanilla_kl_weight_var"):
+            self._vanilla_kl_weight_var = tf.Variable(
+                3.0, trainable=False, dtype=tf.float32, name="vanilla_kl_weight"
+            )
+        if not hasattr(self, "_gmm_kl_weight_var"):
+            self._gmm_kl_weight_var = tf.Variable(
+                0.0, trainable=False, dtype=tf.float32, name="gmm_kl_weight"
+            )
 
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
@@ -462,39 +460,41 @@ class Model(tf.keras.Model):
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
 
-                # Choose which KL divergence to use based on flag
-                if self.use_vanilla_kl:
-                    # use vanilla N(0,1) for progressive training
+                # Three way logic for KL loss
+                if use_both_kl:
+                    # PHASE 2 (TRANSITION): Both losses active with different names
+                    loss.setdefault(
+                        f"{component_name}_vanilla_kl_divergence",  # Different name for vanilla
+                        VanillaKLDivergence(
+                            weight_var=self._vanilla_kl_weight_var,
+                            name=f"{component_name}_vanilla_kl_divergence",
+                        ),
+                    )
+                    loss.setdefault(
+                        f"{component_name}_gmm_kl_divergence",  # Different name for gmm
+                        KLDivergence(
+                            weight_var=self._gmm_kl_weight_var,
+                            name=f"{component_name}_gmm_kl_divergence",
+                        ),
+                    )
+                elif use_vanilla_kl:
+                    # PHASE 1: Vanilla KL only
                     loss.setdefault(
                         kl_divergence_name,
                         VanillaKLDivergence(
-                            weight_var=self._kl_weight_var,  # ← Pass the shared variable
+                            weight_var=self._vanilla_kl_weight_var,
                             name=kl_divergence_name,
                         ),
                     )
                 else:
-                    # Use GMM KL (original behavior)
+                    # PHASE 3: Use GMM KL only
                     loss.setdefault(
                         kl_divergence_name,
                         KLDivergence(
-                            weight_var=self._kl_weight_var,  # ← Pass the shared variable
+                            weight_var=self._gmm_kl_weight_var,
                             name=kl_divergence_name,
                         ),
                     )
-
-                # -------added here ----
-                # if not self.disable_kl:
-                #    kl_divergence_name = (
-                #        f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
-                #    )
-                #    loss.setdefault(
-                #        kl_divergence_name,
-                #        KLDivergence(
-                #            loss_weights.get(kl_divergence_name, 1.0),
-                #            name=kl_divergence_name,
-                #        ),
-                #    )
-                # ---------
 
                 for modality_name in component_config.get("modality_names"):
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
@@ -563,42 +563,29 @@ class Model(tf.keras.Model):
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
 
-                y_true.setdefault(
-                    kl_divergence_name,
-                    results.get(
-                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
-                    ),
+                # Get the prior parameters and z data (same for all phases)
+                prior_params = results.get(
+                    f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
                 )
-
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
                 z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
-
-                y_pred.setdefault(
-                    kl_divergence_name,
-                    tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                        [results.get(z_key), results.get(z_params_key)]
-                    ),
+                z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                    [results.get(z_key), results.get(z_params_key)]
                 )
+                # Check which KL losses are compiled
+                vanilla_kl_name = f"{component_name}_vanilla_kl_divergence"
+                gmm_kl_name = f"{component_name}_gmm_kl_divergence"
 
-                # ------if disable_kl is true-----
-                # if not self.disable_kl:
-                #    y_true.setdefault(
-                #        kl_divergence_name,
-                #        results.get(
-                #            f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
-                #        ),
-                #    )
-
-                #    z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
-                #    z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
-
-                #    y_pred.setdefault(
-                #        kl_divergence_name,
-                #        tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                #            [results.get(z_key), results.get(z_params_key)]
-                #        ),
-                #    )
-                # -----------
+                if vanilla_kl_name in self.loss and gmm_kl_name in self.loss:
+                    # PHASE 2: Both losses active
+                    y_true.setdefault(vanilla_kl_name, prior_params)
+                    y_pred.setdefault(vanilla_kl_name, z_concat)
+                    y_true.setdefault(gmm_kl_name, prior_params)
+                    y_pred.setdefault(gmm_kl_name, z_concat)
+                else:
+                    # PHASE 1 or 3: Single loss (standard name)
+                    y_true.setdefault(kl_divergence_name, prior_params)
+                    y_pred.setdefault(kl_divergence_name, z_concat)
 
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
@@ -614,7 +601,6 @@ class Model(tf.keras.Model):
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             gradients = tape.gradient(loss, self.trainable_variables)
-            # print(gradients)
             gradients = TensorUtils.remove_nan_gradients(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
