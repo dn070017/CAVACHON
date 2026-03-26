@@ -320,6 +320,209 @@ class SequentialTrainingScheduler:
 
         return modality_weight_by_component
 
+    def _kmeans_plus_plus(
+        self, X: tf.Tensor, n_clusters: int, seed: int = None
+    ) -> tf.Tensor:
+        """K-Means++ seeding using TensorFlow ops.
+
+        Selects n_clusters initial centers from data X using the K-means++
+        algorithm, which spreads centers probabilistically to cover all
+        natural clusters.
+
+        Parameters
+        ----------
+        X: tf.Tensor
+            Data tensor of shape (n_samples, n_dimensions)
+        n_clusters: int
+            Number of centers to select
+        seed: int, optional
+            Random seed for reproducibility
+
+        Returns
+        -------
+        tf.Tensor
+            Centers of shape (n_clusters, n_dimensions)
+        """
+        n_samples = tf.shape(X)[0]
+
+        # 1. Choose first center uniformly at random
+        first_idx = tf.random.uniform(
+            [], minval=0, maxval=n_samples, dtype=tf.int32, seed=seed
+        )
+        centers = [tf.gather(X, first_idx)]
+        # 2. Iteratively choose remaining centers
+        for i in range(1, n_clusters):
+            # Stack current centers: (num_current_centers, n_dims)
+            current_centers = tf.stack(centers)
+            # Calculate squared distances to nearest center
+            # Expand for broadcasting: (n_samples, 1, n_dims) - (1, num_centers, n_dims)
+            distances_sq = tf.reduce_sum(
+                tf.square(tf.expand_dims(X, 1) - tf.expand_dims(current_centers, 0)),
+                axis=2,
+            )  # Shape: (n_samples, num_centers)
+            # For each point, find distance to NEAREST center
+            min_distances_sq = tf.reduce_min(
+                distances_sq, axis=1
+            )  # Shape: (n_samples,)
+
+            # 3. Probabilistic selection: P(x) ∝ D(x)²
+            # Points far from existing centers are more likely to be chosen
+            logits = tf.math.log(
+                tf.expand_dims(min_distances_sq, 0)
+            )  # Shape: (1, n_samples)
+            next_idx = tf.random.categorical(logits, num_samples=1, seed=seed)[0, 0]
+
+            centers.append(tf.gather(X, next_idx))
+        return tf.stack(centers)  # Shape: (n_clusters, n_dimensions)
+
+    def _compute_cluster_assignments(
+        self, X: tf.Tensor, centers: tf.Tensor
+    ) -> tf.Tensor:
+        """Assign each data point to its nearest center.
+
+        Parameters
+        ----------
+        X: tf.Tensor
+            Data tensor of shape (n_samples, n_dimensions)
+        centers: tf.Tensor
+            Cluster centers of shape (n_clusters, n_dimensions)
+
+        Returns
+        -------
+        tf.Tensor
+            Cluster assignments of shape (n_samples,)
+            Each value is an integer in [0, n_clusters-1]
+        """
+        # Calculate squared Euclidean distances
+        # (n_samples, 1, n_dims) - (1, n_clusters, n_dims)
+        distances_sq = tf.reduce_sum(
+            tf.square(tf.expand_dims(X, 1) - tf.expand_dims(centers, 0)), axis=2
+        )  # Shape: (n_samples, n_clusters)
+
+        # Assign to nearest center
+        assignments = tf.argmin(
+            distances_sq, axis=1, output_type=tf.int32
+        )  # Shape: (n_samples,)
+
+        return assignments
+
+    def initialize_gmm_priors_with_kmeans(
+        self,
+        component_name: str,
+        seed: int = 42,
+        add_noise: bool = True,
+        noise_std: float = 0.1,
+    ):
+        """
+        Initialize GMM prior means and logits using K-means++ on vanilla latent space.
+
+        This should be called after vanilla phase and before transition phase.
+        Uses K-means++ to find cluster centers and initializes:
+        - loc_bias (means): at cluster centers
+        - logits_bias: based on cluster sizes
+
+        Parameters
+        ----------
+        component_name: str
+            Name of the component (e.g., "RNA")
+        seed: int
+            Random seed for reproducibility
+        add_noise: bool
+            Whether to add small noise to centers (prevents identical initialization)
+        noise_std: float
+            Standard deviation of noise to add to centers
+        """
+        # 1. Extract latent representations from end of vanilla phase
+        self.model.trainable = False
+        outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
+        z = outputs[f"{component_name}_z"]  # Shape: (n_samples, event_dims)
+        z_tensor = tf.constant(z, dtype=tf.float32)
+
+        n_samples = z.shape[0]
+        event_dims = z.shape[1]
+
+        # 2. Get number of GMM components
+        prior_layer = self.model.components[component_name].z_prior_parameterizer
+        n_clusters = prior_layer.n_components
+
+        # 3. Run K-means++ to find cluster centers
+        centers = self._kmeans_plus_plus(z_tensor, n_clusters, seed=seed)
+
+        # 4. Compute cluster assignments and sizes
+        assignments = self._compute_cluster_assignments(z_tensor, centers)
+        assignments_np = assignments.numpy()
+
+        # Count points in each cluster
+        cluster_counts = np.zeros(n_clusters, dtype=np.int32)
+        for k in range(n_clusters):
+            cluster_counts[k] = np.sum(assignments_np == k)
+        for k in range(n_clusters):
+            pct = 100.0 * cluster_counts[k] / n_samples
+
+        # 5. Optionally add small noise to centers
+        if add_noise:
+            noise = tf.random.normal(
+                shape=centers.shape,
+                mean=0.0,
+                stddev=noise_std,
+                seed=seed,
+                dtype=tf.float32,
+            )
+            centers = centers + noise
+            print(f"  Added Gaussian noise (std={noise_std}) to centers")
+        else:
+            print("  No noise added to centers")
+
+        # Initialize GMM prior parameters
+        # 6a. Initialize means (loc_bias)
+        for k in range(n_clusters):
+            center = centers[k : k + 1, :]  # Shape: (1, event_dims)
+            prior_layer.loc_bias[k].assign(center)
+
+        # 6b. Initialize logits based on cluster sizes
+        # Convert counts to log-probabilities
+        cluster_proportions = cluster_counts / n_samples
+        # Avoid log(0) for empty clusters (shouldn't happen with k-means++)
+        cluster_proportions = np.maximum(cluster_proportions, 1e-7)
+        logits = np.log(cluster_proportions).astype(np.float32)
+        logits_tensor = tf.constant(logits.reshape(1, n_clusters), dtype=tf.float32)
+        prior_layer.logits_bias.assign(logits_tensor)
+        
+        # 6c. Initialize stds based on cluster spreads
+        # Compute std for each cluster
+        cluster_stds = np.zeros((n_clusters, event_dims), dtype=np.float32)
+        for k in range(n_clusters):
+            points_in_cluster = z[assignments_np == k]
+            if len(points_in_cluster) > 1:
+                # Compute std per dimension
+                cluster_stds[k] = np.std(points_in_cluster, axis=0)
+            else:
+                # Fallback for empty/tiny clusters
+                cluster_stds[k] = 0.5
+            # Add minimum threshold to prevent collapse
+            cluster_stds[k] = np.maximum(cluster_stds[k], 0.1)
+
+        # Convert std to scale_diag_bias value (inverse of softplus)
+        # softplus(x) = log(1 + exp(x))
+        # Inverse: x = log(exp(std) - 1)
+        # But simpler approximation for std > 0.5: x ≈ std
+        for k in range(n_clusters):
+            std_value = cluster_stds[k]
+            # Inverse softplus (approximate)
+            # For std > 1: bias ≈ std
+            # For std < 1: bias ≈ log(exp(std) - 1)
+            bias_value = np.where(
+                std_value > 1.0,
+                std_value - 0.5,  # Approximation
+                np.log(np.exp(std_value) - 1 + 1e-7),  # Exact inverse
+            )
+            bias_tensor = tf.constant(
+                bias_value.reshape(1, event_dims), dtype=tf.float32
+            )
+            prior_layer.scale_diag_bias[k].assign(bias_tensor)
+            
+        self.model.trainable = True
+
     def fit(self, x: tf.data.Dataset, **kwargs) -> List[tf.keras.callbacks.History]:
         """Fit self.model sequentially with three-phase training.
         Phase 1: Vanilla KL only (beta=3.0 constant)
@@ -444,6 +647,14 @@ class SequentialTrainingScheduler:
                 f"[PHASE 1] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
             )
             mlflow.end_run()
+
+            # Initialize GMM priors using K-means++ on vanilla latent space
+            self.initialize_gmm_priors_with_kmeans(
+                component_name=train_components[0],
+                seed=42,
+                add_noise=True,
+                noise_std=0.1,
+            )
 
             # PHASE 2: TRANSITION (Both losses active)
             run_name = f"Training/{component_order}/Progressive/Phase2_Transition/{'/'.join(train_components)}"
