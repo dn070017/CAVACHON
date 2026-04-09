@@ -51,7 +51,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0, 139, 279, 419, 699}
+        save_epochs = {0,349, 699, 700, 840, 979, 1099, 1399}
         if epoch not in save_epochs:
             return
 
@@ -114,52 +114,116 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         )
 
 
-class DualKLAnnealingCallback(tf.keras.callbacks.Callback):
-    """Crossfade between vanilla and GMM KL during transition phase.
+class ContinuousAnnealingWithKmeansCallback(tf.keras.callbacks.Callback):
+    """Single-phase training with dynamic annealing and K-means initialization.
 
-    Vanilla KL: 3.0 → 0.0 (linear decrease)
-    GMM KL: 0.0 → 1.0 (linear increase)
-    Both losses active simultaneously during transition.
+    3 Phases within one continuous training:
+    - Phase 1 (0-50%): Vanilla only (β=3.0, GMM β=0.0)
+    - Phase 2 (50-70%): Crossfade (vanilla 3.0→0.0, GMM 0.0→1.0)
+    - Phase 3 (70-100%): GMM only (vanilla β=0.0, GMM β=1.0)
+
+    K-means initialization triggers at the start of Stage 2 (50% mark).
     """
 
-    def __init__(self, total_epochs: int):
+    def __init__(
+        self,
+        total_epochs: int,
+        scheduler,  # Reference to SequentialTrainingScheduler
+        component_name: str,
+        phase1_ratio: float = 0.50,
+        phase2_ratio: float = 0.20,
+        phase3_ratio: float = 0.30,
+        vanilla_beta_max: float = 3.0,
+        gmm_beta_max: float = 1.0,
+    ):
         """
         Parameters
         ----------
         total_epochs: int
-            Total number of epochs in the transition phase.
-            Used to calculate progress (0 to 1).
+            Total number of training epochs
+        scheduler: SequentialTrainingScheduler
+            Reference to scheduler (for K-means method access)
+        component_name: str
+            Component name (e.g., "RNA")
+        phase1_ratio: float
+            Fraction of epochs for vanilla-only phase (default 0.50)
+        phase2_ratio: float
+            Fraction of epochs for crossfade phase (default 0.20)
+        phase3_ratio: float
+            Fraction of epochs for GMM-only phase (default 0.30)
+        vanilla_beta_max: float
+            Starting vanilla KL weight (default 3.0)
+        gmm_beta_max: float
+            Final GMM KL weight (default 1.0)
         """
         super().__init__()
         self.total_epochs = total_epochs
+        self.scheduler = scheduler
+        self.component_name = component_name
+        self.vanilla_beta_max = vanilla_beta_max
+        self.gmm_beta_max = gmm_beta_max
+
+        # Calculate phase boundaries
+        self.phase1_end = int(total_epochs * phase1_ratio)
+        self.phase2_end = int(total_epochs * (phase1_ratio + phase2_ratio))
+
+        # K-means triggers at start of phase 2
+        self.kmeans_epoch = self.phase1_end
+        self.kmeans_executed = False
+
+        print(f"\n{'=' * 70}")
+        print("CONTINUOUS ANNEALING SCHEDULE")
+        print(f"  Total epochs: {total_epochs}")
+        print(f"  Phase 1 (Vanilla only): epochs 0-{self.phase1_end}")
+        print(f"  Phase 2 (Crossfade):    epochs {self.phase1_end}-{self.phase2_end}")
+        print(f"  Phase 3 (GMM only):     epochs {self.phase2_end}-{total_epochs}")
+        print(f"  K-means trigger:        epoch {self.kmeans_epoch}")
+        print(f"{'=' * 70}\n")
 
     def on_epoch_begin(self, epoch, logs=None):
-        """Update both KL weights at the beginning of each epoch.
+        """Update beta weights and trigger K-means at appropriate epoch."""
+        # Calculate current beta values based on schedule
+        vanilla_beta, gmm_beta = self._calculate_betas(epoch)
 
-        Parameters
-        ----------
-        epoch: int
-            Current epoch number (0-indexed within this phase).
-        logs: dict, optional
-            Training logs (not used).
-        """
+        # Update model weight variables
+        self.model._vanilla_kl_weight_var.assign(vanilla_beta)
+        self.model._gmm_kl_weight_var.assign(gmm_beta)
 
-        # Calculate progress through transition (0.0 to 1.0)
-        progress = epoch / self.total_epochs
+        # Trigger K-means at the start of Phase 2
+        if epoch == self.kmeans_epoch and not self.kmeans_executed:
+            print(f"\n{'=' * 70}")
+            print(f"K-MEANS INITIALIZATION AT EPOCH {epoch}")
+            print(f"{'=' * 70}\n")
 
-        # Linear crossfade
-        beta_vanilla = 3.0 * (1.0 - progress)  # Decreases: 3.0 → 0.0
-        beta_gmm = 1.0 * progress  # Increases: 0.0 → 1.0
+            self.model.trainable = False
+            self.scheduler.initialize_gmm_priors_with_kmeans(
+                component_name=self.component_name,
+                seed=42,
+                add_noise=True,
+                noise_std=0.1,
+            )
+            self.model.trainable = True
+            self.kmeans_executed = True
 
-        # Update both weight variables in the model
-        self.model._vanilla_kl_weight_var.assign(beta_vanilla)
-        self.model._gmm_kl_weight_var.assign(beta_gmm)
+    def _calculate_betas(self, epoch):
+        """Calculate vanilla and GMM beta values for current epoch."""
+        # Phase 1: Vanilla only
+        if epoch < self.phase1_end:
+            vanilla_beta = self.vanilla_beta_max
+            gmm_beta = 0.0
 
-        # Print progress
-        total_weight = beta_vanilla + beta_gmm
-        print(
-            f"  [Crossfade] Epoch {epoch}: vanilla={beta_vanilla:.4f}, gmm={beta_gmm:.4f}, sum={total_weight:.4f}"
-        )
+        # Phase 2: Crossfade
+        elif epoch < self.phase2_end:
+            progress = (epoch - self.phase1_end) / (self.phase2_end - self.phase1_end)
+            vanilla_beta = self.vanilla_beta_max * (1.0 - progress)
+            gmm_beta = self.gmm_beta_max * progress
+
+        # Phase 3: GMM only
+        else:
+            vanilla_beta = 0.0
+            gmm_beta = self.gmm_beta_max
+
+        return vanilla_beta, gmm_beta
 
 
 class SequentialTrainingScheduler:
@@ -487,7 +551,7 @@ class SequentialTrainingScheduler:
         logits = np.log(cluster_proportions).astype(np.float32)
         logits_tensor = tf.constant(logits.reshape(1, n_clusters), dtype=tf.float32)
         prior_layer.logits_bias.assign(logits_tensor)
-        
+
         # 6c. Initialize stds based on cluster spreads
         # Compute std for each cluster
         cluster_stds = np.zeros((n_clusters, event_dims), dtype=np.float32)
@@ -500,7 +564,7 @@ class SequentialTrainingScheduler:
                 # Fallback for empty/tiny clusters
                 cluster_stds[k] = 0.5
             # Add minimum threshold to prevent collapse
-            # cluster_stds[k] = np.maximum(cluster_stds[k], 0.02) 
+            # cluster_stds[k] = np.maximum(cluster_stds[k], 0.02)
 
         # Convert std to scale_diag_bias value (inverse of softplus)
         # softplus(x) = log(1 + exp(x))
@@ -520,7 +584,7 @@ class SequentialTrainingScheduler:
                 bias_value.reshape(1, event_dims), dtype=tf.float32
             )
             prior_layer.scale_diag_bias[k].assign(bias_tensor)
-            
+
         self.model.trainable = True
 
     def fit(self, x: tf.data.Dataset, **kwargs) -> List[tf.keras.callbacks.History]:
@@ -572,25 +636,14 @@ class SequentialTrainingScheduler:
                     "n_progressive_epochs", 100
                 )
 
-            # Split progressive epochs:
-            # 3 PHASES: 50% vanilla / 20% transition / 30% GMM
-            vanilla_epochs = int(max_n_progressive_epochs * 0.50)
-            transition_epochs = int(max_n_progressive_epochs * 0.20)
-            gmm_epochs = max_n_progressive_epochs - vanilla_epochs - transition_epochs
-
             # Print training plan
-            print(f"\n{'=' * 70}")
-            print(f"Training Component: {train_components[0]}")
+            print(f"\n{'='*70}")
+            print(f"SINGLE-PHASE CONTINUOUS TRAINING: {train_components[0]}")
             print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
-            print(f"  → Phase 1 - Vanilla Only: {vanilla_epochs} epochs (beta=3.0)") 
-            print(
-                f"  → Phase 2 - Transition:   {transition_epochs} epochs (crossfade 3.0→0.0 / 0.0→1.0)"
-            )
-            print(f"  → Phase 3 - GMM Only:     {gmm_epochs} epochs (beta=1.0)")
-            print(f"{'=' * 70}\n")
+            print(f"{'='*70}\n")
 
-            # PHASE 1: VANILLA KL ONLY
-            run_name = f"Training/{component_order}/Progressive/Phase1_VanillaOnly/{'/'.join(train_components)}"
+            # SINGLE COMPILE (optimizer state preserved throughout)
+            run_name = f"Training/{component_order}/Progressive/{'/'.join(train_components)}"
             mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
                 log_every_n_steps=None,
@@ -600,190 +653,72 @@ class SequentialTrainingScheduler:
                 checkpoint_save_best_only=False,
                 registered_model_name=f"Model/{run_name}",
             )
-
-            print(f"[PHASE 1: VANILLA ONLY] Starting {vanilla_epochs} epochs...")
 
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
                 learning_rate=learning_rate
-            )
-            self.model.compile(
-                use_vanilla_kl=True,  # ← Turn ON vanilla KL,
-                use_both_kl=False,
-                optimizer=optimizer,
-                loss_weights=loss_weights,
-            )
-
-            # Set initial weight for vanilla phase
-            self.model._vanilla_kl_weight_var.assign(3.0) ##
-            self.model._gmm_kl_weight_var.assign(0.0)
-
-            kwargs_progressive = deepcopy(kwargs)
-            kwargs_progressive.pop("epochs", None)
-
-            callbacks_phase1 = deepcopy(kwargs.get("callbacks", []))
-            callbacks_phase1.append(
-                PeriodicTSNECallback(
-                    mdata=self.mdata,
-                    component=train_components[0],
-                    outdir=os.path.join(
-                        self.output_dir, "tsne_snapshots_phase1_vanilla"
-                    ),
-                    batch_size=self.batch_size,
-                    every=100,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
-                )
-            )
-
-            history.append(
-                self.model.fit(
-                    x,
-                    epochs=vanilla_epochs,
-                    callbacks=callbacks_phase1,
-                    **kwargs_progressive,
-                )
-            )
-            print(
-                f"[PHASE 1] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
-            )
-            mlflow.end_run()
-
-            # Initialize GMM priors using K-means++ on vanilla latent space
-            self.initialize_gmm_priors_with_kmeans(
-                component_name=train_components[0],
-                seed=42,
-                add_noise=True,
-                noise_std=0.1,
-            )
-
-            # PHASE 2: TRANSITION (Both losses active)
-            run_name = f"Training/{component_order}/Progressive/Phase2_Transition/{'/'.join(train_components)}"
-            mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
-            mlflow.tensorflow.autolog(
-                log_every_n_steps=None,
-                log_every_epoch=True,
-                log_models=False,
-                checkpoint=False,
-                checkpoint_save_best_only=False,
-                registered_model_name=f"Model/{run_name}",
-            )
-            print(
-                f"[PHASE 2: TRANSITION] Starting {transition_epochs} epochs with annealing..."
-            )
-            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                learning_rate=learning_rate
-            )
-            self.model.compile(
-                use_vanilla_kl=False,  # ← Turn OFF vanilla,
-                use_both_kl=True,  # ← Both losses active
-                optimizer=optimizer,
-                loss_weights=loss_weights,
-            )
-
-            # Set initial weights for transition
-            self.model._vanilla_kl_weight_var.assign(3.0)
-            self.model._gmm_kl_weight_var.assign(0.0)
-
-            kwargs_progressive = deepcopy(kwargs)
-            kwargs_progressive.pop("epochs", None)
-
-            callbacks_phase2 = deepcopy(kwargs.get("callbacks", []))
-            callbacks_phase2.append(
-                DualKLAnnealingCallback(total_epochs=transition_epochs)
-            )
-            callbacks_phase2.append(
-                PeriodicTSNECallback(
-                    mdata=self.mdata,
-                    component=train_components[0],
-                    outdir=os.path.join(
-                        self.output_dir, "tsne_snapshots_phase2_transition"
-                    ),
-                    batch_size=self.batch_size,
-                    every=100,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
-                )
-            )
-            history.append(
-                self.model.fit(
-                    x,
-                    epochs=transition_epochs,
-                    callbacks=callbacks_phase2,
-                    **kwargs_progressive,
-                )
-            )
-            print(
-                f"[GMM KL] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
-            )
-            print(
-                f"[PHASE 2] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
-            )
-            mlflow.end_run()
-            
-            # ========== test
-            # Re-initialize GMM priors after transition phase
-            self.initialize_gmm_priors_with_kmeans(
-                component_name=train_components[0],
-                seed=42,
-                add_noise=True,
-                noise_std=0.1,
-            )
-            # =========
-
-            # PHASE 3: GMM KL only
-            run_name = f"Training/{component_order}/Progressive/Phase3_GMMOnly/{'/'.join(train_components)}"
-            mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
-            mlflow.tensorflow.autolog(
-                log_every_n_steps=None,
-                log_every_epoch=True,
-                log_models=False,
-                checkpoint=False,
-                checkpoint_save_best_only=False,
-                registered_model_name=f"Model/{run_name}",
-            )
-            print(f"[PHASE 3: GMM ONLY] Starting {gmm_epochs} epochs...")
-
-            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                learning_rate=learning_rate * 0.5 # slow down for gmm
             )
             self.model.compile(
                 use_vanilla_kl=False,
-                use_both_kl=False,
+                use_both_kl=True,  # Both losses active throughout
                 optimizer=optimizer,
                 loss_weights=loss_weights,
             )
-            # Set initial weights for GMM phase
-            self.model._vanilla_kl_weight_var.assign(0.0)
-            self.model._gmm_kl_weight_var.assign(1.0)
+            # Initialize both weight variables
+            self.model._vanilla_kl_weight_var.assign(3.0)
+            self.model._gmm_kl_weight_var.assign(0.0)
 
+            # Prepare kwargs
             kwargs_progressive = deepcopy(kwargs)
             kwargs_progressive.pop("epochs", None)
 
-            callbacks_phase3 = deepcopy(kwargs.get("callbacks", []))
-            callbacks_phase3.append(
+            # Setup callbacks
+            callbacks_continuous = deepcopy(kwargs.get("callbacks", []))
+            
+            # Add annealing + K-means callback
+            callbacks_continuous.append(
+                ContinuousAnnealingWithKmeansCallback(
+                    total_epochs=max_n_progressive_epochs,
+                    scheduler=self,
+                    component_name=train_components[0],
+                    phase1_ratio=0.50,
+                    phase2_ratio=0.20,
+                    phase3_ratio=0.30,
+                    vanilla_beta_max=3.0,
+                    gmm_beta_max=1.0,
+                )
+            )
+            
+            # Add snapshot callback (single directory)
+            callbacks_continuous.append(
                 PeriodicTSNECallback(
                     mdata=self.mdata,
                     component=train_components[0],
-                    outdir=os.path.join(self.output_dir, "tsne_snapshots_phase3_gmm"),
+                    outdir=os.path.join(self.output_dir, "snapshots"),
                     batch_size=self.batch_size,
                     every=100,
                     batch_effect_colnames=self.batch_effect_colnames,
                     distribution_names=self.distribution_names,
                 )
             )
+
+            # SINGLE FIT
             history.append(
                 self.model.fit(
                     x,
-                    epochs=gmm_epochs,
-                    callbacks=callbacks_phase3,
+                    epochs=max_n_progressive_epochs,
+                    callbacks=callbacks_continuous,
                     **kwargs_progressive,
                 )
             )
-
-            print(
-                f"[PHASE 3] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
-            )
+            
+            print(f"\n{'='*70}")
+            print(f"TRAINING COMPLETED!")
+            print(f"Final loss: {history[-1].history['loss'][-1]:.4f}")
+            print(f"{'='*70}\n")
             mlflow.end_run()
+
+        
+
 
             # non-progressive training
             """
@@ -833,8 +768,10 @@ class SequentialTrainingScheduler:
             history.append(self.model.fit(x, callbacks=callbacks, **kwargs))
             mlflow.end_run()
             """
-
+        
         return history
+
+
 
     def setup_component_and_loss_weights(
         self,
