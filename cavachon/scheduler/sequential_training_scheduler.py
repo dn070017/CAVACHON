@@ -51,7 +51,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         # below is start from 500
         # if epoch < 499 or ((epoch - 499) % self.every) != 0:
         # if (epoch + 1) % self.every != 0:
-        save_epochs = {0, 174, 349, 699}
+        save_epochs = {0, 139, 279, 419, 699}
         if epoch not in save_epochs:
             return
 
@@ -500,7 +500,7 @@ class SequentialTrainingScheduler:
                 # Fallback for empty/tiny clusters
                 cluster_stds[k] = 0.5
             # Add minimum threshold to prevent collapse
-            cluster_stds[k] = np.maximum(cluster_stds[k], 0.1)
+            # cluster_stds[k] = np.maximum(cluster_stds[k], 0.02) 
 
         # Convert std to scale_diag_bias value (inverse of softplus)
         # softplus(x) = log(1 + exp(x))
@@ -573,16 +573,16 @@ class SequentialTrainingScheduler:
                 )
 
             # Split progressive epochs:
-            # 3 PHASES: 50% vanilla / 25% transition / 25% GMM
+            # 3 PHASES: 50% vanilla / 20% transition / 30% GMM
             vanilla_epochs = int(max_n_progressive_epochs * 0.50)
-            transition_epochs = int(max_n_progressive_epochs * 0.25)
+            transition_epochs = int(max_n_progressive_epochs * 0.20)
             gmm_epochs = max_n_progressive_epochs - vanilla_epochs - transition_epochs
 
             # Print training plan
             print(f"\n{'=' * 70}")
             print(f"Training Component: {train_components[0]}")
             print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
-            print(f"  → Phase 1 - Vanilla Only: {vanilla_epochs} epochs (beta=3.0)")
+            print(f"  → Phase 1 - Vanilla Only: {vanilla_epochs} epochs (beta=3.0)") 
             print(
                 f"  → Phase 2 - Transition:   {transition_epochs} epochs (crossfade 3.0→0.0 / 0.0→1.0)"
             )
@@ -614,7 +614,7 @@ class SequentialTrainingScheduler:
             )
 
             # Set initial weight for vanilla phase
-            self.model._vanilla_kl_weight_var.assign(3.0)
+            self.model._vanilla_kl_weight_var.assign(3.0) ##
             self.model._gmm_kl_weight_var.assign(0.0)
 
             kwargs_progressive = deepcopy(kwargs)
@@ -719,6 +719,16 @@ class SequentialTrainingScheduler:
                 f"[PHASE 2] Completed! Final loss: {history[-1].history['loss'][-1]:.4f}\n"
             )
             mlflow.end_run()
+            
+            # ========== test
+            # Re-initialize GMM priors after transition phase
+            self.initialize_gmm_priors_with_kmeans(
+                component_name=train_components[0],
+                seed=42,
+                add_noise=True,
+                noise_std=0.1,
+            )
+            # =========
 
             # PHASE 3: GMM KL only
             run_name = f"Training/{component_order}/Progressive/Phase3_GMMOnly/{'/'.join(train_components)}"
@@ -734,7 +744,7 @@ class SequentialTrainingScheduler:
             print(f"[PHASE 3: GMM ONLY] Starting {gmm_epochs} epochs...")
 
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                learning_rate=learning_rate
+                learning_rate=learning_rate * 0.5 # slow down for gmm
             )
             self.model.compile(
                 use_vanilla_kl=False,
