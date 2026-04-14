@@ -105,7 +105,7 @@ class TensorUtils:
     def create_backbone_layers(
         n_layers: int = 2, #3
         base_n_neurons: int = 32, #128
-        max_n_neurons: int = 128,  #2048
+        max_n_neurons: int = 64,  #2048
         rate: int = 2,
         activation: str = "swish", #"linear"
         reverse: bool = False,

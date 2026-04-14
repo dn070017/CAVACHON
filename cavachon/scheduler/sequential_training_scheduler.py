@@ -209,7 +209,7 @@ class ContinuousAnnealingWithKmeansCallback(tf.keras.callbacks.Callback):
         """Calculate vanilla and GMM beta values for current epoch."""
         # Phase 1: Vanilla only
         if epoch < self.phase1_end:
-            vanilla_beta = self.vanilla_beta_max
+            vanilla_beta = 3.0
             gmm_beta = 0.0
 
         # Phase 2: Crossfade
@@ -221,7 +221,7 @@ class ContinuousAnnealingWithKmeansCallback(tf.keras.callbacks.Callback):
         # Phase 3: GMM only
         else:
             vanilla_beta = 0.0
-            gmm_beta = self.gmm_beta_max
+            gmm_beta = 1.0
 
         return vanilla_beta, gmm_beta
 
@@ -664,7 +664,7 @@ class SequentialTrainingScheduler:
                 loss_weights=loss_weights,
             )
             # Initialize both weight variables
-            self.model._vanilla_kl_weight_var.assign(3.0)
+            self.model._vanilla_kl_weight_var.assign(3.0) 
             self.model._gmm_kl_weight_var.assign(0.0)
 
             # Prepare kwargs
