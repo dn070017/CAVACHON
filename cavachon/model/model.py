@@ -439,14 +439,30 @@ class Model(tf.keras.Model):
 
         """
         # Create two separate weight variables
-        if not hasattr(self, "_vanilla_kl_weight_var"):
-            self._vanilla_kl_weight_var = tf.Variable(
-                3.0, trainable=False, dtype=tf.float32, name="vanilla_kl_weight"
-            )
-        if not hasattr(self, "_gmm_kl_weight_var"):
-            self._gmm_kl_weight_var = tf.Variable(
-                0.0, trainable=False, dtype=tf.float32, name="gmm_kl_weight"
-            )
+        if not hasattr(self, "_vanilla_kl_weights"):
+            self._vanilla_kl_weights = {}
+        if not hasattr(self, "_gmm_kl_weights"):
+            self._gmm_kl_weights = {}
+
+        # Create one variable per component
+        for component_config in self.component_configs:
+            component_name = component_config.get("name")
+
+            if component_name not in self._vanilla_kl_weights:
+                self._vanilla_kl_weights[component_name] = tf.Variable(
+                    3.0,
+                    trainable=False,
+                    dtype=tf.float32,
+                    name=f"{component_name}_vanilla_kl_weight",
+                )
+
+            if component_name not in self._gmm_kl_weights:
+                self._gmm_kl_weights[component_name] = tf.Variable(
+                    0.0,
+                    trainable=False,
+                    dtype=tf.float32,
+                    name=f"{component_name}_gmm_kl_weight",
+                )
 
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
@@ -466,14 +482,14 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         f"{component_name}_vanilla_kl_divergence",  # Different name for vanilla
                         VanillaKLDivergence(
-                            weight_var=self._vanilla_kl_weight_var,
+                            weight_var=self._vanilla_kl_weights[component_name],
                             name=f"{component_name}_vanilla_kl_divergence",
                         ),
                     )
                     loss.setdefault(
                         f"{component_name}_gmm_kl_divergence",  # Different name for gmm
                         KLDivergence(
-                            weight_var=self._gmm_kl_weight_var,
+                            weight_var=self._gmm_kl_weights[component_name],
                             name=f"{component_name}_gmm_kl_divergence",
                         ),
                     )
@@ -482,7 +498,7 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         kl_divergence_name,
                         VanillaKLDivergence(
-                            weight_var=self._vanilla_kl_weight_var,
+                            weight_var=self._vanilla_kl_weights[component_name],
                             name=kl_divergence_name,
                         ),
                     )
@@ -491,7 +507,7 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         kl_divergence_name,
                         KLDivergence(
-                            weight_var=self._gmm_kl_weight_var,
+                            weight_var=self._gmm_kl_weights[component_name],
                             name=kl_divergence_name,
                         ),
                     )

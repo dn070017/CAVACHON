@@ -28,18 +28,16 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
 
     def __init__(
         self,
-        mdata: mu.MuData,  # we need to pass mdata into it
+        mdata: mu.MuData,
         component: str,
         outdir: str,
         batch_size=int,
-        every: int = 100,
         batch_effect_colnames: Optional[Mapping[str, List[str]]] = None,
         distribution_names: Optional[Mapping[str, str]] = None,
     ):
         super().__init__()
         self.mdata = mdata
         self.component = component
-        self.every = int(every)
         self.batch_effect_colnames = batch_effect_colnames
         self.distribution_names = distribution_names
         self.batch_size = batch_size
@@ -47,11 +45,10 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         os.makedirs(self.output_dir, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
-        # here we adjust the freq of saving the snaphot
-        # below is start from 500
-        # if epoch < 499 or ((epoch - 499) % self.every) != 0:
-        # if (epoch + 1) % self.every != 0:
-        save_epochs = {0,349, 699, 700, 840, 979, 1099, 1399}
+        # EDIT HERE TO SPECIFY WHICH EPOCHS TO SAVE:
+        save_epochs = set()  # Empty set = never save (disabled)
+        # save_epochs = {0, 349, 699, 840, 1199}  # Example: save at these epochs
+
         if epoch not in save_epochs:
             return
 
@@ -114,85 +111,57 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         )
 
 
-class ContinuousAnnealingWithKmeansCallback(tf.keras.callbacks.Callback):
-    """Single-phase training with dynamic annealing and K-means initialization.
+class KLAnnealingCallback(tf.keras.callbacks.Callback):
+    """3-phase KL annealing for a single component.
+    Phase 1: Vanilla KL only (β=3.0)
+    Phase 2: Crossfade (vanilla 3→0, GMM 0→1)
+    Phase 3: GMM KL only (β=1.0)
 
-    3 Phases within one continuous training:
-    - Phase 1 (0-50%): Vanilla only (β=3.0, GMM β=0.0)
-    - Phase 2 (50-70%): Crossfade (vanilla 3.0→0.0, GMM 0.0→1.0)
-    - Phase 3 (70-100%): GMM only (vanilla β=0.0, GMM β=1.0)
-
-    K-means initialization triggers at the start of Stage 2 (50% mark).
+    K-means initialization triggers at start of Phase 2.
     """
 
     def __init__(
         self,
         total_epochs: int,
-        scheduler,  # Reference to SequentialTrainingScheduler
+        scheduler,
         component_name: str,
-        phase1_ratio: float = 0.50,
-        phase2_ratio: float = 0.20,
-        phase3_ratio: float = 0.30,
+        phase_boundaries: Tuple[int, int],
         vanilla_beta_max: float = 3.0,
         gmm_beta_max: float = 1.0,
+        run_kmeans: bool = True,
     ):
-        """
-        Parameters
-        ----------
-        total_epochs: int
-            Total number of training epochs
-        scheduler: SequentialTrainingScheduler
-            Reference to scheduler (for K-means method access)
-        component_name: str
-            Component name (e.g., "RNA")
-        phase1_ratio: float
-            Fraction of epochs for vanilla-only phase (default 0.50)
-        phase2_ratio: float
-            Fraction of epochs for crossfade phase (default 0.20)
-        phase3_ratio: float
-            Fraction of epochs for GMM-only phase (default 0.30)
-        vanilla_beta_max: float
-            Starting vanilla KL weight (default 3.0)
-        gmm_beta_max: float
-            Final GMM KL weight (default 1.0)
-        """
         super().__init__()
         self.total_epochs = total_epochs
         self.scheduler = scheduler
         self.component_name = component_name
+        self.phase1_end, self.phase2_end = phase_boundaries
         self.vanilla_beta_max = vanilla_beta_max
         self.gmm_beta_max = gmm_beta_max
-
-        # Calculate phase boundaries
-        self.phase1_end = int(total_epochs * phase1_ratio)
-        self.phase2_end = int(total_epochs * (phase1_ratio + phase2_ratio))
-
-        # K-means triggers at start of phase 2
-        self.kmeans_epoch = self.phase1_end
+        self.run_kmeans = run_kmeans
         self.kmeans_executed = False
 
         print(f"\n{'=' * 70}")
-        print("CONTINUOUS ANNEALING SCHEDULE")
+        print(f"KL ANNEALING SCHEDULE - {component_name}")
         print(f"  Total epochs: {total_epochs}")
         print(f"  Phase 1 (Vanilla only): epochs 0-{self.phase1_end}")
         print(f"  Phase 2 (Crossfade):    epochs {self.phase1_end}-{self.phase2_end}")
         print(f"  Phase 3 (GMM only):     epochs {self.phase2_end}-{total_epochs}")
-        print(f"  K-means trigger:        epoch {self.kmeans_epoch}")
+        if run_kmeans:
+            print(f"  K-means trigger: epoch {self.phase1_end}")
         print(f"{'=' * 70}\n")
 
     def on_epoch_begin(self, epoch, logs=None):
-        """Update beta weights and trigger K-means at appropriate epoch."""
-        # Calculate current beta values based on schedule
+        """Update beta weights and trigger K-means."""
         vanilla_beta, gmm_beta = self._calculate_betas(epoch)
 
-        # Update model weight variables
-        self.model._vanilla_kl_weight_var.assign(vanilla_beta)
-        self.model._gmm_kl_weight_var.assign(gmm_beta)
+        # COMPONENT-SPECIFIC assignment
+        self.model._vanilla_kl_weights[self.component_name].assign(vanilla_beta)
+        self.model._gmm_kl_weights[self.component_name].assign(gmm_beta)
 
-        # Trigger K-means at the start of Phase 2
-        if epoch == self.kmeans_epoch and not self.kmeans_executed:
+        # Trigger K-means at start of Phase 2
+        if self.run_kmeans and epoch == self.phase1_end and not self.kmeans_executed:
             print(f"\n{'=' * 70}")
-            print(f"K-MEANS INITIALIZATION AT EPOCH {epoch}")
+            print(f"K-MEANS INITIALIZATION AT EPOCH {epoch} - {self.component_name}")
             print(f"{'=' * 70}\n")
 
             self.model.trainable = False
@@ -206,24 +175,58 @@ class ContinuousAnnealingWithKmeansCallback(tf.keras.callbacks.Callback):
             self.kmeans_executed = True
 
     def _calculate_betas(self, epoch):
-        """Calculate vanilla and GMM beta values for current epoch."""
-        # Phase 1: Vanilla only
+        """Calculate vanilla and GMM beta values."""
         if epoch < self.phase1_end:
-            vanilla_beta = 3.0
-            gmm_beta = 0.0
-
-        # Phase 2: Crossfade
+            return self.vanilla_beta_max, 0.0
         elif epoch < self.phase2_end:
             progress = (epoch - self.phase1_end) / (self.phase2_end - self.phase1_end)
             vanilla_beta = self.vanilla_beta_max * (1.0 - progress)
             gmm_beta = self.gmm_beta_max * progress
-
-        # Phase 3: GMM only
+            return vanilla_beta, gmm_beta
         else:
-            vanilla_beta = 0.0
-            gmm_beta = 1.0
+            return 0.0, self.gmm_beta_max
 
-        return vanilla_beta, gmm_beta
+
+class ComponentWeightTransferCallback(tf.keras.callbacks.Callback):
+    """Gradual weight transfer from parent to child component.
+
+    Parent: GMM KL (β=1.0 frozen), weight fades 1.0 → 0.0
+    Child: Vanilla KL (β=3.0 frozen), weight fades 0.0 → 1.0
+    """
+
+    def __init__(self, total_epochs: int, parent_name: str, child_name: str):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.parent_name = parent_name
+        self.child_name = child_name
+
+        print(f"\n{'=' * 70}")
+        print("COMPONENT WEIGHT TRANSFER")
+        print(f"  Total epochs: {total_epochs}")
+        print(f"  Parent: {parent_name} (GMM β=1.0, weight 1.0 → 0.0)")
+        print(f"  Child:  {child_name} (Vanilla β=3.0, weight 0.0 → 1.0)")
+        print(f"{'=' * 70}\n")
+
+    def on_epoch_begin(self, epoch, logs=None):
+        """Fade component loss weights."""
+        progress = epoch / self.total_epochs
+        parent_weight = 1.0 - progress
+        child_weight = progress
+
+        # Apply to ALL losses for each component
+        for loss_name, loss_fn in self.model.loss.items():
+            if self.parent_name in loss_name:
+                if hasattr(loss_fn, "weight"):
+                    loss_fn.weight = parent_weight
+            elif self.child_name in loss_name:
+                if hasattr(loss_fn, "weight"):
+                    loss_fn.weight = child_weight
+
+        if epoch % 50 == 0:
+            print(
+                f"Epoch {epoch}/{self.total_epochs}: "
+                f"Parent={parent_weight:.3f}, Child={child_weight:.3f}"
+            )
 
 
 class SequentialTrainingScheduler:
@@ -587,71 +590,149 @@ class SequentialTrainingScheduler:
 
         self.model.trainable = True
 
+    def _get_parent_component(self, child_name: str) -> Optional[str]:
+        """Get parent component name for the child."""
+        for component_config in self.component_configs:
+            if component_config.get("name") == child_name:
+                conditioned_on_z_hat = component_config.get(
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
+                )
+                if len(conditioned_on_z_hat) > 0:
+                    return conditioned_on_z_hat[0]
+        return None
+
+    def _get_phase_boundaries(
+        self, total_epochs: int, ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3)
+    ) -> Tuple[int, int]:
+        """Calculate epoch boundaries for 3-phase training."""
+        phase1_end = int(total_epochs * ratios[0])
+        phase2_end = int(total_epochs * (ratios[0] + ratios[1]))
+        return phase1_end, phase2_end
+
     def fit(self, x: tf.data.Dataset, **kwargs) -> List[tf.keras.callbacks.History]:
-        """Fit self.model sequentially with three-phase training.
-        Phase 1: Vanilla KL only (beta=3.0 constant)
-        Phase 2: Transition with crossfade (vanilla 3.0→0.0, GMM 0.0→1.0)
-        Phase 3: GMM KL only (beta=1.0 constant)
-
-        Parameters
-        ----------
-        x: tf.data.Dataset
-            input dataset created by DataLoader.
-
-        **kwargs: Mapping[str, Any]
-            additional arguments passed to self.model.fit.
-
-        Returns
-        -------
-        List[tf.keras.callbacks.History]
-            history of model.fit in each step.
-        """
-
+        """Fit model with multi-phase hierarchical training."""
         n_batches = len(x)
         learning_rate = self.learning_rate
         history = []
+        max_n_epochs = kwargs.get("epochs", 100)
 
         experiment_name = self.model.name
         mlflow.set_experiment(experiment_name)
         experiment = mlflow.get_experiment_by_name(experiment_name)
 
+        # Check if single component (for PeriodicTSNECallback decision)
+        is_single_component = len(self.training_order) == 1
+
         for component_order, train_components in enumerate(self.training_order):
-            # Set up loss weights for progressive training
-            loss_weights, max_n_progressive_epochs = (
-                self.setup_component_and_loss_weights(
-                    train_components=train_components,
-                    n_batches=n_batches,
-                    initial_iteration=0.0,
-                )
-            )
+            component_name = train_components[0]
 
-            # Force progressive training even if max_n_progressive_epochs is 0
-            if max_n_progressive_epochs == 0:
-                component_config = [
-                    c
-                    for c in self.component_configs
-                    if c.get("name") == train_components[0]
-                ][0]
-                max_n_progressive_epochs = component_config.get(
-                    "n_progressive_epochs", 100
-                )
+            # PROGRESSIVE SECTION - Phase 2 (Child Only)
 
-            # Print training plan
-            print(f"\n{'='*70}")
-            print(f"SINGLE-PHASE CONTINUOUS TRAINING: {train_components[0]}")
-            print(f"Total Progressive Epochs: {max_n_progressive_epochs}")
-            print(f"{'='*70}\n")
+            if self.run_progressive_training.get(component_name):
+                parent_name = self._get_parent_component(component_name)
 
-            # SINGLE COMPILE (optimizer state preserved throughout)
-            run_name = f"Training/{component_order}/Progressive/{'/'.join(train_components)}"
+                if parent_name is not None:
+                    component_config = [
+                        c
+                        for c in self.component_configs
+                        if c.get("name") == component_name
+                    ][0]
+                    n_progressive_epochs = component_config.get(
+                        Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS, 0
+                    )
+
+                    if n_progressive_epochs > 0:
+                        print(f"\n{'═' * 70}")
+                        print("PHASE 2: COMPONENT WEIGHT TRANSFER")
+                        print(f"  Parent: {parent_name} → Child: {component_name}")
+                        print(f"  Epochs: {n_progressive_epochs}")
+                        print(f"{'═' * 70}\n")
+
+                        run_name = f"Training/{component_order}/WeightTransfer/{parent_name}_to_{component_name}"
+                        mlflow.start_run(
+                            experiment_id=experiment.experiment_id, run_name=run_name
+                        )
+                        mlflow.tensorflow.autolog(
+                            log_every_n_steps=None,
+                            log_every_epoch=True,
+                            log_models=False,
+                            checkpoint=False,
+                        )
+
+                        loss_weights, _ = self.setup_component_and_loss_weights(
+                            train_components=[parent_name, component_name],
+                            n_batches=n_batches,
+                            initial_iteration=None,
+                        )
+
+                        optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                            learning_rate=learning_rate
+                        )
+                        self.model.compile(
+                            use_vanilla_kl=False,
+                            use_both_kl=True,
+                            optimizer=optimizer,
+                            loss_weights=loss_weights,
+                        )
+
+                        # Set initial KL weights
+                        self.model._vanilla_kl_weights[parent_name].assign(0.0)
+                        self.model._gmm_kl_weights[parent_name].assign(1.0)
+                        self.model._vanilla_kl_weights[component_name].assign(3.0)
+                        self.model._gmm_kl_weights[component_name].assign(0.0)
+
+                        kwargs_progressive = deepcopy(kwargs)
+                        kwargs_progressive.pop("epochs", None)
+                        callbacks_progressive = deepcopy(kwargs.get("callbacks", []))
+
+                        callbacks_progressive.append(
+                            ComponentWeightTransferCallback(
+                                total_epochs=n_progressive_epochs,
+                                parent_name=parent_name,
+                                child_name=component_name,
+                            )
+                        )
+
+                        history.append(
+                            self.model.fit(
+                                x,
+                                epochs=n_progressive_epochs,
+                                callbacks=callbacks_progressive,
+                                **kwargs_progressive,
+                            )
+                        )
+
+                        mlflow.end_run()
+
+                        # Freeze parent after weight transfer
+                        print(f"\n{'═' * 70}")
+                        print(f"FREEZING PARENT: {parent_name}")
+                        print(f"{'═' * 70}\n")
+                        self.model.components[parent_name].trainable = False
+
+            # NON-PROGRESSIVE SECTION
+            # Phase 1 (parent) or Phase 3 (child) - KL Annealing
+
+            print(f"\n{'═' * 70}")
+            if self.run_progressive_training.get(component_name):
+                print(f"PHASE 3: CHILD KL ANNEALING - {component_name}")
+            else:
+                print(f"PHASE 1: PARENT KL ANNEALING - {component_name}")
+            print(f"  Epochs: {max_n_epochs}")
+            print(f"{'═' * 70}\n")
+
+            run_name = f"Training/{component_order}/KLAnnealing/{component_name}"
             mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
             mlflow.tensorflow.autolog(
-                log_every_n_steps=None,
                 log_every_epoch=True,
                 log_models=False,
                 checkpoint=False,
-                checkpoint_save_best_only=False,
-                registered_model_name=f"Model/{run_name}",
+            )
+
+            loss_weights, _ = self.setup_component_and_loss_weights(
+                train_components=train_components,
+                n_batches=n_batches,
+                initial_iteration=None,
             )
 
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
@@ -659,124 +740,83 @@ class SequentialTrainingScheduler:
             )
             self.model.compile(
                 use_vanilla_kl=False,
-                use_both_kl=True,  # Both losses active throughout
+                use_both_kl=True,
                 optimizer=optimizer,
                 loss_weights=loss_weights,
             )
-            # Initialize both weight variables
-            self.model._vanilla_kl_weight_var.assign(3.0) 
-            self.model._gmm_kl_weight_var.assign(0.0)
 
-            # Prepare kwargs
-            kwargs_progressive = deepcopy(kwargs)
-            kwargs_progressive.pop("epochs", None)
-
-            # Setup callbacks
-            callbacks_continuous = deepcopy(kwargs.get("callbacks", []))
+            self.model._vanilla_kl_weights[component_name].assign(3.0)
+            self.model._gmm_kl_weights[component_name].assign(0.0)
             
-            # Add annealing + K-means callback
-            callbacks_continuous.append(
-                ContinuousAnnealingWithKmeansCallback(
-                    total_epochs=max_n_progressive_epochs,
+            # to zero out parent loss at phase3:
+            if self.run_progressive_training.get(component_name):
+                parent_name = self._get_parent_component(component_name)
+                if parent_name:
+                    for loss_name, loss_fn in self.model.loss.items():
+                        if parent_name in loss_name:
+                            if hasattr(loss_fn, "weight"):
+                                loss_fn.weight = 0.0
+                                print(f"  Set {loss_name}.weight = 0.0")
+
+            phase_boundaries = self._get_phase_boundaries(max_n_epochs)
+
+            callbacks = deepcopy(kwargs.get("callbacks", []))
+
+            callbacks.append(
+                KLAnnealingCallback(
+                    total_epochs=max_n_epochs,
                     scheduler=self,
-                    component_name=train_components[0],
-                    phase1_ratio=0.50,
-                    phase2_ratio=0.20,
-                    phase3_ratio=0.30,
+                    component_name=component_name,
+                    phase_boundaries=phase_boundaries,
                     vanilla_beta_max=3.0,
                     gmm_beta_max=1.0,
-                )
-            )
-            
-            # Add snapshot callback (single directory)
-            callbacks_continuous.append(
-                PeriodicTSNECallback(
-                    mdata=self.mdata,
-                    component=train_components[0],
-                    outdir=os.path.join(self.output_dir, "snapshots"),
-                    batch_size=self.batch_size,
-                    every=100,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
+                    run_kmeans=True,
                 )
             )
 
-            # SINGLE FIT
-            history.append(
-                self.model.fit(
-                    x,
-                    epochs=max_n_progressive_epochs,
-                    callbacks=callbacks_continuous,
-                    **kwargs_progressive,
+            # Only add PeriodicTSNECallback for SINGLE component
+            if is_single_component and self.output_dir:
+                callbacks.append(
+                    PeriodicTSNECallback(
+                        mdata=self.mdata,
+                        component=component_name,
+                        outdir=os.path.join(self.output_dir, "snapshots"),
+                        batch_size=self.batch_size,
+                        batch_effect_colnames=self.batch_effect_colnames,
+                        distribution_names=self.distribution_names,
+                    )
                 )
-            )
-            
-            print(f"\n{'='*70}")
-            print(f"TRAINING COMPLETED!")
-            print(f"Final loss: {history[-1].history['loss'][-1]:.4f}")
-            print(f"{'='*70}\n")
-            mlflow.end_run()
 
-        
-
-
-            # non-progressive training
-            """
-            run_name = f"Training/{component_order}/{'/'.join(train_components)}"
-            mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
-            mlflow.tensorflow.autolog(
-                log_every_epoch=True,
-                log_models=False,
-                checkpoint=False,
-                checkpoint_save_best_only=False,
-                registered_model_name=f"Model/{run_name}",
-            )
-            loss_weights, max_n_progressive_epochs = (
-                self.setup_component_and_loss_weights(
-                    train_components=train_components,
-                    n_batches=n_batches,
-                    initial_iteration=None,
-                )
-            )
-
-            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                learning_rate=learning_rate
-            )
-            self.model.compile(optimizer=optimizer, loss_weights=loss_weights)
-            callbacks = deepcopy(kwargs.get("callbacks", []))
             if self.early_stopping:
                 callbacks.append(
                     tf.keras.callbacks.EarlyStopping(
                         monitor="loss",
-                        min_delta=50,  # 5
-                        patience=1100,  # max(10, int(kwargs.get("epochs", 1) / 20)),
+                        min_delta=50,
+                        patience=1100,
                         restore_best_weights=True,
                         verbose=1,
                     )
                 )
-            callbacks.append(
-                PeriodicTSNECallback(
-                    mdata=self.mdata,
-                    component=train_components[0],
-                    outdir=os.path.join(self.output_dir, "tsne_snapshots"),
-                    batch_size=self.batch_size,
-                    every=100,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
+
+            kwargs_copy = deepcopy(kwargs)
+            kwargs_copy.pop("epochs", None)
+            history.append(
+                self.model.fit(
+                    x,
+                    epochs=max_n_epochs,
+                    callbacks=callbacks,
+                    **kwargs_copy,
                 )
             )
-            history.append(self.model.fit(x, callbacks=callbacks, **kwargs))
+
             mlflow.end_run()
-            """
-        
+
         return history
-
-
 
     def setup_component_and_loss_weights(
         self,
         train_components: List[str],
-        n_batches=int,
+        n_batches: int,
         initial_iteration: Optional[int] = None,
     ) -> Tuple[Any]:
         """Setup the trainable attributes for each component and the
@@ -806,16 +846,18 @@ class SequentialTrainingScheduler:
         """
         loss_weights = dict()
         max_n_progressive_epochs = 0
+
         for component_config in self.component_configs:
             component_name = component_config.get("name")
             component = self.model.components.get(component_name)
+
             if component_name in train_components:
                 component.trainable = True
                 weight_scale = 1.0
 
                 n_progressive_epochs = float(
                     component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
+                        Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS, 0
                     )
                 )
                 progressive_iterations = n_batches * n_progressive_epochs
@@ -823,7 +865,6 @@ class SequentialTrainingScheduler:
                     max_n_progressive_epochs, n_progressive_epochs
                 )
 
-                # For non-progressive training
                 if initial_iteration is None or initial_iteration <= 0:
                     initial_iteration = progressive_iterations
 
@@ -838,10 +879,16 @@ class SequentialTrainingScheduler:
                     current_iteration=1.0, total_iterations=1.0
                 )
 
+            # MODIFIED: Component-specific KL loss names
             loss_weights.setdefault(
-                f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}",
+                f"{component_name}_vanilla_kl_divergence",
                 1.0 * weight_scale,
             )
+            loss_weights.setdefault(
+                f"{component_name}_gmm_kl_divergence",
+                1.0 * weight_scale,
+            )
+
             for modality_name in component_config.get(
                 Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
             ):
