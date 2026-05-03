@@ -574,7 +574,7 @@ class Model(tf.keras.Model):
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
-                component = self.components.get(component_name)
+                
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )

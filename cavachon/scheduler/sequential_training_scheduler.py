@@ -194,16 +194,16 @@ class ComponentWeightTransferCallback(tf.keras.callbacks.Callback):
     Child: Vanilla KL (β=3.0 frozen), weight fades 0.0 → 1.0
     """
 
-    def __init__(self, total_epochs: int, parent_name: str, child_name: str):
+    def __init__(self, total_epochs: int, parent_names: List[str], child_name: str):
         super().__init__()
         self.total_epochs = total_epochs
-        self.parent_name = parent_name
+        self.parent_names = parent_names
         self.child_name = child_name
 
         print(f"\n{'=' * 70}")
         print("COMPONENT WEIGHT TRANSFER")
         print(f"  Total epochs: {total_epochs}")
-        print(f"  Parent: {parent_name} (GMM β=1.0, weight 1.0 → 0.0)")
+        print(f"  Parents: {', '.join(parent_names)} (weight 1.0 → 0.0)")
         print(f"  Child:  {child_name} (Vanilla β=3.0, weight 0.0 → 1.0)")
         print(f"{'=' * 70}\n")
 
@@ -215,7 +215,7 @@ class ComponentWeightTransferCallback(tf.keras.callbacks.Callback):
 
         # Apply to ALL losses for each component
         for loss_name, loss_fn in self.model.loss.items():
-            if self.parent_name in loss_name:
+            if any(parent in loss_name for parent in self.parent_names):
                 if hasattr(loss_fn, "weight"):
                     loss_fn.weight = parent_weight
             elif self.child_name in loss_name:
@@ -598,8 +598,8 @@ class SequentialTrainingScheduler:
                     Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
                 )
                 if len(conditioned_on_z_hat) > 0:
-                    return conditioned_on_z_hat[0]
-        return None
+                    return conditioned_on_z_hat
+        return []
 
     def _get_phase_boundaries(
         self, total_epochs: int, ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3)
@@ -627,11 +627,10 @@ class SequentialTrainingScheduler:
             component_name = train_components[0]
 
             # PROGRESSIVE SECTION - Phase 2 (Child Only)
-
             if self.run_progressive_training.get(component_name):
-                parent_name = self._get_parent_component(component_name)
+                parent_names = self._get_parent_component(component_name)
 
-                if parent_name is not None:
+                if len(parent_names) > 0:
                     component_config = [
                         c
                         for c in self.component_configs
@@ -642,13 +641,16 @@ class SequentialTrainingScheduler:
                     )
 
                     if n_progressive_epochs > 0:
+                        # EDIT HERE LATER: Could split into two sub-phases
+                        # phase2a_epochs = n_progressive_epochs // 2
+                        # phase2b_epochs = n_progressive_epochs - phase2a_epochs
                         print(f"\n{'═' * 70}")
                         print("PHASE 2: COMPONENT WEIGHT TRANSFER")
-                        print(f"  Parent: {parent_name} → Child: {component_name}")
+                        print(f"  Parents: {', '.join(parent_names)} → Child: {component_name}")
                         print(f"  Epochs: {n_progressive_epochs}")
                         print(f"{'═' * 70}\n")
 
-                        run_name = f"Training/{component_order}/WeightTransfer/{parent_name}_to_{component_name}"
+                        run_name = f"Training/{component_order}/WeightTransfer/{'-'.join(parent_names)}_to_{component_name}"
                         mlflow.start_run(
                             experiment_id=experiment.experiment_id, run_name=run_name
                         )
@@ -660,7 +662,7 @@ class SequentialTrainingScheduler:
                         )
 
                         loss_weights, _ = self.setup_component_and_loss_weights(
-                            train_components=[parent_name, component_name],
+                            train_components=parent_names + [component_name],
                             n_batches=n_batches,
                             initial_iteration=None,
                         )
@@ -668,18 +670,23 @@ class SequentialTrainingScheduler:
                         optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
                             learning_rate=learning_rate
                         )
+
+                        # Compile for phase 2
                         self.model.compile(
-                            use_vanilla_kl=False,
-                            use_both_kl=True,
+                            use_vanilla_kl=True,  # Child uses Vanilla
+                            use_both_kl=False,  # Noth both types
                             optimizer=optimizer,
                             loss_weights=loss_weights,
                         )
 
-                        # Set initial KL weights
-                        self.model._vanilla_kl_weights[parent_name].assign(0.0)
-                        self.model._gmm_kl_weights[parent_name].assign(1.0)
+                        # Set initial KL weights after compile
+                        # inside loop for each parent, outside for child
+                        for parent_name in parent_names:
+                            self.model._vanilla_kl_weights[parent_name].assign(0.0)
+                            self.model._gmm_kl_weights[parent_name].assign(1.0)
+
+                        # Child: vanilla β = 3.0 (frozen during weight transfer)
                         self.model._vanilla_kl_weights[component_name].assign(3.0)
-                        self.model._gmm_kl_weights[component_name].assign(0.0)
 
                         kwargs_progressive = deepcopy(kwargs)
                         kwargs_progressive.pop("epochs", None)
@@ -688,7 +695,7 @@ class SequentialTrainingScheduler:
                         callbacks_progressive.append(
                             ComponentWeightTransferCallback(
                                 total_epochs=n_progressive_epochs,
-                                parent_name=parent_name,
+                                parent_names=parent_names,
                                 child_name=component_name,
                             )
                         )
@@ -705,14 +712,12 @@ class SequentialTrainingScheduler:
                         mlflow.end_run()
 
                         # Freeze parent after weight transfer
-                        print(f"\n{'═' * 70}")
                         print(f"FREEZING PARENT: {parent_name}")
-                        print(f"{'═' * 70}\n")
-                        self.model.components[parent_name].trainable = False
+                        for parent_name in parent_names:
+                            self.model.components[parent_name].trainable = False
 
             # NON-PROGRESSIVE SECTION
             # Phase 1 (parent) or Phase 3 (child) - KL Annealing
-
             print(f"\n{'═' * 70}")
             if self.run_progressive_training.get(component_name):
                 print(f"PHASE 3: CHILD KL ANNEALING - {component_name}")
@@ -745,21 +750,22 @@ class SequentialTrainingScheduler:
                 loss_weights=loss_weights,
             )
 
+            # Set KL weights immediately after compile
             self.model._vanilla_kl_weights[component_name].assign(3.0)
             self.model._gmm_kl_weights[component_name].assign(0.0)
-            
+
             # to zero out parent loss at phase3:
             if self.run_progressive_training.get(component_name):
-                parent_name = self._get_parent_component(component_name)
-                if parent_name:
-                    for loss_name, loss_fn in self.model.loss.items():
-                        if parent_name in loss_name:
-                            if hasattr(loss_fn, "weight"):
-                                loss_fn.weight = 0.0
-                                print(f"  Set {loss_name}.weight = 0.0")
+                parent_names = self._get_parent_component(component_name)
+                if len(parent_names) > 0:
+                    for parent_name in parent_names:
+                        for loss_name, loss_fn in self.model.loss.items():
+                            if parent_name in loss_name:
+                                if hasattr(loss_fn, "weight"):
+                                    loss_fn.weight = 0.0
+                                    print(f"  Set {loss_name}.weight = 0.0")
 
             phase_boundaries = self._get_phase_boundaries(max_n_epochs)
-
             callbacks = deepcopy(kwargs.get("callbacks", []))
 
             callbacks.append(
