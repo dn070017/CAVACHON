@@ -24,4 +24,6 @@ Thumbs.db
 *.html
 *.png
 mlruns
-outputs
+outputs# pixi environments
+.pixi/*
+!.pixi/config.toml
