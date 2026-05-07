@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import muon as mu
 import numpy as np
@@ -829,3 +829,271 @@ class Model(tf.keras.Model):
                 component_inputs.setdefault(input_key, conditional_tensors)
 
         return component_inputs
+
+    def encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        components: Optional[List[str]] = None,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Encode requested components into latent outputs.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch.
+
+        components: List[str], optional
+            Component names to encode. Defaults to all components.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``z_parameters`` and ``z`` outputs keyed by
+            component name.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown component names are requested.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(
+                f"Unknown component names: {sorted(unknown_components)}"
+            )
+
+        outputs = {
+            Constants.MODEL_OUTPUTS_Z_PARAMS: dict(),
+            Constants.MODEL_OUTPUTS_Z: dict(),
+        }
+        for component_config in self.component_configs:
+            component_name = component_config.get("name")
+            if component_name not in requested_components:
+                continue
+
+            component_input_config = dict(component_config)
+            component_input_config.update(
+                {
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: [],
+                }
+            )
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_input_config,
+                component_name,
+                self.components,
+                {},
+                {},
+            )
+            component_outputs = self.components.get(component_name).encode(
+                component_batch, training=training
+            )
+            outputs[Constants.MODEL_OUTPUTS_Z_PARAMS][component_name] = (
+                component_outputs.get(Constants.MODEL_OUTPUTS_Z_PARAMS)
+            )
+            outputs[Constants.MODEL_OUTPUTS_Z][component_name] = component_outputs.get(
+                Constants.MODEL_OUTPUTS_Z
+            )
+
+        return outputs
+
+    def hierarchical_encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z: Mapping[str, tf.Tensor],
+        z_hat_seed: Optional[Mapping[str, tf.Tensor]] = None,
+        components: Optional[List[str]] = None,
+        strict: bool = True,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Hierarchically encode requested latents into z_hat.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch used for conditional inputs.
+
+        z: Mapping[str, tf.Tensor]
+            Component-keyed latent samples from ``encode``.
+
+        z_hat_seed: Mapping[str, tf.Tensor], optional
+            Pre-seeded ``z_hat`` values. Defaults to ``{}``.
+
+        components: List[str], optional
+            Component names to process. Defaults to all components.
+
+        strict: bool
+            If ``True``, missing parent ``z`` or ``z_hat`` raises
+            ``ValueError``. If ``False``, missing parents are skipped.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``z_hat`` outputs keyed by component name.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown components, missing ``z``, or missing
+            required parent values are requested in strict mode.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(
+                f"Unknown component names: {sorted(unknown_components)}"
+            )
+
+        accumulated_z_hat = dict(z_hat_seed or {})
+        outputs = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
+        for component_config in self.component_configs:
+            component_name = component_config.get("name")
+            if component_name not in requested_components:
+                continue
+
+            if component_name not in z:
+                raise ValueError(f"Missing z for component '{component_name}'.")
+
+            z_conditional = dict()
+            for parent_name in component_config.get(
+                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z, []
+            ):
+                if parent_name in z:
+                    z_conditional[parent_name] = z.get(parent_name)
+                elif strict:
+                    raise ValueError(
+                        "Missing required parent z for component "
+                        f"'{component_name}': '{parent_name}'."
+                    )
+
+            z_hat_conditional = dict()
+            for parent_name in component_config.get(
+                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
+            ):
+                if parent_name in accumulated_z_hat:
+                    z_hat_conditional[parent_name] = accumulated_z_hat.get(parent_name)
+                elif strict:
+                    raise ValueError(
+                        "Missing required parent z_hat for component "
+                        f"'{component_name}': '{parent_name}'."
+                    )
+
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_config,
+                component_name,
+                self.components,
+                z_conditional,
+                z_hat_conditional,
+            )
+            component_outputs = self.components.get(component_name).hierarchical_encode(
+                component_batch,
+                z.get(component_name),
+                training=training,
+            )
+            component_z_hat = component_outputs.get(Constants.MODEL_OUTPUTS_Z_HAT)
+            accumulated_z_hat[component_name] = component_z_hat
+            outputs[Constants.MODEL_OUTPUTS_Z_HAT][component_name] = component_z_hat
+
+        return outputs
+
+    def decode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z_hat: Mapping[str, tf.Tensor],
+        components: Optional[List[str]] = None,
+        strict: bool = True,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Decode requested component ``z_hat`` tensors into ``x`` params.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch used for conditional inputs.
+
+        z_hat: Mapping[str, tf.Tensor]
+            Component-keyed hierarchical latents. Pass ``z_hat`` here,
+            not raw ``z``.
+
+        components: List[str], optional
+            Component names to decode. Defaults to all components.
+
+        strict: bool
+            If ``True``, missing ``z_hat`` raises ``ValueError``. If
+            ``False``, missing components are skipped.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``x_parameters`` outputs keyed by component and
+            modality.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown components or required ``z_hat`` values
+            are missing.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(
+                f"Unknown component names: {sorted(unknown_components)}"
+            )
+
+        outputs = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
+        for component_config in self.component_configs:
+            component_name = component_config.get("name")
+            if component_name not in requested_components:
+                continue
+
+            component_z_hat = z_hat.get(component_name)
+            if component_z_hat is None:
+                if strict:
+                    raise ValueError(
+                        f"Missing z_hat for component '{component_name}'."
+                    )
+                continue
+
+            component_input_config = dict(component_config)
+            component_input_config.update(
+                {
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: [],
+                }
+            )
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_input_config,
+                component_name,
+                self.components,
+                {},
+                {},
+            )
+            component_outputs = self.components.get(component_name).decode(
+                component_batch,
+                component_z_hat,
+                training=training,
+            )
+            for key, value in component_outputs.items():
+                outputs[Constants.MODEL_OUTPUTS_X_PARAMS][
+                    f"{component_name}_{key}"
+                ] = value
+
+        return outputs
