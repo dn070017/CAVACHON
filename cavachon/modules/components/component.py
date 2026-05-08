@@ -75,6 +75,7 @@ class Component(tf.keras.Model):
         encoder: tf.keras.Model,
         z_prior_parameterizer: tf.keras.layers.Layer,
         hierarchical_encoder: tf.keras.Model,
+        z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model],
         decoders: Mapping[str, tf.keras.Model],
         conditioned_on_z: List[str] = [],
         conditioned_on_z_hat: List[str] = [],
@@ -121,6 +122,9 @@ class Component(tf.keras.Model):
             hierarchical encoder used to encode z_hat hierarchically
             through the dependency between components.
 
+        z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model]
+            sampler used to transform z_parameters into z.
+
         decoders: Mapping[str, tf.keras.Model]
             decoder neural networks. The keys are the name of the
             modality, the values are the corresponding decoder neural
@@ -154,6 +158,7 @@ class Component(tf.keras.Model):
         self.encoder = encoder
         self.z_prior_parameterizer = z_prior_parameterizer
         self.hierarchical_encoder = hierarchical_encoder
+        self.z_sampler = z_sampler
         self.decoders = decoders
         self.conditioned_on_z = conditioned_on_z
         self.conditioned_on_z_hat = conditioned_on_z_hat
@@ -790,12 +795,179 @@ class Component(tf.keras.Model):
             encoder=encoder,
             z_prior_parameterizer=z_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
+            z_sampler=z_sampler,
             decoders=decoders,
             conditioned_on_z=conditioned_on_z,
             conditioned_on_z_hat=conditioned_on_z_hat,
             name=name,
             **kwargs,
         )
+
+    def encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Encode a batch into latent parameters and samples.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Each modality must provide
+            ``{modality_name}_matrix``.
+
+        training: bool, optional
+            Whether to run the encoder path in training mode. Defaults
+            to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with keys ``z_parameters`` and ``z``.
+
+        Raises
+        ------
+        ValueError
+            If a required modality matrix key is missing from ``batch``.
+        """
+        for modality_name in self.modality_names:
+            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            if modality_key not in batch:
+                raise ValueError(
+                    f"Missing required input key '{modality_key}' in batch."
+                )
+
+        preprocessor_inputs = Component.prepare_preprocessor_inputs(
+            batch, self.modality_names
+        )
+        preprocessor_outputs = self.preprocessor(
+            preprocessor_inputs, training=training
+        )
+        z_parameters = self.encoder(
+            preprocessor_outputs.get(self.preprocessor.matrix_key),
+            training=training,
+        )
+        z = self.z_sampler(z_parameters, training=training)
+
+        return {
+            Constants.MODEL_OUTPUTS_Z_PARAMS: z_parameters,
+            Constants.MODEL_OUTPUTS_Z: z,
+        }
+
+    def hierarchical_encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z: tf.Tensor,
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Transform z into z_hat using the hierarchical encoder.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Must contain z_conditional and/or
+            z_hat_conditional keys if the component is conditioned.
+
+        z: tf.Tensor
+            Latent sample from encode(). Expected shape
+            (batch_size, n_latent_dims).
+
+        training: bool, optional
+            Whether to run in training mode. Defaults to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with key ``z_hat``.
+
+        Raises
+        ------
+        tf.errors.InvalidArgumentError
+            If ``z`` does not have rank 2.
+        """
+        tf.debugging.assert_rank(z, 2, message="Expected 'z' to have rank 2.")
+        hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
+            batch, z
+        )
+        z_hat = self.hierarchical_encoder(
+            hierarchical_encoder_inputs, training=training
+        )
+        return {Constants.MODEL_OUTPUTS_Z_HAT: z_hat}
+
+    def decode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z_hat: tf.Tensor,
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Decode a transformed latent sample into modality parameters.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Each modality must provide
+            ``{modality_name}_batch_effect``.
+
+        z_hat: tf.Tensor
+            Hierarchically transformed latent tensor to decode.
+            Expected shape is
+            ``(batch_size, n_latent_dims)``.
+
+        training: bool, optional
+            Whether to run the decoder path in training mode. Defaults
+            to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with keys
+            ``{modality_name}_x_parameters`` for each modality.
+
+        Raises
+        ------
+        ValueError
+            If a required modality batch-effect key is missing from
+            ``batch``.
+
+        ValueError
+            If no decoder is registered for a modality name.
+
+        tf.errors.InvalidArgumentError
+            If ``z_hat`` does not have rank 2.
+        """
+        for modality_name in self.modality_names:
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
+            if modality_batch_key not in batch:
+                raise ValueError(
+                    f"Missing required input key '{modality_batch_key}' in batch."
+                )
+
+        tf.debugging.assert_rank(
+            z_hat, 2, message="Expected 'z_hat' to have rank 2."
+        )
+        preprocessor_inputs = Component.prepare_preprocessor_inputs(
+            batch, self.modality_names
+        )
+        preprocessor_outputs = self.preprocessor(
+            preprocessor_inputs, training=training
+        )
+
+        outputs = dict()
+        for modality_name in self.modality_names:
+            decoder = self.decoders.get(modality_name)
+            if decoder is None:
+                raise ValueError(
+                    f"No decoder found for modality '{modality_name}'."
+                )
+            decoder_inputs = Component.prepare_decoder_inputs(
+                batch, modality_name, z_hat, preprocessor_outputs
+            )
+            x_parameters = decoder(decoder_inputs, training=training)
+            outputs[f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"] = (
+                x_parameters
+            )
+
+        return outputs
 
     def compile(self, **kwargs) -> None:
         """Compile the model before training. Note that the 'metrics'
