@@ -5,8 +5,10 @@ from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
+import numpy as np
 import pandas as pd
 import tensorflow as tf
+from itertools import product 
 
 from cavachon.config.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
@@ -21,6 +23,7 @@ from cavachon.tools.cluster_analysis import ClusterAnalysis
 from cavachon.tools.differential_analysis import DifferentialAnalysis
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
+
 
 class Workflow:
     """Workflow
@@ -96,6 +99,7 @@ class Workflow:
         self.predict()
 
         self.perform_clustering_analysis()
+        self.compute_integrated_clusters()
         self.visualize_embedding()
 
         outdir = os.path.join(self.config.io.outdir, "mdata")
@@ -298,7 +302,9 @@ class Workflow:
 
         # shuffle dataset if needed
         if self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_SHUFFLE):
-            train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(batch_size)
+            train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(
+                batch_size
+            )
         else:
             train_dataset = self.dataloader.dataset.batch(batch_size)
 
@@ -381,6 +387,199 @@ class Workflow:
                 height=760,
                 filename=f"{outdir}/{title}.{extension}".lower().replace(" ", "_"),
             )
+
+    def compute_integrated_clusters(self) -> None:
+        """Compute integrated z_hat clusters for hierarchical components.
+
+        Computes integrated cluster assignments by transforming parent and child
+        GMM priors through the learned b_network weights.
+        Creates cluster labels like 'cluster_RNA_integrated' and saves to mdata.
+        """
+        # Auto-detect hierarchical components
+        for component_config in self.config.components:
+            component_name = component_config.get("name")
+            parent_names = component_config.get("conditioned_on_z_hat", [])
+
+            if not parent_names:
+                continue  # Skip non-hierarchical components
+
+            # Find modality for saving results
+            modality_names = component_config.get("modality_names", [])
+            modality = modality_names[0] if modality_names else component_name
+
+            # Extract GMM parameters for all parents
+            parent_params = []
+            parent_dims = []
+
+            for parent_name in parent_names:
+                prior_parameterizer = self.model.components[
+                    parent_name
+                ].z_prior_parameterizer
+                prior_parameters = tf.squeeze(prior_parameterizer(tf.ones((1, 1))))
+
+                # Extract from the output tensor
+                # Structure: [logits, loc_cluster0, scale_cluster0, loc_cluster1, scale_cluster1, ...]
+                logits = prior_parameters[:, 0].numpy()
+                # Get number of clusters and dimensions
+                n_clusters = len(logits)
+                params = prior_parameters[:, 1:].numpy()  # [n_clusters, params]
+                n_dims = params.shape[1] // 2
+
+                # Extract loc and scale for each cluster
+                loc = params[:, :n_dims]  # [n_clusters, n_dims]
+                scale = params[:, n_dims:]  # [n_clusters, n_dims]
+
+                parent_params.append(
+                    {
+                        "pi": tf.nn.softmax(logits).numpy(),
+                        "mu": loc,
+                        "sigma2": scale**2,
+                        "K": n_clusters,
+                        "D": n_dims,
+                    }
+                )
+                parent_dims.append(n_dims)
+
+            # Extract GMM parameters for child
+            child_parameterizer = self.model.components[
+                component_name
+            ].z_prior_parameterizer
+            child_parameters = tf.squeeze(child_parameterizer(tf.ones((1, 1))))
+
+            child_logits = child_parameters[:, 0].numpy()
+            n_clusters = len(child_logits)
+
+            params = child_parameters[:, 1:].numpy()
+            n_dims = params.shape[1] // 2
+
+            child_mu = params[:, :n_dims]
+            child_scale = params[:, n_dims:]
+
+            child_pi = tf.nn.softmax(child_logits).numpy()
+            child_sigma2 = child_scale ** 2
+            
+            # Extract b_network weights
+            W, bias = self.model.components[
+                component_name
+            ].hierarchical_encoder.b_network.get_weights()
+
+            # Split W by parent dimensions
+            W_parts = []
+            offset = 0
+            for dim in parent_dims:
+                W_parts.append(W[offset : offset + dim, :])
+                offset += dim
+            W_child = W[offset:, :]
+
+            # Compute all integrated cluster parameters (vectorized)
+            cluster_ranges = [range(p["K"]) for p in parent_params] + [
+                range(len(child_pi))
+            ]
+            n_clusters = np.prod([len(r) for r in cluster_ranges])
+            D_out = bias.shape[0]
+
+            mu_zhat = np.zeros((n_clusters, D_out))
+            sigma2_zhat = np.zeros((n_clusters, D_out))
+            pi_zhat = np.zeros(n_clusters)
+
+            # Compute all combinations efficiently
+            for idx, indices in enumerate(product(*cluster_ranges)):
+                parent_idx = indices[:-1]
+                child_idx = indices[-1]
+
+                # Mean: sum of weighted parent means + weighted child mean + bias
+                mu_zhat[idx] = bias
+                for p_idx, W_p, p_params in zip(parent_idx, W_parts, parent_params):
+                    mu_zhat[idx] += W_p.T @ p_params["mu"][p_idx]
+                mu_zhat[idx] += W_child.T @ child_mu[child_idx]
+
+                # Variance: sum of weighted parent variances + weighted child variance
+                sigma2_zhat[idx] = np.zeros_like(bias)
+                for p_idx, W_p, p_params in zip(parent_idx, W_parts, parent_params):
+                    sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
+                sigma2_zhat[idx] += (W_child**2).T @ child_sigma2[child_idx]
+
+                # Prior: product of all priors
+                pi_zhat[idx] = child_pi[child_idx]
+                for p_idx, p_params in zip(parent_idx, parent_params):
+                    pi_zhat[idx] *= p_params["pi"][p_idx]
+                    
+            print(f"\n{'='*70}")
+            print(f"DEBUG: Integrated clustering for {component_name}")
+            print(f"  Parent clusters: {[p['K'] for p in parent_params]}")
+            print(f"  Child clusters: {len(child_pi)}")
+            print(f"  Total integrated clusters created: {n_clusters}")
+            print(f"\nIntegrated cluster parameters:")
+            print(f"  pi_zhat (cluster priors): {pi_zhat}")
+            print(f"  mu_zhat sample (first 3 clusters, first 3 dims):")
+            for i in range(min(3, n_clusters)):
+                print(f"    Cluster {i}: {mu_zhat[i, :3]}")
+            print(f"  sigma2_zhat sample (first 3 clusters, first 3 dims):")
+            for i in range(min(3, n_clusters)):
+                print(f"    Cluster {i}: {sigma2_zhat[i, :3]}")
+            print(f"{'='*70}")
+
+            # Compute log probabilities
+            z_hat = self.mdata.mod[modality].obsm[f"z_hat_{component_name}"]
+            N = z_hat.shape[0]
+            print(f"  Sample count: {N}")
+
+            logpy = np.log(pi_zhat + 1e-7)
+            logpy_zhat = np.zeros((N, n_clusters))
+
+            for k in range(n_clusters):
+                diff = z_hat - mu_zhat[k]
+                log_likelihood = -0.5 * np.sum(
+                np.log(2 * np.pi * sigma2_zhat[k]) + (diff**2) / sigma2_zhat[k],
+                axis=1,
+                )
+                logpy_zhat[:, k] = logpy[k] + log_likelihood
+            
+            print(f"\nCluster distinctness check:")
+            print(f"  Are all mu_zhat identical? {np.allclose(mu_zhat, mu_zhat[0])}")
+            print(f"  mu_zhat std across clusters: {np.std(mu_zhat, axis=0)[:3]}")
+
+            # Assign clusters
+            cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
+            print(f"\nInitial assignment:")
+            unique, counts = np.unique(cluster, return_counts=True)
+            for u, c in zip(unique, counts):
+                print(f"  Cluster {u}: {c} samples")
+
+
+
+            # Save with same naming format
+            cluster_key = f"cluster_{component_name}_integrated"
+            self.mdata.mod[modality].obs[cluster_key] = [
+                f"Cluster {x:03d}" for x in cluster
+            ]
+
+            min_n_obs = 35
+            _keep = self.mdata.mod[modality].obs[cluster_key].value_counts()
+            print(f"\nAfter cleanup:")
+            print(f"  Final clusters: {len(_keep)}")
+            for idx, count in _keep.items():
+                print(f"  {idx}: {count} samples")
+            print(f"{'='*70}\n")
+
+
+
+            while (_keep < min_n_obs).sum() > 0:
+                keep = []
+                for i, x in zip(_keep.index, _keep):
+                    if x >= min_n_obs:
+                        keep.append(int(i.split(" ")[1]))
+                logpy_zhat = logpy_zhat[:, keep]
+                cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
+
+                self.mdata.mod[modality].obsm[
+                    f"logpy_zhat_{component_name}_integrated"
+                ] = logpy_zhat
+                self.mdata.mod[modality].obs[cluster_key] = [
+                    f"Cluster {x:03d}" for x in cluster
+                ]
+
+                _keep = self.mdata.mod[modality].obs[cluster_key].value_counts()
 
     def visualize_knn(self, use_cluster, n_neighbors) -> None:
         """Visualize k-nearest neighbors"""

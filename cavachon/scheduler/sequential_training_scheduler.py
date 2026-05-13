@@ -797,8 +797,8 @@ class SequentialTrainingScheduler:
                 callbacks.append(
                     tf.keras.callbacks.EarlyStopping(
                         monitor="loss",
-                        min_delta=50,
-                        patience=1100,
+                        min_delta=5,
+                        patience=max(10, int(kwargs.get("epochs", 1) / 20)),
                         restore_best_weights=True,
                         verbose=1,
                     )
