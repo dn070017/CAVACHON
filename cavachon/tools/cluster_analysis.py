@@ -57,7 +57,7 @@ class ClusterAnalysis:
         batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
         distribution_names: Optional[Dict[str, str]] = None,
         batch_size: int = 128,
-        min_n_obs=40,
+        min_n_obs=36,
     ) -> np.array:
         """Compute the log probability of a sample being assigned to
         each cluster in the latent space of the specified component.

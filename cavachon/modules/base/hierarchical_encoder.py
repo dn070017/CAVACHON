@@ -56,10 +56,12 @@ class HierarchicalEncoder(tf.keras.Model):
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)
         self.r_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims)], name=Constants.MODULE_R_NETWORK
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=False)], 
+            name=Constants.MODULE_R_NETWORK
         )
         self.b_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims)], name=Constants.MODULE_B_NETWORK
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=False)], 
+            name=Constants.MODULE_B_NETWORK
         )
 
     def call(
