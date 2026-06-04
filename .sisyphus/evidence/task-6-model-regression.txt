@@ -1,0 +1,79 @@
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/muon/_core/preproc.py:31: FutureWarning: `__version__` is deprecated, use `importlib.metadata.version('scanpy')` instead
+  if Version(scanpy.__version__) < Version("1.10"):
+/home/pinghanh/Work/CAVACHON/cavachon/config/config_mapping/component_config_mapping.py:186: RuntimeWarning: Unexpected field n_vars in modalities of comp_A config. Please check if there is any unintentional typo. Some fields might be set to default unexpectedly. Expected fields: {'n_decoder_layers', 'save_x', 'distribution_names', 'name', 'save_z'}
+  warnings.warn(message, RuntimeWarning)
+/home/pinghanh/Work/CAVACHON/cavachon/config/config_mapping/component_config_mapping.py:186: RuntimeWarning: Unexpected field n_vars in modalities of comp_B config. Please check if there is any unintentional typo. Some fields might be set to default unexpectedly. Expected fields: {'n_decoder_layers', 'save_x', 'distribution_names', 'name', 'save_z'}
+  warnings.warn(message, RuntimeWarning)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'RNA_matrix' mapping to value <KerasTensor shape=(None, 8), dtype=float32, sparse=False, ragged=False, name=RNA> which has name 'RNA'. Change the tensor name to 'RNA_matrix' (via `Input(..., name='RNA_matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'matrix' mapping to value <KerasTensor shape=(None, 64), dtype=float32, sparse=False, ragged=False, name=keras_tensor_8> which has name 'keras_tensor_8'. Change the tensor name to 'matrix' (via `Input(..., name='matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'ATAC_matrix' mapping to value <KerasTensor shape=(None, 6), dtype=float32, sparse=False, ragged=False, name=ATAC> which has name 'ATAC'. Change the tensor name to 'ATAC_matrix' (via `Input(..., name='ATAC_matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'matrix' mapping to value <KerasTensor shape=(None, 64), dtype=float32, sparse=False, ragged=False, name=keras_tensor_46> which has name 'keras_tensor_46'. Change the tensor name to 'matrix' (via `Input(..., name='matrix')`)
+  warnings.warn(
+============================================================
+Model encode/decode QA tests
+============================================================
+
+[Test 1] Model.encode() happy path
+  [[92mPASS[0m] returns 'z_parameters' key
+  [[92mPASS[0m] returns 'z' key
+  [[92mPASS[0m] z_parameters keyed by comp_A
+  [[92mPASS[0m] z_parameters keyed by comp_B
+  [[92mPASS[0m] z keyed by comp_A
+  [[92mPASS[0m] z keyed by comp_B
+  [[92mPASS[0m] comp_A z shape  ((4, 4))
+  [[92mPASS[0m] comp_B z shape  ((4, 4))
+
+[Test 2] Model.encode() with components filter
+  [[92mPASS[0m] z has comp_A
+  [[92mPASS[0m] z does not have comp_B
+
+[Test 3] Model.encode() raises ValueError on unknown component
+  [[92mPASS[0m] raises ValueError
+  [[92mPASS[0m] error mentions unknown component  (Unknown component names: ['nonexistent'])
+
+[Test 4] Model.hierarchical_encode() happy path
+  [[92mPASS[0m] returns 'z_hat' key
+  [[92mPASS[0m] z_hat keyed by comp_A
+  [[92mPASS[0m] z_hat keyed by comp_B
+  [[92mPASS[0m] comp_A z_hat shape  ((4, 4))
+  [[92mPASS[0m] comp_B z_hat shape  ((4, 4))
+
+[Test 5] Model.hierarchical_encode() strict=True raises on missing z
+  [[92mPASS[0m] raises ValueError  (Missing z for component 'comp_A'.)
+
+[Test 6] Model.decode() happy path
+  [[92mPASS[0m] returns 'x_parameters' key
+  [[92mPASS[0m] x_parameters has comp_A_RNA_x_parameters
+  [[92mPASS[0m] x_parameters has comp_B_ATAC_x_parameters
+  [[92mPASS[0m] comp_A RNA x_parameters batch dim  ((4, 16))
+
+[Test 7] Model.decode() strict=True raises on missing z_hat
+  [[92mPASS[0m] raises ValueError  (Missing z_hat for component 'comp_A'.)
+
+[Test 8] Model.decode() strict=False skips missing component silently
+  [[92mPASS[0m] returns x_parameters
+  [[92mPASS[0m] comp_A present
+  [[92mPASS[0m] comp_B absent (skipped)
+
+[Test 9] Full staged round-trip encode → hierarchical_encode → decode
+  [[92mPASS[0m] enc z comp_A shape  ((6, 4))
+  [[92mPASS[0m] hier z_hat comp_A shape  ((6, 4))
+  [[92mPASS[0m] dec RNA x_parameters shape[0]  ((6, 16))
+  [[92mPASS[0m] dec ATAC x_parameters shape[0]  ((6, 12))
+
+[Test 10] Model.__call__() backward compat — output keys unchanged
+  [[92mPASS[0m] output has key 'comp_A_z'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_A_z_hat'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_A_z_parameters'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_A_RNA_x_parameters'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_B_z'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_B_z_hat'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_B_z_parameters'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+  [[92mPASS[0m] output has key 'comp_B_ATAC_x_parameters'  (keys=['comp_A_RNA_x_parameters', 'comp_A_z', 'comp_A_z_hat', 'comp_A_z_parameters', 'comp_A_z_prior_parameters', 'comp_B_ATAC_x_parameters', 'comp_B_z', 'comp_B_z_hat', 'comp_B_z_parameters', 'comp_B_z_prior_parameters'])
+
+============================================================
+[92mAll 38 checks passed.[0m
+============================================================

@@ -1,0 +1,23 @@
+=== Task 6 Validation Matrix ===
+Generated: 2026-06-05
+
+Command 1 — import sanity
+  from cavachon.tools import HierarchicalDifferentialAnalysis
+  Result: HierarchicalDifferentialAnalysis
+  Exit code: 0  [PASS]
+
+Command 2 — existing DEG regression (test_differential_analysis.py)
+  All 14 checks passed.
+  Exit code: 0  [PASS]
+
+Command 3 — existing model encode/decode regression (test_model_encode_decode.py)
+  All 38 checks passed.
+  Exit code: 0  [PASS]
+
+Command 4 — existing imports regression
+  from cavachon.tools import DifferentialAnalysis, ClusterAnalysis, AttributionAnalysis
+  Result: ok
+  Exit code: 0  [PASS]
+
+=== Overall Verdict: PASS ===
+All 4 targeted suites exit 0. No regressions detected.

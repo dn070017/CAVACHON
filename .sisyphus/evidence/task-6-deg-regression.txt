@@ -1,0 +1,111 @@
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/muon/_core/preproc.py:31: FutureWarning: `__version__` is deprecated, use `importlib.metadata.version('scanpy')` instead
+  if Version(scanpy.__version__) < Version("1.10"):
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/cavachon/config/config_mapping/component_config_mapping.py:186: RuntimeWarning: Unexpected field n_vars in modalities of comp_A config. Please check if there is any unintentional typo. Some fields might be set to default unexpectedly. Expected fields: {'name', 'save_z', 'distribution_names', 'n_decoder_layers', 'save_x'}
+  warnings.warn(message, RuntimeWarning)
+/home/pinghanh/Work/CAVACHON/cavachon/config/config_mapping/component_config_mapping.py:186: RuntimeWarning: Unexpected field n_vars in modalities of comp_B config. Please check if there is any unintentional typo. Some fields might be set to default unexpectedly. Expected fields: {'name', 'save_z', 'distribution_names', 'n_decoder_layers', 'save_x'}
+  warnings.warn(message, RuntimeWarning)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'RNA_matrix' mapping to value <KerasTensor shape=(None, 8), dtype=float32, sparse=False, ragged=False, name=RNA> which has name 'RNA'. Change the tensor name to 'RNA_matrix' (via `Input(..., name='RNA_matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'matrix' mapping to value <KerasTensor shape=(None, 64), dtype=float32, sparse=False, ragged=False, name=keras_tensor_8> which has name 'keras_tensor_8'. Change the tensor name to 'matrix' (via `Input(..., name='matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'ATAC_matrix' mapping to value <KerasTensor shape=(None, 6), dtype=float32, sparse=False, ragged=False, name=ATAC> which has name 'ATAC'. Change the tensor name to 'ATAC_matrix' (via `Input(..., name='ATAC_matrix')`)
+  warnings.warn(
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/keras/src/models/functional.py:107: UserWarning: When providing `inputs` as a dict, all keys in the dict must match the names of the corresponding tensors. Received key 'matrix' mapping to value <KerasTensor shape=(None, 64), dtype=float32, sparse=False, ragged=False, name=keras_tensor_46> which has name 'keras_tensor_46'. Change the tensor name to 'matrix' (via `Input(..., name='matrix')`)
+  warnings.warn(
+============================================================
+DifferentialAnalysis QA tests
+============================================================
+
+[Baseline] Capturing pre-refactor baseline artifact...
+  0%|          | 0/2 [00:00<?, ?it/s]/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+ 50%|█████     | 1/2 [00:00<00:00,  6.86it/s]/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+100%|██████████| 2/2 [00:00<00:00,  8.10it/s]100%|██████████| 2/2 [00:00<00:00,  7.88it/s]
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+Baseline saved to /home/pinghanh/Work/CAVACHON/.sisyphus/evidence/task-1-baseline.json
+
+[Test 1] compute_x_means() happy path
+  [[92mPASS[0m] returns numpy array
+  [[92mPASS[0m] array is 2D  (ndim=2)
+  [[92mPASS[0m] correct number of vars (8)  (shape=(20, 8))
+  [[92mPASS[0m] all finite values  (has_nan=False)
+
+[Test 2] between_two_groups() happy path
+  0%|          | 0/2 [00:00<?, ?it/s]/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+100%|██████████| 2/2 [00:00<00:00, 11.61it/s]100%|██████████| 2/2 [00:00<00:00, 11.61it/s]
+  [[92mPASS[0m] returns DataFrame
+  [[92mPASS[0m] correct number of rows (= n_vars = 8)  (len=8)
+  [[92mPASS[0m] all expected columns present  (cols=['Mean(A)', 'Mean(B)', 'P(A>B|Z)', 'P(B>A|Z)', 'K(A>B|Z)', 'K(B>A|Z)'])
+  [[92mPASS[0m] all finite values
+
+[Test 3] between_two_groups() column schema
+  0%|          | 0/2 [00:00<?, ?it/s]/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+ 50%|█████     | 1/2 [00:00<00:00,  9.83it/s]/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+100%|██████████| 2/2 [00:00<00:00, 10.71it/s]
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1416: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("var", axis=0, join_common=join_common)
+/home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/mudata/_core/mudata.py:1272: FutureWarning: From 0.4 .update() will not pull obs/var columns from individual modalities by default anymore. Set mudata.set_options(pull_on_update=False) to adopt the new behaviour, which will become the default. Use new pull_obs/pull_var and push_obs/push_var methods for more flexibility.
+  self._update_attr("obs", axis=1, join_common=join_common)
+  [[92mPASS[0m] exact column names match  (got=['Mean(A)', 'Mean(B)', 'P(A>B|Z)', 'P(B>A|Z)', 'K(A>B|Z)', 'K(B>A|Z)'])
+  [[92mPASS[0m] P(A>B|Z) in [0,1]
+  [[92mPASS[0m] P(B>A|Z) in [0,1]
+
+[Test 4] compute_x_means() edge case — singleton group (x_sampling_size=1)
+  [[92mPASS[0m] does not crash with singleton group
+  [[92mPASS[0m] result is 2D numpy array  (shape=(1, 8))
+
+[Test 5] compute_x_means() is deterministic with training=False and fixed numpy seed
+  [[92mPASS[0m] two runs with same numpy seed produce near-identical results (atol=1e-2)  (max_diff=0.00132155)
+
+============================================================
+[92mAll 14 checks passed.[0m
+============================================================
