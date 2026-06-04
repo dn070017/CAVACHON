@@ -381,7 +381,7 @@ class DifferentialAnalysis:
         component: str,
         modality: str,
         batch_effect: Mapping[str, tf.Tensor],
-        training: bool = True,
+        training: bool = False,
         batch_size: int = 128,
     ) -> np.ndarray:
         """Compute the means of generative data.
@@ -430,6 +430,16 @@ class DifferentialAnalysis:
 
         x_means = []
         for batch in dataset.batch(batch_size):
+            encode_outputs = self.model.encode(
+                batch, components=[component], training=training
+            )
+            z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
+
+            hier_outputs = self.model.hierarchical_encode(
+                batch, z, components=[component], training=training
+            )
+            z_hat = hier_outputs[Constants.MODEL_OUTPUTS_Z_HAT]
+
             for modality_name in modality_names:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 n_obs_batch = batch[batch_effect_key].shape[0]
@@ -442,8 +452,10 @@ class DifferentialAnalysis:
                 batch[batch_effect_key] = tf.gather(
                     batch_effect[modality_name], random_batch_index, axis=0
                 )
-            result = self.model(batch, training=training)
-            x_parameters = result.get(
+            decode_outputs = self.model.decode(
+                batch, z_hat, components=[component], training=training
+            )
+            x_parameters = decode_outputs[Constants.MODEL_OUTPUTS_X_PARAMS].get(
                 f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
             )
             dist_x_z = dist_x_z_class.from_parameterizer_output(x_parameters)
