@@ -1,0 +1,22 @@
+test_hierarchical_differential_analysis.py::test_class_is_importable
+test_hierarchical_differential_analysis.py::test_preserves_legacy_deg_schema
+test_hierarchical_differential_analysis.py::test_cluster_level_z_substitution_changes_results
+test_hierarchical_differential_analysis.py::test_seeded_substitution_is_deterministic
+test_hierarchical_differential_analysis.py::test_missing_donor_cluster_raises
+test_hierarchical_differential_analysis.py::test_empty_recipient_group_raises
+
+=============================== warnings summary ===============================
+.pixi/envs/default/lib/python3.11/site-packages/muon/_core/preproc.py:31
+  /home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/muon/_core/preproc.py:31: FutureWarning: `__version__` is deprecated, use `importlib.metadata.version('scanpy')` instead
+    if Version(scanpy.__version__) < Version("1.10"):
+
+.pixi/envs/default/lib/python3.11/site-packages/tensorflow_probability/python/__init__.py:57
+  /home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/tensorflow_probability/python/__init__.py:57: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.
+    if (distutils.version.LooseVersion(tf.__version__) <
+
+.pixi/envs/default/lib/python3.11/site-packages/tensorflow_probability/python/__init__.py:58
+  /home/pinghanh/Work/CAVACHON/.pixi/envs/default/lib/python3.11/site-packages/tensorflow_probability/python/__init__.py:58: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.
+    distutils.version.LooseVersion(required_tensorflow_version)):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6 tests collected in 5.88s
