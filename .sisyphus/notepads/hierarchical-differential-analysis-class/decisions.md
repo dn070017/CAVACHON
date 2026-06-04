@@ -1,0 +1,2 @@
+- Contract scope is documentation-only; no production source files or tests were modified.
+- Compatibility proof is based on the existing DifferentialAnalysis.between_two_groups legacy column order.

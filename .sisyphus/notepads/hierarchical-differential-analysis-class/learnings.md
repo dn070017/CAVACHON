@@ -1,0 +1,3 @@
+- Frozen v1 contract for HierarchicalDifferentialAnalysis uses the parent DifferentialAnalysis constructor shape unchanged.
+- between_clusters is documented as a public additive API with donor-pool sampling over donor cluster z values and deterministic seed behavior.
+- Legacy DEG columns must remain exactly: Mean(A), Mean(B), P(A>B|Z), P(B>A|Z), K(A>B|Z), K(B>A|Z).
