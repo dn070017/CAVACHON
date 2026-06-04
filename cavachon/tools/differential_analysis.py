@@ -407,7 +407,7 @@ class DifferentialAnalysis:
         training: bool
             if True, the forward pass will perform sampling with
             reparameterization. Otherwise, the mean value of the latent
-            distribution is used. Defaults to True.
+            distribution is used. Defaults to False.
 
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
@@ -430,14 +430,10 @@ class DifferentialAnalysis:
 
         x_means = []
         for batch in dataset.batch(batch_size):
-            encode_outputs = self.model.encode(
-                batch, components=[component], training=training
-            )
+            encode_outputs = self.model.encode(batch, training=training)
             z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
 
-            hier_outputs = self.model.hierarchical_encode(
-                batch, z, components=[component], training=training
-            )
+            hier_outputs = self.model.hierarchical_encode(batch, z, training=training)
             z_hat = hier_outputs[Constants.MODEL_OUTPUTS_Z_HAT]
 
             for modality_name in modality_names:
