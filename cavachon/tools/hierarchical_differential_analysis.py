@@ -50,23 +50,54 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         return mu.MuData(adata_dict)
 
+    def _normalize_donor_components(
+        self, donor_components: list[str] | None, component: str
+    ) -> list[str]:
+        if donor_components is None:
+            return [component]
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for name in donor_components:
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+
+        if not result:
+            raise ValueError("donor_components must not be empty.")
+
+        valid = set(self.model.components.keys())
+        unknown = seen - valid
+        if unknown:
+            raise ValueError(
+                f"Unknown donor component(s): {sorted(unknown)}. "
+                f"Valid components: {sorted(valid)}"
+            )
+
+        return result
+
     def _encode_z_pool(
-        self, mdata: mu.MuData, component: str, batch_size: int
-    ) -> np.ndarray:
+        self, mdata: mu.MuData, donor_components: list[str], batch_size: int
+    ) -> dict[str, np.ndarray]:
         dataloader = self._make_dataloader(mdata, batch_size)
 
-        donor_z_pool = []
+        pools: dict[str, list[np.ndarray]] = {name: [] for name in donor_components}
         dataset = self._require_dataset(dataloader)
         for batch in dataset.batch(batch_size):
             encode_outputs = self.model.encode(batch, training=False)
             z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
             self.model.hierarchical_encode(batch, z, training=False)
-            donor_z_pool.append(z[component].numpy())
+            for name in donor_components:
+                pools[name].append(z[name].numpy())
 
-        if not donor_z_pool:
-            return np.empty((0, 0), dtype=np.float32)
+        result: dict[str, np.ndarray] = {}
+        for name in donor_components:
+            if pools[name]:
+                result[name] = np.vstack(pools[name])
+            else:
+                result[name] = np.empty((0, 0), dtype=np.float32)
 
-        return np.vstack(donor_z_pool)
+        return result
 
     def _build_batch_effect(self, batch_size: int) -> Mapping[str, tf.Tensor]:
         batch_effect = dict()
@@ -89,7 +120,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         dataset: tf.data.Dataset,
         component: str,
         modality: str,
-        donor_z_pool: np.ndarray,
+        donor_z_pools: dict[str, np.ndarray],
         batch_effect: Mapping[str, tf.Tensor],
         training: bool = False,
         batch_size: int = 128,
@@ -114,10 +145,12 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 n_obs_batch = batch[batch_effect_key].shape[0]
 
-            indices = np.random.choice(len(donor_z_pool), size=n_obs_batch, replace=True)
-            donor_z_sample = tf.constant(donor_z_pool[indices], dtype=tf.float32)
+            first_pool = next(iter(donor_z_pools.values()))
+            indices = np.random.choice(len(first_pool), size=n_obs_batch, replace=True)
+
             z_substituted = dict(z)
-            z_substituted[component] = donor_z_sample
+            for name, pool in donor_z_pools.items():
+                z_substituted[name] = tf.constant(pool[indices], dtype=tf.float32)
 
             hier_outputs_substituted = self.model.hierarchical_encode(
                 batch, z_substituted, training=training
@@ -152,7 +185,61 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         n_samples: int = 10,
         seed: int | None = None,
         batch_size: int = 128,
+        donor_components: list[str] | None = None,
     ) -> pd.DataFrame:
+        """Compute differential expression between donor and recipient clusters.
+
+        Performs latent substitution: samples ``z`` from the donor cluster for each
+        component in ``donor_components``, substitutes them into recipient-cell
+        encodings, and compares the resulting decoded expression against the
+        unmodified recipient expression.
+
+        Parameters
+        ----------
+        donor_cluster : str
+            Cluster label from which latent representations are drawn.
+        recipient_cluster : str
+            Cluster label whose cells provide recipient encodings and baseline
+            expression.
+        component : str
+            **DEG target**: model component whose output distribution is decoded and
+            compared. Controls distribution lookup and ``model.decode(components=
+            [component], ...)``. NOT the donor selection unless also listed in
+            ``donor_components``.
+        modality : str
+            **DEG target modality**: omics layer within ``component`` whose mean
+            expression is compared (e.g. ``"RNA"``).
+        use_cluster : str
+            Column in ``mdata[modality].obs`` containing cluster labels.
+        n_samples : int, optional
+            Monte-Carlo sampling rounds. Default ``10``.
+        seed : int | None, optional
+            NumPy random seed. Default ``None``.
+        batch_size : int, optional
+            Batch size for encoding and decoding. Default ``128``.
+        donor_components : list[str] | None, optional
+            Names of model components whose ``z`` latent vectors are replaced by
+            samples drawn from the donor cluster. Duplicates are removed preserving
+            order. Defaults to ``[component]`` when ``None``, reproducing the
+            original single-component substitution behaviour.
+
+            Controls **which latent dimensions are swapped**; independent of the
+            DEG decode target (``component`` / ``modality``).
+
+        Returns
+        -------
+        pd.DataFrame
+            Bayesian-factor table with columns: ``InterventionType``,
+            ``DonorCluster``, ``RecipientCluster``, ``SamplingStrategy``,
+            ``RandomSeed``, ``MeanDelta(Substituted-Original)``,
+            ``DonorComponents`` (comma-separated sorted component names).
+
+        Raises
+        ------
+        ValueError
+            If clusters are unknown/empty or ``donor_components`` contains unknown
+            names or resolves to an empty list.
+        """
         obs = self.mdata[modality].obs
         cluster_labels = obs[use_cluster]
         if hasattr(cluster_labels, "cat"):
@@ -168,14 +255,19 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         if seed is not None:
             np.random.seed(seed)
 
+        normalized_donor_components = self._normalize_donor_components(
+            donor_components, component
+        )
+
         recipient_index = obs[obs[use_cluster] == recipient_cluster].index
 
         if len(recipient_index) == 0:
             raise ValueError(f"Recipient cluster '{recipient_cluster}' is empty.")
 
         donor_mdata = self._get_cluster_mdata(donor_cluster, use_cluster, modality)
-        donor_z_pool = self._encode_z_pool(donor_mdata, component, batch_size)
-        if len(donor_z_pool) == 0:
+        donor_z_pools = self._encode_z_pool(donor_mdata, normalized_donor_components, batch_size)
+
+        if all(len(v) == 0 for v in donor_z_pools.values()):
             raise ValueError(f"Donor cluster '{donor_cluster}' is empty.")
 
         batch_effect = self._build_batch_effect(batch_size)
@@ -195,7 +287,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     dataset=recipient_dataset,
                     component=component,
                     modality=modality,
-                    donor_z_pool=donor_z_pool,
+                    donor_z_pools=donor_z_pools,
                     batch_effect=batch_effect,
                     batch_size=batch_size,
                 )
@@ -225,5 +317,6 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         result["MeanDelta(Substituted-Original)"] = (
             result["Mean(A)"] - result["Mean(B)"]
         )
+        result["DonorComponents"] = ",".join(sorted(normalized_donor_components))
 
         return result
