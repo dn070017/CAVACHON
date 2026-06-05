@@ -1,0 +1,3 @@
+T7_OK | Shape: (8, 13) | DC: comp_A | MD: 0.0000
+Explicit donor_components=['comp_A'] verified.
+Schema includes DonorComponents and MeanDelta(Substituted-Original).

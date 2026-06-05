@@ -1,0 +1,3 @@
+T8a_OK - Unknown donor component raises ValueError containing invalid name
+T8b_OK - Empty donor list raises ValueError
+T8c_OK - Multi-component donor_components=['comp_A','comp_B'] produces DonorComponents: comp_A,comp_B

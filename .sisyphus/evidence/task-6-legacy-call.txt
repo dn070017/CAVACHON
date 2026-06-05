@@ -1,0 +1,3 @@
+T6_OK | Shape: (8, 13) | AllCols: True | DC: comp_A
+Legacy backward compatibility verified: donor_components omitted defaults to [component].
+All 13 expected columns present.
