@@ -547,6 +547,10 @@ class SequentialTrainingScheduler:
                     return conditioned_on_z_hat
         return []
 
+    # ==================================================================
+    # Public API
+    # ==================================================================
+
     def fit(
         self,
         x: tf.data.Dataset,
@@ -582,22 +586,317 @@ class SequentialTrainingScheduler:
             history of model.fit in each step.
         """
         n_batches = len(x)
-        learning_rate = self.learning_rate
         history = []
         max_n_epochs = kwargs.get("epochs", 100)
 
-        experiment_name = self.model.name
-        mlflow.set_experiment(experiment_name)
-        experiment = mlflow.get_experiment_by_name(experiment_name)
-
+        self._compile_model(self.learning_rate)
+        experiment = self._mlflow_experiment()
         is_single_component = len(self.training_order) == 1
 
-        # --------------------------------
-        # Compile ONCE — all losses backed by tf.Variables
-        # --------------------------------
-        all_components = [
-            c.get("name") for c in self.component_configs
-        ]
+        for component_order, train_components in enumerate(
+            self.training_order
+        ):
+            component_name = train_components[0]
+            self.setup_component_and_loss_weights(
+                train_components, n_batches
+            )
+
+            # --- Parent annealing ---
+            if self.run_progressive_training.get(component_name):
+                parent_names = self._get_parent_component(component_name)
+                if parent_names:
+                    n_prog_epochs = self._get_progressive_epochs(
+                        component_name
+                    )
+                    if n_prog_epochs > 0:
+                        self.setup_component_and_loss_weights(
+                            parent_names + [component_name], n_batches
+                        )
+                        self._run_parent_annealing_phase(
+                            component_name=component_name,
+                            component_order=component_order,
+                            parent_names=parent_names,
+                            n_prog_epochs=n_prog_epochs,
+                            x=x,
+                            history=history,
+                            experiment=experiment,
+                            enable_kl_annealing=enable_kl_annealing,
+                            kl_annealing_ratios=kl_annealing_ratios,
+                            kwargs=kwargs,
+                        )
+
+            # --- Regular training ---
+            self.setup_component_and_loss_weights(
+                train_components, n_batches
+            )
+            self._run_regular_training_phase(
+                component_name=component_name,
+                component_order=component_order,
+                x=x,
+                history=history,
+                experiment=experiment,
+                enable_kl_annealing=enable_kl_annealing,
+                kl_annealing_ratios=kl_annealing_ratios,
+                max_n_epochs=max_n_epochs,
+                is_single_component=is_single_component,
+                kwargs=kwargs,
+            )
+
+        return history
+
+    # ==================================================================
+    # Phase runners
+    # ==================================================================
+
+    def _run_parent_annealing_phase(
+        self,
+        component_name,
+        component_order,
+        parent_names,
+        n_prog_epochs,
+        x,
+        history,
+        experiment,
+        enable_kl_annealing,
+        kl_annealing_ratios,
+        kwargs,
+    ):
+        """Run the parent→child annealing phase (progressive epochs)."""
+        self._print_phase_header(
+            "PARENT ANNEALING",
+            f"Parents: {', '.join(parent_names)} → Child: {component_name}",
+            n_prog_epochs,
+            "standard_kl (child, β=3.0) + GMM (parent, β=1.0)"
+            if enable_kl_annealing
+            else "GMM only (both, β=1.0)",
+        )
+
+        run_name = (
+            f"Training/{component_order}/ParentAnnealing/"
+            f"{'-'.join(parent_names)}_to_{component_name}"
+        )
+        self._mlflow_start_run(run_name, experiment)
+
+        kwargs_prog = deepcopy(kwargs)
+        kwargs_prog.pop("epochs", None)
+        callbacks_prog = deepcopy(kwargs.get("callbacks", []))
+
+        schedule, kmeans_epoch = self._make_parent_annealing_schedule(
+            parent_names=parent_names,
+            component_name=component_name,
+            n_prog_epochs=n_prog_epochs,
+            enable_kl_annealing=enable_kl_annealing,
+            kl_annealing_ratios=kl_annealing_ratios,
+        )
+        callbacks_prog.append(
+            AnnealingCallback(
+                schedule=schedule,
+                kmeans_epoch=kmeans_epoch,
+                scheduler=self,
+                component_name=component_name,
+            )
+        )
+
+        history.append(
+            self.model.fit(
+                x,
+                epochs=n_prog_epochs,
+                callbacks=callbacks_prog,
+                **kwargs_prog,
+            )
+        )
+
+        mlflow.end_run()
+
+        # Freeze parents and zero their weights
+        for pn in parent_names:
+            self.model.components[pn].trainable = False
+            print(f"  Frozen parent: {pn}")
+        self._zero_component_variables(parent_names)
+
+    def _run_regular_training_phase(
+        self,
+        component_name,
+        component_order,
+        x,
+        history,
+        experiment,
+        enable_kl_annealing,
+        kl_annealing_ratios,
+        max_n_epochs,
+        is_single_component,
+        kwargs,
+    ):
+        """Run the final training phase for a single component."""
+        is_child = self.run_progressive_training.get(component_name)
+        has_parents = is_child and bool(
+            self._get_parent_component(component_name)
+        )
+        do_kl_annealing = enable_kl_annealing and not has_parents
+
+        # Build phase description
+        if is_child:
+            stage = "CHILD" if do_kl_annealing else "CHILD GMM"
+        else:
+            stage = "PARENT" if do_kl_annealing else "PARENT GMM"
+        kl_mode = (
+            "KL ANNEALING" if do_kl_annealing else "TRAINING"
+        )
+        self._print_phase_header(
+            f"{stage} {kl_mode}",
+            f"Component: {component_name}",
+            max_n_epochs,
+        )
+
+        run_name = (
+            f"Training/{component_order}/KLAnnealing/{component_name}"
+            if do_kl_annealing
+            else f"Training/{component_order}/{component_name}"
+        )
+        self._mlflow_start_run(run_name, experiment)
+
+        callbacks = deepcopy(kwargs.get("callbacks", []))
+
+        if do_kl_annealing:
+            schedule = self._make_final_kl_schedule(
+                component_name, max_n_epochs, kl_annealing_ratios
+            )
+            callbacks.append(
+                AnnealingCallback(
+                    schedule=schedule,
+                    kmeans_epoch=int(
+                        max_n_epochs
+                        * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+                    ),
+                    scheduler=self,
+                    component_name=component_name,
+                )
+            )
+        else:
+            # No KL annealing, but run k-means at epoch 0
+            callbacks.append(
+                AnnealingCallback(
+                    schedule=lambda epoch: {},
+                    kmeans_epoch=0,
+                    scheduler=self,
+                    component_name=component_name,
+                )
+            )
+
+        callbacks.extend(
+            self._common_callbacks(
+                kwargs, is_single_component, component_name
+            )
+        )
+
+        kwargs_copy = deepcopy(kwargs)
+        kwargs_copy.pop("epochs", None)
+        history.append(
+            self.model.fit(
+                x,
+                epochs=max_n_epochs,
+                callbacks=callbacks,
+                **kwargs_copy,
+            )
+        )
+
+        mlflow.end_run()
+
+    # ==================================================================
+    # Schedule builders
+    # ==================================================================
+
+    def _make_parent_annealing_schedule(
+        self,
+        parent_names,
+        component_name,
+        n_prog_epochs,
+        enable_kl_annealing,
+        kl_annealing_ratios,
+    ):
+        """Return (schedule_fn, kmeans_epoch) for the parent annealing phase."""
+        if not enable_kl_annealing:
+            def schedule(epoch):
+                p = epoch / n_prog_epochs
+                result = {}
+                for pn in parent_names:
+                    result[pn] = 1.0 - p
+                result[component_name] = p
+                return result
+            return schedule, None
+
+        standard_kl_end = int(n_prog_epochs * kl_annealing_ratios[0])
+        gmm_kl_start = int(
+            n_prog_epochs
+            * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+        )
+
+        def schedule(epoch):
+            p = epoch / n_prog_epochs
+            result = {}
+            for pn in parent_names:
+                result[pn] = 1.0 - p
+            result[component_name] = p
+            if epoch < standard_kl_end:
+                result[f"{component_name}_vanilla_kl_divergence"] = 3.0 * p
+                result[f"{component_name}_gmm_kl_divergence"] = 0.0
+            elif epoch < gmm_kl_start:
+                t = (epoch - standard_kl_end) / (
+                    gmm_kl_start - standard_kl_end
+                )
+                result[f"{component_name}_vanilla_kl_divergence"] = (
+                    3.0 * (1.0 - t) * p
+                )
+                result[f"{component_name}_gmm_kl_divergence"] = (
+                    1.0 * t * p
+                )
+            else:
+                result[f"{component_name}_vanilla_kl_divergence"] = 0.0
+                result[f"{component_name}_gmm_kl_divergence"] = 1.0 * p
+            return result
+
+        return schedule, gmm_kl_start
+
+    def _make_final_kl_schedule(
+        self, component_name, total_epochs, kl_annealing_ratios
+    ):
+        """Return a schedule_fn for the final-phase KL annealing."""
+        standard_kl_end = int(total_epochs * kl_annealing_ratios[0])
+        gmm_kl_start = int(
+            total_epochs
+            * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+        )
+
+        def schedule(epoch):
+            if epoch < standard_kl_end:
+                return {
+                    f"{component_name}_vanilla_kl_divergence": 3.0,
+                    f"{component_name}_gmm_kl_divergence": 0.0,
+                }
+            elif epoch < gmm_kl_start:
+                t = (epoch - standard_kl_end) / (
+                    gmm_kl_start - standard_kl_end
+                )
+                return {
+                    f"{component_name}_vanilla_kl_divergence": 3.0
+                    * (1.0 - t),
+                    f"{component_name}_gmm_kl_divergence": 1.0 * t,
+                }
+            else:
+                return {
+                    f"{component_name}_vanilla_kl_divergence": 0.0,
+                    f"{component_name}_gmm_kl_divergence": 1.0,
+                }
+
+        return schedule
+
+    # ==================================================================
+    # Utilities
+    # ==================================================================
+
+    def _compile_model(self, learning_rate):
+        """Compile the model once with all loss-backing Variables."""
+        all_components = [c.get("name") for c in self.component_configs]
         optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
             learning_rate=learning_rate
         )
@@ -607,294 +906,72 @@ class SequentialTrainingScheduler:
             optimizer=optimizer,
         )
 
-        for component_order, train_components in enumerate(
-            self.training_order
-        ):
-            component_name = train_components[0]
+    def _mlflow_experiment(self):
+        """Set up MLflow experiment and return the experiment object."""
+        experiment_name = self.model.name
+        mlflow.set_experiment(experiment_name)
+        return mlflow.get_experiment_by_name(experiment_name)
 
-            # --------------------------------
-            # Set initial Variable state
-            # --------------------------------
-            self.setup_component_and_loss_weights(
-                train_components, n_batches
-            )
+    def _mlflow_start_run(self, run_name, experiment):
+        """Start an MLflow run with TensorFlow autologging."""
+        mlflow.start_run(
+            experiment_id=experiment.experiment_id, run_name=run_name
+        )
+        mlflow.tensorflow.autolog(
+            log_every_epoch=True,
+            log_models=False,
+            checkpoint=False,
+        )
 
-            # --------------------------------
-            # PROGRESSIVE — Component Weight Transfer
-            # --------------------------------
-            if self.run_progressive_training.get(component_name):
-                parent_names = self._get_parent_component(component_name)
-
-                if len(parent_names) > 0:
-                    component_config = [
-                        c
-                        for c in self.component_configs
-                        if c.get("name") == component_name
-                    ][0]
-                    n_prog_epochs = component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS,
-                        0,
-                    )
-
-                    if n_prog_epochs > 0:
-                        # Set state for parent annealing
-                        self.setup_component_and_loss_weights(
-                            parent_names + [component_name], n_batches
-                        )
-
-                        print(f"\n{'═' * 70}")
-                        print("PARENT ANNEALING")
-                        print(
-                            f"  Parents: {', '.join(parent_names)} "
-                            f"→ Child: {component_name}"
-                        )
-                        print(f"  Epochs: {n_prog_epochs}")
-                        if enable_kl_annealing:
-                            print(
-                                "  KL mode: standard_kl (child, β=3.0) "
-                                "+ GMM (parent, β=1.0)"
-                            )
-                        else:
-                            print("  KL mode: GMM only (both, β=1.0)")
-                        print(f"{'═' * 70}\n")
-
-                        run_name = (
-                            f"Training/{component_order}/ParentAnnealing/"
-                            f"{'-'.join(parent_names)}_to_{component_name}"
-                        )
-                        mlflow.start_run(
-                            experiment_id=experiment.experiment_id,
-                            run_name=run_name,
-                        )
-                        mlflow.tensorflow.autolog(
-                            log_every_n_steps=None,
-                            log_every_epoch=True,
-                            log_models=False,
-                            checkpoint=False,
-                        )
-
-                        kwargs_prog = deepcopy(kwargs)
-                        kwargs_prog.pop("epochs", None)
-                        callbacks_prog = deepcopy(
-                            kwargs.get("callbacks", [])
-                        )
-
-                        if enable_kl_annealing:
-                            standard_kl_end = int(
-                                n_prog_epochs * kl_annealing_ratios[0]
-                            )
-                            gmm_kl_start = int(
-                                n_prog_epochs
-                                * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
-                            )
-
-                            def make_schedule(epoch):
-                                p = epoch / n_prog_epochs
-                                result = {}
-                                for pn in parent_names:
-                                    result[pn] = 1.0 - p
-                                result[component_name] = p
-                                if epoch < standard_kl_end:
-                                    result[
-                                        f"{component_name}_vanilla_kl_divergence"
-                                    ] = (3.0 * p)
-                                    result[
-                                        f"{component_name}_gmm_kl_divergence"
-                                    ] = 0.0
-                                elif epoch < gmm_kl_start:
-                                    t = (epoch - standard_kl_end) / (
-                                        gmm_kl_start - standard_kl_end
-                                    )
-                                    result[
-                                        f"{component_name}_vanilla_kl_divergence"
-                                    ] = (3.0 * (1.0 - t) * p)
-                                    result[
-                                        f"{component_name}_gmm_kl_divergence"
-                                    ] = (1.0 * t * p)
-                                else:
-                                    result[
-                                        f"{component_name}_vanilla_kl_divergence"
-                                    ] = 0.0
-                                    result[
-                                        f"{component_name}_gmm_kl_divergence"
-                                    ] = (1.0 * p)
-                                return result
-
-                            callbacks_prog.append(
-                                AnnealingCallback(
-                                    schedule=make_schedule,
-                                    kmeans_epoch=gmm_kl_start,
-                                    scheduler=self,
-                                    component_name=component_name,
-                                )
-                            )
-                        else:
-
-                            def make_schedule(epoch):
-                                p = epoch / n_prog_epochs
-                                result = {}
-                                for pn in parent_names:
-                                    result[pn] = 1.0 - p
-                                result[component_name] = p
-                                return result
-
-                            callbacks_prog.append(
-                                AnnealingCallback(schedule=make_schedule)
-                            )
-
-                        history.append(
-                            self.model.fit(
-                                x,
-                                epochs=n_prog_epochs,
-                                callbacks=callbacks_prog,
-                                **kwargs_prog,
-                            )
-                        )
-
-                        mlflow.end_run()
-
-                        # Freeze parents
-                        for pn in parent_names:
-                            self.model.components[
-                                pn
-                            ].trainable = False
-                            print(f"  Frozen parent: {pn}")
-
-                        # Zero all parent Variables
-                        self._zero_component_variables(parent_names)
-
-            # --------------------------------
-            # NON-PROGRESSIVE — Final Training
-            # --------------------------------
-            self.setup_component_and_loss_weights(
-                train_components, n_batches
-            )
-
-            is_child = self.run_progressive_training.get(component_name)
-            has_parents = is_child and bool(
-                self._get_parent_component(component_name)
-            )
-            # Skip KL annealing in final phase if it already ran
-            do_kl_annealing = enable_kl_annealing and not has_parents
-            print(f"\n{'═' * 70}")
-            if is_child:
-                stage = "CHILD" if do_kl_annealing else "CHILD GMM"
-            else:
-                stage = "PARENT" if do_kl_annealing else "PARENT GMM"
-            if do_kl_annealing:
-                print(f"  {stage} KL ANNEALING - {component_name}")
-            else:
-                print(f"  {stage} TRAINING - {component_name}")
-            print(f"  Epochs: {max_n_epochs}")
-            print(f"{'═' * 70}\n")
-
-            if do_kl_annealing:
-                run_name = (
-                    f"Training/{component_order}/KLAnnealing/"
-                    f"{component_name}"
+    def _get_progressive_epochs(self, component_name):
+        """Get progressive epochs from component config."""
+        for c in self.component_configs:
+            if c.get("name") == component_name:
+                return c.get(
+                    Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS, 0
                 )
-            else:
-                run_name = (
-                    f"Training/{component_order}/{component_name}"
-                )
-            mlflow.start_run(
-                experiment_id=experiment.experiment_id, run_name=run_name
-            )
-            mlflow.tensorflow.autolog(
-                log_every_epoch=True,
-                log_models=False,
-                checkpoint=False,
-            )
+        return 0
 
-            callbacks = deepcopy(kwargs.get("callbacks", []))
+    @staticmethod
+    def _print_phase_header(title, subtitle, epochs, kl_mode=None):
+        """Print a formatted phase header."""
+        print(f"\n{'═' * 70}")
+        print(title)
+        print(f"  {subtitle}")
+        print(f"  Epochs: {epochs}")
+        if kl_mode:
+            print(f"  KL mode: {kl_mode}")
+        print(f"{'═' * 70}\n")
 
-            if do_kl_annealing:
-                standard_kl_end = int(max_n_epochs * kl_annealing_ratios[0])
-                gmm_kl_start = int(
-                    max_n_epochs
-                    * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
-                )
-
-                def make_schedule(epoch):
-                    if epoch < standard_kl_end:
-                        return {
-                            f"{component_name}_vanilla_kl_divergence": 3.0,
-                            f"{component_name}_gmm_kl_divergence": 0.0,
-                        }
-                    elif epoch < gmm_kl_start:
-                        t = (epoch - standard_kl_end) / (gmm_kl_start - standard_kl_end)
-                        return {
-                            f"{component_name}_vanilla_kl_divergence": 3.0
-                            * (1.0 - t),
-                            f"{component_name}_gmm_kl_divergence": 1.0 * t,
-                        }
-                    else:
-                        return {
-                            f"{component_name}_vanilla_kl_divergence": 0.0,
-                            f"{component_name}_gmm_kl_divergence": 1.0,
-                        }
-
-                callbacks.append(
-                    AnnealingCallback(
-                        schedule=make_schedule,
-                        kmeans_epoch=gmm_kl_start,
-                        scheduler=self,
-                        component_name=component_name,
-                    )
-                )
-            else:
-                # No KL annealing, but still run k-means at epoch 0
-                # when GMM training starts
-                callbacks.append(
-                    AnnealingCallback(
-                        schedule=lambda epoch: {},
-                        kmeans_epoch=0,
-                        scheduler=self,
-                        component_name=component_name,
-                    )
-                )
-
-            if is_single_component and self.output_dir:
-                callbacks.append(
-                    PeriodicTSNECallback(
-                        mdata=self.mdata,
-                        component=component_name,
-                        outdir=os.path.join(
-                            self.output_dir, "snapshots"
-                        ),
-                        batch_size=self.batch_size,
-                        batch_effect_colnames=self.batch_effect_colnames,
-                        distribution_names=self.distribution_names,
-                    )
-                )
-
-            if self.early_stopping:
-                callbacks.append(
-                    tf.keras.callbacks.EarlyStopping(
-                        monitor="loss",
-                        min_delta=5,
-                        patience=max(
-                            10, int(kwargs.get("epochs", 1) / 20)
-                        ),
-                        restore_best_weights=True,
-                        verbose=1,
-                    )
-                )
-
-            kwargs_copy = deepcopy(kwargs)
-            kwargs_copy.pop("epochs", None)
-            history.append(
-                self.model.fit(
-                    x,
-                    epochs=max_n_epochs,
-                    callbacks=callbacks,
-                    **kwargs_copy,
+    def _common_callbacks(
+        self, kwargs, is_single_component, component_name
+    ):
+        """Return common callbacks: PeriodicTSNE + EarlyStopping."""
+        callbacks = []
+        if is_single_component and self.output_dir:
+            callbacks.append(
+                PeriodicTSNECallback(
+                    mdata=self.mdata,
+                    component=component_name,
+                    outdir=os.path.join(self.output_dir, "snapshots"),
+                    batch_size=self.batch_size,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
                 )
             )
-
-            mlflow.end_run()
-
-        return history
+        if self.early_stopping:
+            callbacks.append(
+                tf.keras.callbacks.EarlyStopping(
+                    monitor="loss",
+                    min_delta=5,
+                    patience=max(
+                        10, int(kwargs.get("epochs", 1) / 20)
+                    ),
+                    restore_best_weights=True,
+                    verbose=1,
+                )
+            )
+        return callbacks
 
     def _zero_component_variables(
         self, component_names: List[str]
