@@ -12,7 +12,7 @@ from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameteriz
 from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler,
 )
-from cavachon.losses.kl_divergence import KLDivergence
+from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
 from cavachon.modules.base.decoder_data_parameterizer import DecoderDataParameterizer
 from cavachon.modules.base.encoder_latent_parameterizer import (
@@ -51,7 +51,7 @@ class Component(tf.keras.Model):
 
     z_prior_parameterizer: tf.keras.layers.Layer
         parameterizer used for the priors in latent distributions. Used
-        when computing the KLDivergence.
+        when computing the GMMKLDivergence.
 
     hierarchical_encoder: tf.keras.Model
         hierarchical encoder used to encode z_hat hierarchically
@@ -116,7 +116,7 @@ class Component(tf.keras.Model):
 
         z_prior_parameterizer: tf.keras.layers.Layer
             parameterizer used for the priors in latent distributions.
-            Used when computing the KLDivergence.
+            Used when computing the GMMKLDivergence.
 
         hierarchical_encoder: tf.keras.Model
             hierarchical encoder used to encode z_hat hierarchically
@@ -989,7 +989,7 @@ class Component(tf.keras.Model):
             kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
             loss.setdefault(
                 kl_divergence_name,
-                KLDivergence(
+                GMMKLDivergence(
                     loss_weights.get(kl_divergence_name, 1.0), name=kl_divergence_name
                 ),
             )

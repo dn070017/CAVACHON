@@ -8,10 +8,10 @@ from cavachon.distributions.multivariate_normal_diag_distribution import (
 )
 
 
-class KLDivergence(tf.keras.losses.Loss):
-    """KLDivergence
+class GMMKLDivergence(tf.keras.losses.Loss):
+    """GMMKLDivergence
 
-    KLDivergence loss adapted from Falck et al., 2021. Computes:
+    GMMKLDivergence loss adapted from Falck et al., 2021. Computes:
     logpx_z + 𝚺_j𝚺_y[py_z(logpz_y + logpy)] - 𝚺_j[logqz_x] -
     𝚺_j𝚺_y[py_z(logpc_z)]
     """
@@ -19,10 +19,10 @@ class KLDivergence(tf.keras.losses.Loss):
     def __init__(
         self,
         weight_var=None,  # ← Accept a tf.Variable
-        name: str = "kl_divergence", 
+        name: str = "gmm_kl_divergence", 
         **kwargs
     ):
-        """Constructor for KLDivergence
+        """Constructor for GMMKLDivergence
 
         Parameters
         ----------
@@ -49,7 +49,7 @@ class KLDivergence(tf.keras.losses.Loss):
             self.weight = tf.constant(1.0, dtype=tf.float32)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        """Compute the KLDivergence loss
+        """Compute the GMMKLDivergence loss
 
         Parameters
         ----------
@@ -80,7 +80,7 @@ class KLDivergence(tf.keras.losses.Loss):
         Returns
         -------
         tf.Tensor:
-            The computed KLDivergence loss
+            The computed GMMKLDivergence loss
         """
         # Based on eq (C.48) from Falck et al., 2021. Here, we use y to denote c_j
         # logpx_z + 𝚺_j𝚺_y[py_z(logpz_y + logpy)] - 𝚺_j[logqz_x] - 𝚺_j𝚺_y[py_z(logpc_z)]
@@ -88,9 +88,9 @@ class KLDivergence(tf.keras.losses.Loss):
         # can be written as:
         #   (a)   +          (b)          +          (c)        +      (d)     +          (e)
         # or
-        # LogDataLikelihood - NegativeKLDivergence (maximizing the ELBO)
+        # LogDataLikelihood - NegativeGMMKLDivergence (maximizing the ELBO)
         # or
-        # NegativeLogDataLikelihood + KLDivergence (minimizing the loss)
+        # NegativeLogDataLikelihood + GMMKLDivergence (minimizing the loss)
 
         event_dims = y_pred.shape[1] // 3
         z = y_pred[..., 0:event_dims]

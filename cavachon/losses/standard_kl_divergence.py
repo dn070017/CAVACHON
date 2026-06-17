@@ -1,8 +1,8 @@
 import tensorflow as tf
 
 
-class VanillaKLDivergence(tf.keras.losses.Loss):
-    """VanillaKLDivergence
+class StandardKLDivergence(tf.keras.losses.Loss):
+    """StandardKLDivergence
 
     KL divergence between encoder's N(μ, σ²) and standard normal N(0, 1).
     KL(N(μ, σ²) || N(0, 1)) = -0.5 * sum[1 + log(σ²) - μ² - σ²]
@@ -15,10 +15,10 @@ class VanillaKLDivergence(tf.keras.losses.Loss):
     def __init__(
         self, 
         weight_var=None,  # ← Accept a tf.Variable,
-        name: str = "vanilla_kl_divergence", 
+        name: str = "standard_kl_divergence", 
         **kwargs
     ):
-        """Constructor for VanillaKLDivergence
+        """Constructor for StandardKLDivergence
 
         Parameters
         ----------
@@ -26,7 +26,7 @@ class VanillaKLDivergence(tf.keras.losses.Loss):
             Scaling factor for the loss. Defaults to 1.0.
 
         name: str, optional
-            Name for the loss (shows up in training logs). Defaults to 'vanilla_kl_divergence'.
+            Name for the loss (shows up in training logs). Defaults to 'standard_kl_divergence'.
         """
         
         super().__init__(

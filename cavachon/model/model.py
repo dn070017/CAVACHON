@@ -12,9 +12,9 @@ from cavachon.config.config_mapping.component_config_mapping import (
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
-from cavachon.losses.kl_divergence import KLDivergence
+from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
-from cavachon.losses.vanilla_kl_divergence import VanillaKLDivergence
+from cavachon.losses.standard_kl_divergence import StandardKLDivergence
 from cavachon.modules.components.component import Component
 from cavachon.utils.general_utils import GeneralUtils
 from cavachon.utils.tensor_utils import TensorUtils
@@ -420,7 +420,7 @@ class Model(tf.keras.Model):
 
     def compile(
         self,
-        vanilla_kl_weights: Optional[Mapping[str, float]] = None,
+        standard_kl_weights: Optional[Mapping[str, float]] = None,
         gmm_kl_weights: Optional[Mapping[str, float]] = None,
         **kwargs,
     ) -> None:
@@ -431,29 +431,29 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
-        vanilla_kl_weights: Mapping[str, float], optional
-            per-component weights for vanilla N(0,1) KL divergence.
-            Components with weight > 0 get a vanilla KL loss. A weight
+        standard_kl_weights: Mapping[str, float], optional
+            per-component weights for standard N(0,1) KL divergence.
+            Components with weight > 0 get a standard KL loss. A weight
             of 0 means the loss is not created for that component.
-            Defaults to None (no vanilla KL for any component).
+            Defaults to None (no standard KL for any component).
 
         gmm_kl_weights: Mapping[str, float], optional
             per-component weights for GMM KL divergence. Components
             with weight > 0 get a GMM KL loss. A weight of 0 means the
             loss is not created for that component. When both
-            vanilla_kl_weights and gmm_kl_weights are absent for a
+            standard_kl_weights and gmm_kl_weights are absent for a
             component, defaults to GMM KL with weight 1.0.
 
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
 
         """
-        vanilla_kl_weights = vanilla_kl_weights or {}
+        standard_kl_weights = standard_kl_weights or {}
         gmm_kl_weights = gmm_kl_weights or {}
 
         # Create two separate weight variables
-        if not hasattr(self, "_vanilla_kl_weights"):
-            self._vanilla_kl_weights = {}
+        if not hasattr(self, "_standard_kl_weights"):
+            self._standard_kl_weights = {}
         if not hasattr(self, "_gmm_kl_weights"):
             self._gmm_kl_weights = {}
 
@@ -469,34 +469,34 @@ class Model(tf.keras.Model):
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
 
-                vanilla_w = vanilla_kl_weights.get(component_name, 0.0)
+                standard_w = standard_kl_weights.get(component_name, 0.0)
                 gmm_w = gmm_kl_weights.get(component_name, 0.0)
 
-                has_vanilla = component_name in vanilla_kl_weights
+                has_standard = component_name in standard_kl_weights
                 has_gmm = component_name in gmm_kl_weights
 
                 # Default: if neither dict specifies this component,
                 # use GMM KL at 1.0 (backwards compatible with develop)
-                if not has_vanilla and not has_gmm:
+                if not has_standard and not has_gmm:
                     has_gmm = True
                     gmm_w = 1.0
 
-                if has_vanilla:
-                    if component_name not in self._vanilla_kl_weights:
-                        self._vanilla_kl_weights[component_name] = tf.Variable(
-                            vanilla_w,
+                if has_standard:
+                    if component_name not in self._standard_kl_weights:
+                        self._standard_kl_weights[component_name] = tf.Variable(
+                            standard_w,
                             trainable=False,
                             dtype=tf.float32,
-                            name=f"{component_name}_vanilla_kl_weight",
+                            name=f"{component_name}_standard_kl_weight",
                         )
                     else:
-                        self._vanilla_kl_weights[component_name].assign(vanilla_w)
+                        self._standard_kl_weights[component_name].assign(standard_w)
 
                     loss.setdefault(
-                        f"{component_name}_vanilla_kl_divergence",
-                        VanillaKLDivergence(
-                            weight_var=self._vanilla_kl_weights[component_name],
-                            name=f"{component_name}_vanilla_kl_divergence",
+                        f"{component_name}_standard_kl_divergence",
+                        StandardKLDivergence(
+                            weight_var=self._standard_kl_weights[component_name],
+                            name=f"{component_name}_standard_kl_divergence",
                         ),
                     )
 
@@ -513,7 +513,7 @@ class Model(tf.keras.Model):
 
                     loss.setdefault(
                         f"{component_name}_gmm_kl_divergence",
-                        KLDivergence(
+                        GMMKLDivergence(
                             weight_var=self._gmm_kl_weights[component_name],
                             name=f"{component_name}_gmm_kl_divergence",
                         ),
@@ -609,13 +609,13 @@ class Model(tf.keras.Model):
                     [results.get(z_key), results.get(z_params_key)]
                 )
                 # Check which KL losses are compiled
-                vanilla_kl_name = f"{component_name}_vanilla_kl_divergence"
+                standard_kl_name = f"{component_name}_standard_kl_divergence"
                 gmm_kl_name = f"{component_name}_gmm_kl_divergence"
 
-                if vanilla_kl_name in self.loss and gmm_kl_name in self.loss:
+                if standard_kl_name in self.loss and gmm_kl_name in self.loss:
                     # PHASE 2: Both losses active
-                    y_true.setdefault(vanilla_kl_name, prior_params)
-                    y_pred.setdefault(vanilla_kl_name, z_concat)
+                    y_true.setdefault(standard_kl_name, prior_params)
+                    y_pred.setdefault(standard_kl_name, z_concat)
                     y_true.setdefault(gmm_kl_name, prior_params)
                     y_pred.setdefault(gmm_kl_name, z_concat)
                 else:

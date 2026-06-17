@@ -118,7 +118,7 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
     The callback is driven by a schedule(epoch) function that returns
     a dict mapping loss-name substring patterns to target weights.
     For each loss, the longest matching pattern determines its weight
-    (so ``child1_vanilla_kl_divergence`` wins over ``child1``).
+    (so ``child1_standard_kl_divergence`` wins over ``child1``).
 
     K-means initialization can be triggered at a specific epoch.
     """
@@ -849,20 +849,20 @@ class SequentialTrainingScheduler:
                 result[pn] = 1.0 - p
             result[component_name] = p
             if epoch < standard_kl_end:
-                result[f"{component_name}_vanilla_kl_divergence"] = 3.0 * p
+                result[f"{component_name}_standard_kl_divergence"] = 3.0 * p
                 result[f"{component_name}_gmm_kl_divergence"] = 0.0
             elif epoch < gmm_kl_start:
                 t = (epoch - standard_kl_end) / (
                     gmm_kl_start - standard_kl_end
                 )
-                result[f"{component_name}_vanilla_kl_divergence"] = (
+                result[f"{component_name}_standard_kl_divergence"] = (
                     3.0 * (1.0 - t) * p
                 )
                 result[f"{component_name}_gmm_kl_divergence"] = (
                     1.0 * t * p
                 )
             else:
-                result[f"{component_name}_vanilla_kl_divergence"] = 0.0
+                result[f"{component_name}_standard_kl_divergence"] = 0.0
                 result[f"{component_name}_gmm_kl_divergence"] = 1.0 * p
             return result
 
@@ -881,7 +881,7 @@ class SequentialTrainingScheduler:
         def schedule(epoch):
             if epoch < standard_kl_end:
                 return {
-                    f"{component_name}_vanilla_kl_divergence": 3.0,
+                    f"{component_name}_standard_kl_divergence": 3.0,
                     f"{component_name}_gmm_kl_divergence": 0.0,
                 }
             elif epoch < gmm_kl_start:
@@ -889,13 +889,13 @@ class SequentialTrainingScheduler:
                     gmm_kl_start - standard_kl_end
                 )
                 return {
-                    f"{component_name}_vanilla_kl_divergence": 3.0
+                    f"{component_name}_standard_kl_divergence": 3.0
                     * (1.0 - t),
                     f"{component_name}_gmm_kl_divergence": 1.0 * t,
                 }
             else:
                 return {
-                    f"{component_name}_vanilla_kl_divergence": 0.0,
+                    f"{component_name}_standard_kl_divergence": 0.0,
                     f"{component_name}_gmm_kl_divergence": 1.0,
                 }
 
@@ -912,7 +912,7 @@ class SequentialTrainingScheduler:
             learning_rate=learning_rate
         )
         self.model.compile(
-            vanilla_kl_weights={c: 0.0 for c in all_components},
+            standard_kl_weights={c: 0.0 for c in all_components},
             gmm_kl_weights={c: 1.0 for c in all_components},
             optimizer=optimizer,
         )
@@ -991,7 +991,7 @@ class SequentialTrainingScheduler:
         for comp_name in component_names:
             for attr in (
                 "_gmm_kl_weights",
-                "_vanilla_kl_weights",
+                "_standard_kl_weights",
             ):
                 d = getattr(self.model, attr, {})
                 if comp_name in d:
@@ -1050,9 +1050,9 @@ class SequentialTrainingScheduler:
                     1.0 * weight_scale
                 )
             if comp_name in getattr(
-                self.model, "_vanilla_kl_weights", {}
+                self.model, "_standard_kl_weights", {}
             ):
-                self.model._vanilla_kl_weights[comp_name].assign(0.0)
+                self.model._standard_kl_weights[comp_name].assign(0.0)
 
             # Data-loss Variables (scaled by modality weight)
             for mod_name, var in self.model._data_loss_weights.get(
