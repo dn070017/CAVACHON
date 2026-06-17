@@ -465,10 +465,6 @@ class Model(tf.keras.Model):
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
 
-                kl_divergence_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
-                )
-
                 standard_w = standard_kl_weights.get(component_name, 0.0)
                 gmm_w = gmm_kl_weights.get(component_name, 0.0)
 
@@ -493,10 +489,12 @@ class Model(tf.keras.Model):
                         self._standard_kl_weights[component_name].assign(standard_w)
 
                     loss.setdefault(
-                        f"{component_name}_standard_kl_divergence",
+                        f"{component_name}_"
+                        f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
                         StandardKLDivergence(
                             weight_var=self._standard_kl_weights[component_name],
-                            name=f"{component_name}_standard_kl_divergence",
+                            name=f"{component_name}_"
+                            f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
                         ),
                     )
 
@@ -512,10 +510,12 @@ class Model(tf.keras.Model):
                         self._gmm_kl_weights[component_name].assign(gmm_w)
 
                     loss.setdefault(
-                        f"{component_name}_gmm_kl_divergence",
+                        f"{component_name}_"
+                        f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
                         GMMKLDivergence(
                             weight_var=self._gmm_kl_weights[component_name],
-                            name=f"{component_name}_gmm_kl_divergence",
+                            name=f"{component_name}_"
+                            f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
                         ),
                     )
 
@@ -592,7 +592,7 @@ class Model(tf.keras.Model):
                 component_name = component_config.get("name")
 
                 kl_divergence_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
                 )
                 
                 modality_names = component_config.get(
@@ -609,8 +609,14 @@ class Model(tf.keras.Model):
                     [results.get(z_key), results.get(z_params_key)]
                 )
                 # Check which KL losses are compiled
-                standard_kl_name = f"{component_name}_standard_kl_divergence"
-                gmm_kl_name = f"{component_name}_gmm_kl_divergence"
+                standard_kl_name = (
+                    f"{component_name}_"
+                    f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
+                )
+                gmm_kl_name = (
+                    f"{component_name}_"
+                    f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
+                )
 
                 if standard_kl_name in self.loss and gmm_kl_name in self.loss:
                     # PHASE 2: Both losses active

@@ -849,21 +849,21 @@ class SequentialTrainingScheduler:
                 result[pn] = 1.0 - p
             result[component_name] = p
             if epoch < standard_kl_end:
-                result[f"{component_name}_standard_kl_divergence"] = 3.0 * p
-                result[f"{component_name}_gmm_kl_divergence"] = 0.0
+                result[f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 3.0 * p
+                result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 0.0
             elif epoch < gmm_kl_start:
                 t = (epoch - standard_kl_end) / (
                     gmm_kl_start - standard_kl_end
                 )
-                result[f"{component_name}_standard_kl_divergence"] = (
+                result[f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = (
                     3.0 * (1.0 - t) * p
                 )
-                result[f"{component_name}_gmm_kl_divergence"] = (
+                result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = (
                     1.0 * t * p
                 )
             else:
-                result[f"{component_name}_standard_kl_divergence"] = 0.0
-                result[f"{component_name}_gmm_kl_divergence"] = 1.0 * p
+                result[f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
+                result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 1.0 * p
             return result
 
         return schedule, gmm_kl_start
@@ -881,22 +881,22 @@ class SequentialTrainingScheduler:
         def schedule(epoch):
             if epoch < standard_kl_end:
                 return {
-                    f"{component_name}_standard_kl_divergence": 3.0,
-                    f"{component_name}_gmm_kl_divergence": 0.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 3.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 0.0,
                 }
             elif epoch < gmm_kl_start:
                 t = (epoch - standard_kl_end) / (
                     gmm_kl_start - standard_kl_end
                 )
                 return {
-                    f"{component_name}_standard_kl_divergence": 3.0
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 3.0
                     * (1.0 - t),
-                    f"{component_name}_gmm_kl_divergence": 1.0 * t,
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0 * t,
                 }
             else:
                 return {
-                    f"{component_name}_standard_kl_divergence": 0.0,
-                    f"{component_name}_gmm_kl_divergence": 1.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 0.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0,
                 }
 
         return schedule

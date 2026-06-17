@@ -13,11 +13,10 @@ from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler,
 )
 from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
-from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
-from cavachon.modules.base.decoder_data_parameterizer import DecoderDataParameterizer
-from cavachon.modules.base.encoder_latent_parameterizer import (
-    EncoderLatentParameterizer,
+from cavachon.losses.negative_log_data_likelihood import (
+    NegativeLogDataLikelihood,
 )
+from cavachon.losses.standard_kl_divergence import StandardKLDivergence
 from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 from cavachon.modules.preprocessors import Preprocessor
 
@@ -969,40 +968,115 @@ class Component(tf.keras.Model):
 
         return outputs
 
-    def compile(self, **kwargs) -> None:
+    def compile(
+        self,
+        standard_kl_weights: Optional[Mapping[str, float]] = None,
+        gmm_kl_weights: Optional[Mapping[str, float]] = None,
+        **kwargs,
+    ) -> None:
         """Compile the model before training. Note that the 'metrics'
         will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
-        provided.
+        provided. All loss weights are backed by tf.Variable objects
+        so callbacks can adjust them at runtime.
 
         Parameters
         ----------
+        standard_kl_weights: Mapping[str, float], optional
+            weight for the standard N(0,1) KL divergence loss.
+            A weight > 0 creates the loss. Defaults to None.
+
+        gmm_kl_weights: Mapping[str, float], optional
+            weight for the GMM KL divergence loss.
+            A weight > 0 creates the loss. When both are absent,
+            defaults to GMM KL with weight 1.0.
+
         kwargs: Mapping[str, Any]
             Additional parameters used to compile the model.
 
         """
-        loss_weights = kwargs.get("loss_weights", dict())
-        kwargs.pop("loss_weights", None)
+        standard_kl_weights = standard_kl_weights or {}
+        gmm_kl_weights = gmm_kl_weights or {}
+
+        if not hasattr(self, "_standard_kl_weights"):
+            self._standard_kl_weights = {}
+        if not hasattr(self, "_gmm_kl_weights"):
+            self._gmm_kl_weights = {}
+
+        loss_weights = kwargs.pop("loss_weights", None) or {}
 
         if "loss" not in kwargs:
             loss = OrderedDict()
-            kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
-            loss.setdefault(
-                kl_divergence_name,
-                GMMKLDivergence(
-                    loss_weights.get(kl_divergence_name, 1.0), name=kl_divergence_name
-                ),
-            )
+
+            # Default component name for weight dicts and Variable storage
+            comp_name = self.name or "component"
+
+            standard_w = standard_kl_weights.get(comp_name, 0.0)
+            gmm_w = gmm_kl_weights.get(comp_name, 0.0)
+            has_standard = comp_name in standard_kl_weights
+            has_gmm = comp_name in gmm_kl_weights
+
+            if not has_standard and not has_gmm:
+                has_gmm = True
+                gmm_w = 1.0
+
+            if has_standard:
+                if comp_name not in self._standard_kl_weights:
+                    self._standard_kl_weights[comp_name] = tf.Variable(
+                        standard_w, trainable=False, dtype=tf.float32,
+                        name=f"{comp_name}_standard_kl_weight",
+                    )
+                else:
+                    self._standard_kl_weights[comp_name].assign(standard_w)
+                loss.setdefault(
+                    Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+                    StandardKLDivergence(
+                        weight_var=self._standard_kl_weights[comp_name],
+                        name=Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+                    ),
+                )
+
+            if has_gmm:
+                if comp_name not in self._gmm_kl_weights:
+                    self._gmm_kl_weights[comp_name] = tf.Variable(
+                        gmm_w, trainable=False, dtype=tf.float32,
+                        name=f"{comp_name}_gmm_kl_weight",
+                    )
+                else:
+                    self._gmm_kl_weights[comp_name].assign(gmm_w)
+                loss.setdefault(
+                    Constants.MODEL_LOSS_GMM_KL_POSTFIX,
+                    GMMKLDivergence(
+                        weight_var=self._gmm_kl_weights[comp_name],
+                        name=Constants.MODEL_LOSS_GMM_KL_POSTFIX,
+                    ),
+                )
+
+            if not hasattr(self, "_data_loss_weights"):
+                self._data_loss_weights = {}
+            if comp_name not in self._data_loss_weights:
+                self._data_loss_weights[comp_name] = {}
+
             for modality_name in self.modality_names:
-                nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                nldl_name = (
+                    f"{modality_name}_"
+                    f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                )
+                var = tf.Variable(
+                    loss_weights.pop(nldl_name, 1.0),
+                    trainable=False, dtype=tf.float32,
+                    name=f"{comp_name}_{modality_name}_data_weight",
+                )
+                self._data_loss_weights[comp_name][modality_name] = var
                 loss.setdefault(
                     nldl_name,
                     NegativeLogDataLikelihood(
                         self.distribution_names.get(modality_name),
-                        loss_weights.get(nldl_name, 1.0),
+                        var,
                         name=nldl_name,
                     ),
                 )
+
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -1045,20 +1119,27 @@ class Component(tf.keras.Model):
             results = self(data, training=True)
             y_true = dict()
             y_pred = dict()
-            kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
-            y_true.setdefault(
-                kl_divergence_name, results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
-            )
+            prior_params = results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
 
             z_key = Constants.MODEL_OUTPUTS_Z
             z_params_key = Constants.MODEL_OUTPUTS_Z_PARAMS
+            z_concat = tf.keras.layers.Lambda(
+                lambda x: tf.concat(x, axis=-1)
+            )([results.get(z_key), results.get(z_params_key)])
 
-            y_pred.setdefault(
-                kl_divergence_name,
-                tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                    [results.get(z_key), results.get(z_params_key)]
-                ),
-            )
+            # Support both new (standard_kl + gmm_kl) and legacy formats
+            if (
+                Constants.MODEL_LOSS_STANDARD_KL_POSTFIX in self.loss
+                and Constants.MODEL_LOSS_GMM_KL_POSTFIX in self.loss
+            ):
+                y_true.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, prior_params)
+                y_pred.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, z_concat)
+                y_true.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, prior_params)
+                y_pred.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, z_concat)
+            else:
+                kl_name = Constants.MODEL_LOSS_GMM_KL_POSTFIX
+                y_true.setdefault(kl_name, prior_params)
+                y_pred.setdefault(kl_name, z_concat)
 
             for modality_name in self.modality_names:
                 negative_log_data_likelihood_name = (
