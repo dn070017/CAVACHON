@@ -418,7 +418,12 @@ class Model(tf.keras.Model):
         else:
             return super.__predict__(x=x, batch_size=batch_size, **kwargs)
 
-    def compile(self, use_vanilla_kl=False, use_both_kl=False, **kwargs) -> None:
+    def compile(
+        self,
+        vanilla_kl_weights: Optional[Mapping[str, float]] = None,
+        gmm_kl_weights: Optional[Mapping[str, float]] = None,
+        **kwargs,
+    ) -> None:
         """Compile the model before training. Note that the 'metrics'
         will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
@@ -426,43 +431,31 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
-        use_vanilla_kl: bool, optional
-        If True, uses vanilla N(0,1) KL divergence instead of GMM KL.
-        Used for progressive training phase. Defaults to False.
+        vanilla_kl_weights: Mapping[str, float], optional
+            per-component weights for vanilla N(0,1) KL divergence.
+            Components with weight > 0 get a vanilla KL loss. A weight
+            of 0 means the loss is not created for that component.
+            Defaults to None (no vanilla KL for any component).
 
-        use_both_kl: bool, optional
-        If True, use BOTH vanilla and GMM KL losses (Phase 2 - Transition)
-        If both False, use only GMM KL loss (Phase 3)
+        gmm_kl_weights: Mapping[str, float], optional
+            per-component weights for GMM KL divergence. Components
+            with weight > 0 get a GMM KL loss. A weight of 0 means the
+            loss is not created for that component. When both
+            vanilla_kl_weights and gmm_kl_weights are absent for a
+            component, defaults to GMM KL with weight 1.0.
 
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
 
         """
+        vanilla_kl_weights = vanilla_kl_weights or {}
+        gmm_kl_weights = gmm_kl_weights or {}
+
         # Create two separate weight variables
         if not hasattr(self, "_vanilla_kl_weights"):
             self._vanilla_kl_weights = {}
         if not hasattr(self, "_gmm_kl_weights"):
             self._gmm_kl_weights = {}
-
-        # Create one variable per component
-        for component_config in self.component_configs:
-            component_name = component_config.get("name")
-
-            if component_name not in self._vanilla_kl_weights:
-                self._vanilla_kl_weights[component_name] = tf.Variable(
-                    3.0,
-                    trainable=False,
-                    dtype=tf.float32,
-                    name=f"{component_name}_vanilla_kl_weight",
-                )
-
-            if component_name not in self._gmm_kl_weights:
-                self._gmm_kl_weights[component_name] = tf.Variable(
-                    0.0,
-                    trainable=False,
-                    dtype=tf.float32,
-                    name=f"{component_name}_gmm_kl_weight",
-                )
 
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
@@ -476,52 +469,79 @@ class Model(tf.keras.Model):
                     f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
                 )
 
-                # Three way logic for KL loss
-                if use_both_kl:
-                    # PHASE 2 (TRANSITION): Both losses active with different names
+                vanilla_w = vanilla_kl_weights.get(component_name, 0.0)
+                gmm_w = gmm_kl_weights.get(component_name, 0.0)
+
+                has_vanilla = component_name in vanilla_kl_weights
+                has_gmm = component_name in gmm_kl_weights
+
+                # Default: if neither dict specifies this component,
+                # use GMM KL at 1.0 (backwards compatible with develop)
+                if not has_vanilla and not has_gmm:
+                    has_gmm = True
+                    gmm_w = 1.0
+
+                if has_vanilla:
+                    if component_name not in self._vanilla_kl_weights:
+                        self._vanilla_kl_weights[component_name] = tf.Variable(
+                            vanilla_w,
+                            trainable=False,
+                            dtype=tf.float32,
+                            name=f"{component_name}_vanilla_kl_weight",
+                        )
+                    else:
+                        self._vanilla_kl_weights[component_name].assign(vanilla_w)
+
                     loss.setdefault(
-                        f"{component_name}_vanilla_kl_divergence",  # Different name for vanilla
+                        f"{component_name}_vanilla_kl_divergence",
                         VanillaKLDivergence(
                             weight_var=self._vanilla_kl_weights[component_name],
                             name=f"{component_name}_vanilla_kl_divergence",
                         ),
                     )
+
+                if has_gmm:
+                    if component_name not in self._gmm_kl_weights:
+                        self._gmm_kl_weights[component_name] = tf.Variable(
+                            gmm_w,
+                            trainable=False,
+                            dtype=tf.float32,
+                            name=f"{component_name}_gmm_kl_weight",
+                        )
+                    else:
+                        self._gmm_kl_weights[component_name].assign(gmm_w)
+
                     loss.setdefault(
-                        f"{component_name}_gmm_kl_divergence",  # Different name for gmm
+                        f"{component_name}_gmm_kl_divergence",
                         KLDivergence(
                             weight_var=self._gmm_kl_weights[component_name],
                             name=f"{component_name}_gmm_kl_divergence",
                         ),
                     )
-                elif use_vanilla_kl:
-                    # PHASE 1: Vanilla KL only
-                    loss.setdefault(
-                        kl_divergence_name,
-                        VanillaKLDivergence(
-                            weight_var=self._vanilla_kl_weights[component_name],
-                            name=kl_divergence_name,
-                        ),
-                    )
-                else:
-                    # PHASE 3: Use GMM KL only
-                    loss.setdefault(
-                        kl_divergence_name,
-                        KLDivergence(
-                            weight_var=self._gmm_kl_weights[component_name],
-                            name=kl_divergence_name,
-                        ),
-                    )
 
+                if not hasattr(self, "_data_loss_weights"):
+                    self._data_loss_weights = {}
+                if component_name not in self._data_loss_weights:
+                    self._data_loss_weights[component_name] = {}
+                distribution_names = component_config.get(
+                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
+                )
                 for modality_name in component_config.get("modality_names"):
-                    nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                    distribution_names = component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
+                    nldl_name = (
+                        f"{component_name}_{modality_name}_"
+                        f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     )
+                    var = tf.Variable(
+                        loss_weights.pop(nldl_name, 1.0),
+                        trainable=False, dtype=tf.float32,
+                        name=f"{component_name}_{modality_name}_data_weight",
+                    )
+                    self._data_loss_weights[component_name][modality_name] = var
                     loss.setdefault(
                         nldl_name,
                         NegativeLogDataLikelihood(
                             distribution_names.get(modality_name),
-                            loss_weights.get(nldl_name, 1.0),
+                            var,
                             name=nldl_name,
                         ),
                     )
