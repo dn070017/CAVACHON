@@ -556,6 +556,7 @@ class SequentialTrainingScheduler:
         x: tf.data.Dataset,
         enable_kl_annealing: bool = True,
         kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
+        enable_kmeans: bool = True,
         **kwargs,
     ) -> List[tf.keras.callbacks.History]:
         """Fit model with multi-phase hierarchical training.
@@ -576,6 +577,10 @@ class SequentialTrainingScheduler:
             ratios for the three sub-phases within progressive/training
             epochs when KL annealing is enabled:
             (standard_kl_only, annealing, gmm_only). Defaults to (0.5, 0.2, 0.3).
+
+        enable_kmeans: bool, optional
+            whether to run k-means initialization before GMM training.
+            Defaults to True.
 
         **kwargs: Mapping[str, Any]
             additional arguments passed to self.model.fit.
@@ -622,6 +627,7 @@ class SequentialTrainingScheduler:
                             experiment=experiment,
                             enable_kl_annealing=enable_kl_annealing,
                             kl_annealing_ratios=kl_annealing_ratios,
+                            enable_kmeans=enable_kmeans,
                             kwargs=kwargs,
                         )
 
@@ -637,6 +643,7 @@ class SequentialTrainingScheduler:
                 experiment=experiment,
                 enable_kl_annealing=enable_kl_annealing,
                 kl_annealing_ratios=kl_annealing_ratios,
+                enable_kmeans=enable_kmeans,
                 max_n_epochs=max_n_epochs,
                 is_single_component=is_single_component,
                 kwargs=kwargs,
@@ -659,6 +666,7 @@ class SequentialTrainingScheduler:
         experiment,
         enable_kl_annealing,
         kl_annealing_ratios,
+        enable_kmeans,
         kwargs,
     ):
         """Run the parent→child annealing phase (progressive epochs)."""
@@ -691,7 +699,7 @@ class SequentialTrainingScheduler:
         callbacks_prog.append(
             AnnealingCallback(
                 schedule=schedule,
-                kmeans_epoch=kmeans_epoch,
+                kmeans_epoch=kmeans_epoch if enable_kmeans else None,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -723,6 +731,7 @@ class SequentialTrainingScheduler:
         experiment,
         enable_kl_annealing,
         kl_annealing_ratios,
+        enable_kmeans,
         max_n_epochs,
         is_single_component,
         kwargs,
@@ -764,20 +773,22 @@ class SequentialTrainingScheduler:
             callbacks.append(
                 AnnealingCallback(
                     schedule=schedule,
-                    kmeans_epoch=int(
-                        max_n_epochs
-                        * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+                    kmeans_epoch=(
+                        int(max_n_epochs
+                            * (kl_annealing_ratios[0] + kl_annealing_ratios[1]))
+                        if enable_kmeans
+                        else None
                     ),
                     scheduler=self,
                     component_name=component_name,
                 )
             )
         else:
-            # No KL annealing, but run k-means at epoch 0
+            # No KL annealing; optionally run k-means at epoch 0
             callbacks.append(
                 AnnealingCallback(
                     schedule=lambda epoch: {},
-                    kmeans_epoch=0,
+                    kmeans_epoch=0 if enable_kmeans else None,
                     scheduler=self,
                     component_name=component_name,
                 )
