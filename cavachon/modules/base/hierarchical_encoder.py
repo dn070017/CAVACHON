@@ -23,6 +23,7 @@ class HierarchicalEncoder(tf.keras.Model):
         is_conditioned_on_z: bool = False,
         is_conditioned_on_z_hat: bool = False,
         progressive_iterations: int = 5000,
+        use_bias: bool = False,
         name: str = "hierarchical_encoder",
         **kwargs,
     ):
@@ -47,6 +48,10 @@ class HierarchicalEncoder(tf.keras.Model):
         progressive_iterations: int, optional
             total iterations for progressive training. Defaults to 5000.
 
+        use_bias: bool, optional
+            whether to use bias in the Dense layers of r_network and
+            b_network. Defaults to False.
+
         name: str, optional:
             Name for the tensorflow model. Defaults to
             'hierarchical_encoder'.
@@ -56,11 +61,11 @@ class HierarchicalEncoder(tf.keras.Model):
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)
         self.r_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=False)], 
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias)],
             name=Constants.MODULE_R_NETWORK
         )
         self.b_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=False)], 
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias)],
             name=Constants.MODULE_B_NETWORK
         )
 
