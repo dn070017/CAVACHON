@@ -272,6 +272,35 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
             self._kmeans_done = True
 
 
+class OptimizerStateCallback(tf.keras.callbacks.Callback):
+    """Snapshot optimizer state each epoch; restore on early stop."""
+
+    def __init__(self):
+        super().__init__()
+        self._opt_states = {}
+
+    def on_epoch_end(self, epoch, logs=None):
+        try:
+            if hasattr(self.model, 'optimizer') and self.model.optimizer is not None:
+                self._opt_states[epoch] = self.model.optimizer.get_weights()
+        except Exception:
+            pass
+
+    def on_train_end(self, logs=None):
+        try:
+            if not hasattr(self.model, 'optimizer') or self.model.optimizer is None:
+                return
+            for cb in getattr(self.model, '_callbacks', []) or []:
+                if isinstance(cb, tf.keras.callbacks.EarlyStopping) and \
+                   getattr(cb, 'best_epoch', None) is not None:
+                    best = cb.best_epoch
+                    if best in self._opt_states:
+                        self.model.optimizer.set_weights(self._opt_states[best])
+                    break
+        except Exception:
+            pass
+
+
 class SequentialTrainingScheduler:
     """SequentialTrainingScheduler
 
@@ -919,6 +948,7 @@ class SequentialTrainingScheduler:
                 component_name=component_name,
             )
         )
+        callbacks_prog.append(OptimizerStateCallback())
 
         history.append(
             self.model.fit(
@@ -1004,6 +1034,7 @@ class SequentialTrainingScheduler:
                 component_name=component_name,
             )
         )
+        callbacks.append(OptimizerStateCallback())
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
@@ -1059,6 +1090,7 @@ class SequentialTrainingScheduler:
                 component_name=component_name,
             )
         )
+        callbacks.append(OptimizerStateCallback())
         callbacks.extend(
             self._common_callbacks(
                 kwargs, is_single_component, component_name
@@ -1167,7 +1199,7 @@ class SequentialTrainingScheduler:
         momentum is preserved within a component's phases.
         """
         all_components = [c.get("name") for c in self.component_configs]
-        current_tv = {id(v) for v in self.model.trainable_variables}
+        current_tv = {id(v) for v in self.model.trainable_variables} if hasattr(self.model, 'trainable_variables') else set()
         if getattr(self.model, 'optimizer', None) is not None and \
            getattr(self, '_last_trainable', None) == current_tv:
             optimizer = self.model.optimizer
@@ -1184,6 +1216,7 @@ class SequentialTrainingScheduler:
             std_w[cn] = float(d[cn].numpy()) if cn in d else 0.0
             d = getattr(self.model, '_gmm_kl_weights', {})
             gmm_w[cn] = float(d[cn].numpy()) if cn in d else 1.0
+        print(f"  DEBUG _compile_model: gmm_w={ {k:round(v,2) for k,v in gmm_w.items()} }")
         self.model.compile(
             standard_kl_weights=std_w,
             gmm_kl_weights=gmm_w,
