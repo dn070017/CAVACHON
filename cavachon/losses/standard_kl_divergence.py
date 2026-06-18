@@ -94,4 +94,6 @@ class StandardKLDivergence(tf.keras.losses.Loss):
 
         # Step 6: Scale by weight and return
         # The reduction=SUM_OVER_BATCH_SIZE averages this automatically
+        if hasattr(self.weight, 'increment'):
+            return self.weight(tf.ones(())) * kl_divergence
         return self.weight * kl_divergence

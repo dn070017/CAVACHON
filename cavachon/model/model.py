@@ -486,7 +486,9 @@ class Model(tf.keras.Model):
                             name=f"{component_name}_standard_kl_weight",
                         )
                     else:
-                        self._standard_kl_weights[component_name].assign(standard_w)
+                        w = self._standard_kl_weights[component_name]
+                        if not hasattr(w, 'increment'):
+                            w.assign(standard_w)
 
                     loss.setdefault(
                         f"{component_name}_"
@@ -507,7 +509,9 @@ class Model(tf.keras.Model):
                             name=f"{component_name}_gmm_kl_weight",
                         )
                     else:
-                        self._gmm_kl_weights[component_name].assign(gmm_w)
+                        w = self._gmm_kl_weights[component_name]
+                        if not hasattr(w, 'increment'):
+                            w.assign(gmm_w)
 
                     loss.setdefault(
                         f"{component_name}_"
@@ -531,12 +535,16 @@ class Model(tf.keras.Model):
                         f"{component_name}_{modality_name}_"
                         f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     )
-                    var = tf.Variable(
-                        loss_weights.pop(nldl_name, 1.0),
-                        trainable=False, dtype=tf.float32,
-                        name=f"{component_name}_{modality_name}_data_weight",
-                    )
-                    self._data_loss_weights[component_name][modality_name] = var
+                    existing = self._data_loss_weights[component_name].get(modality_name)
+                    if existing is not None and hasattr(existing, 'increment'):
+                        var = existing
+                    else:
+                        var = tf.Variable(
+                            loss_weights.pop(nldl_name, 1.0),
+                            trainable=False, dtype=tf.float32,
+                            name=f"{component_name}_{modality_name}_data_weight",
+                        )
+                        self._data_loss_weights[component_name][modality_name] = var
                     loss.setdefault(
                         nldl_name,
                         NegativeLogDataLikelihood(

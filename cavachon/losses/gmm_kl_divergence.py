@@ -145,4 +145,6 @@ class GMMKLDivergence(tf.keras.losses.Loss):
             kl_divergence < 0, tf.zeros_like(kl_divergence), kl_divergence
         )
 
+        if hasattr(self.weight, 'increment'):
+            return self.weight(tf.ones(())) * kl_divergence
         return self.weight * kl_divergence

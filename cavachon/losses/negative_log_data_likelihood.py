@@ -72,4 +72,6 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
         dist_x_z = self.dist_x_z_class.from_parameterizer_output(y_pred)
         logpx_z = tf.reduce_sum(dist_x_z.log_prob(y_true), axis=-1)
 
+        if hasattr(self.weight, 'increment'):
+            return -self.weight(tf.ones(())) * logpx_z
         return -self.weight * logpx_z
