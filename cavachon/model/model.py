@@ -918,8 +918,9 @@ class Model(tf.keras.Model):
                 {},
                 {},
             )
-            component_outputs = self.components.get(component_name).encode(
-                component_batch, training=training
+            component = self.components.get(component_name)
+            component_outputs = component.encode(
+                component_batch, training=training and component.trainable
             )
             outputs[Constants.MODEL_OUTPUTS_Z_PARAMS][component_name] = (
                 component_outputs.get(Constants.MODEL_OUTPUTS_Z_PARAMS)
@@ -1023,10 +1024,11 @@ class Model(tf.keras.Model):
                 z_conditional,
                 z_hat_conditional,
             )
-            component_outputs = self.components.get(component_name).hierarchical_encode(
+            component = self.components.get(component_name)
+            component_outputs = component.hierarchical_encode(
                 component_batch,
-                z.get(component_name),
-                training=training,
+                z=z.get(component_name),
+                training=training and component.trainable,
             )
             component_z_hat = component_outputs.get(Constants.MODEL_OUTPUTS_Z_HAT)
             accumulated_z_hat[component_name] = component_z_hat
@@ -1112,10 +1114,11 @@ class Model(tf.keras.Model):
                 {},
                 {},
             )
-            component_outputs = self.components.get(component_name).decode(
+            component = self.components.get(component_name)
+            component_outputs = component.decode(
                 component_batch,
                 component_z_hat,
-                training=training,
+                training=training and component.trainable,
             )
             for key, value in component_outputs.items():
                 outputs[Constants.MODEL_OUTPUTS_X_PARAMS][

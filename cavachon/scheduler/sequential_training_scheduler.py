@@ -1,5 +1,6 @@
 import itertools
 import os
+import time
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, List, Mapping, Optional, Tuple
@@ -111,6 +112,152 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         )
 
 
+class VerboseCallback(tf.keras.callbacks.Callback):
+    """Print a colored banner identifying the active training phase.
+
+    Colors cycle per component so different components stand out
+    in the log stream without modifying Keras metric names.
+    """
+
+    _COLORS = ["\033[34m", "\033[32m", "\033[35m", "\033[36m", "\033[33m"]
+    _RED = "\033[31m"
+    _BOLD = "\033[1m"
+    _RESET = "\033[0m"
+
+    def __init__(self, labels, phase="Regular Training",
+                 loss_prefixes=None, phase_epochs=None,
+                 cumulative_offset=0, cumulative_total=None,
+                 phase_number=1, component_order=None):
+        super().__init__()
+        self.labels = labels
+        self.phase = phase
+        self.loss_prefixes = loss_prefixes or {}
+        self.phase_epochs = phase_epochs
+        self.cumulative_offset = cumulative_offset
+        self.cumulative_total = cumulative_total
+        self.phase_number = phase_number
+        self.component_order = component_order or []
+        self._epoch_start = None
+        self._printed_trainable = False
+
+    def _color_idx(self, key):
+        """Return color index for a metric key, or None if no match."""
+        for prefix, ci in self.loss_prefixes.items():
+            if prefix in key:
+                return ci % len(self._COLORS)
+        return None
+
+    def _color_for_key(self, key):
+        ci = self._color_idx(key)
+        return self._COLORS[ci] if ci is not None else ""
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self._epoch_start = time.time()
+        parts = []
+        for name, ci in self.labels:
+            c = self._COLORS[ci % len(self._COLORS)]
+            parts.append(f"{c}{self._BOLD}{name}{self._RESET}")
+        label = " → ".join(parts)
+
+        cumul = self.cumulative_offset + epoch + 1
+        cumul_str = f" (Total Epoch: {cumul}/{self.cumulative_total})" if self.cumulative_total else ""
+        epoch_str = f" Phase Epoch: {epoch + 1}/{self.phase_epochs}" if self.phase_epochs else ""
+
+        print(
+            f"{self._RED}Phase {self.phase_number}. {self.phase}{self._RESET} "
+            f"[{label}]"
+            f"{self._RED}{epoch_str}{cumul_str}{self._RESET}"
+        )
+
+        # Print trainable status and weight checksums for frozen components
+        status_parts = []
+        weight_parts = []
+        for idx, name in enumerate(self.component_order):
+            c = self._COLORS[idx % len(self._COLORS)]
+            comp = self.model.components.get(name) if hasattr(self.model, 'components') else None
+            is_trainable = comp.trainable if comp else False
+            state = f"{c}Training{self._RESET}" if is_trainable else f"{c}Frozen{self._RESET}"
+            status_parts.append(f"{c}{self._BOLD}{name}{self._RESET}: {state}")
+            if comp and not is_trainable:
+                try:
+                    w_sum = sum(
+                        float(tf.reduce_sum(w).numpy())
+                        for w in comp.trainable_weights
+                    )
+                    p_sum = 0.0
+                    if hasattr(comp, 'z_prior_parameterizer'):
+                        p_sum = sum(
+                            float(tf.reduce_sum(w).numpy())
+                            for w in comp.z_prior_parameterizer.trainable_weights
+                        )
+                    weight_parts.append(
+                        f"{c}{name}{self._RESET} Σw={w_sum:.2f}"
+                        f" prior={p_sum:.2f}"
+                    )
+                except Exception:
+                    pass
+        print("  " + " | ".join(status_parts))
+        if weight_parts:
+            print("  " + " | ".join(weight_parts))
+
+    def on_epoch_end(self, epoch, logs=None):
+        elapsed = time.time() - self._epoch_start if self._epoch_start else 0
+        if not logs:
+            return
+        # Sort metrics: loss first, then by component training order
+        sorted_keys = sorted(logs.keys(), key=self._metric_sort_key)
+        groups = {}
+        loss_val = None
+        for k in sorted_keys:
+                print("  " + " | ".join(weight_parts))
+
+    def _metric_sort_key(self, k):
+        """Sort: loss first, then by component training order."""
+        if k == "loss":
+            return (-1, "")
+        for idx, comp in enumerate(self.component_order):
+            if comp in k:
+                return (idx, k)
+        return (len(self.component_order), k)
+
+    def on_epoch_end(self, epoch, logs=None):
+        elapsed = time.time() - self._epoch_start if self._epoch_start else 0
+        if not logs:
+            return
+        # Sort metrics: loss first, then by component training order
+        sorted_keys = sorted(logs.keys(), key=self._metric_sort_key)
+        groups = {}
+        loss_val = None
+        for k in sorted_keys:
+            v = logs[k]
+            if not isinstance(v, (int, float)):
+                continue
+            if k == "loss":
+                loss_val = v
+                continue
+            ci = self._color_idx(k)
+            if ci is None:
+                ci = -1
+            c = self._COLORS[ci] if ci >= 0 else ""
+            item = f"{c}{k}={v:.3f}{self._RESET}" if c else f"{k}={v:.3f}"
+            groups.setdefault(ci, []).append(item)
+        # Print loss on its own line
+        if loss_val is not None:
+            print(f"→ loss={loss_val:.3f}")
+        for ci in sorted(groups):
+            line = "  ".join(groups[ci])
+            print(f"→ {line}")
+        # Simple elapsed time indicator
+        print(f"→ {elapsed:.1f}s")
+
+        # Log KL weights for all components
+        for attr in ('_gmm_kl_weights', '_standard_kl_weights'):
+            d = getattr(self.model, attr, {})
+            for name, var in d.items():
+                c = self._COLORS[self.component_order.index(name) % len(self._COLORS)] if name in self.component_order else ""
+                print(f"  {c}β[{name}]={float(var.numpy()):.2f}{self._RESET}")
+
+
 class AnnealingCallback(tf.keras.callbacks.Callback):
     """Unified annealing callback for both parent-component annealing
     and intra-component KL annealing (standard_kl → GMM).
@@ -164,6 +311,11 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
                 f"{self.component_name}"
             )
             print(f"{'=' * 70}\n")
+            # Save per-component trainable state before k-means
+            saved_trainable = {
+                name: comp.trainable
+                for name, comp in self.model.components.items()
+            }
             self.model.trainable = False
             self.scheduler.initialize_gmm_priors_with_kmeans(
                 component_name=self.component_name,
@@ -171,7 +323,9 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
                 add_noise=True,
                 noise_std=0.1,
             )
-            self.model.trainable = True
+            # Restore original per-component trainable states
+            for name, was_trainable in saved_trainable.items():
+                self.model.components[name].trainable = was_trainable
             self._kmeans_done = True
 
 
@@ -556,7 +710,7 @@ class SequentialTrainingScheduler:
         x: tf.data.Dataset,
         enable_kl_annealing: bool = True,
         kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
-        enable_kmeans: bool = True,
+        enable_kmeans: bool = False,
         **kwargs,
     ) -> List[tf.keras.callbacks.History]:
         """Fit model with multi-phase hierarchical training.
@@ -580,7 +734,7 @@ class SequentialTrainingScheduler:
 
         enable_kmeans: bool, optional
             whether to run k-means initialization before GMM training.
-            Defaults to True.
+            Defaults to False.
 
         **kwargs: Mapping[str, Any]
             additional arguments passed to self.model.fit.
@@ -597,6 +751,28 @@ class SequentialTrainingScheduler:
         self._compile_model(self.learning_rate)
         experiment = self._mlflow_experiment()
         is_single_component = len(self.training_order) == 1
+
+        # Pre-compute total cumulative epochs across all phases
+        cumulative_total = 0
+        for tc in self.training_order:
+            cn = tc[0]
+            if self.run_progressive_training.get(cn):
+                parents = self._get_parent_component(cn)
+                if parents:
+                    cumulative_total += self._get_progressive_epochs(cn)
+            is_child = self.run_progressive_training.get(cn)
+            has_parents = is_child and bool(self._get_parent_component(cn))
+            if enable_kl_annealing and not has_parents:
+                n_prog = self._get_progressive_epochs(cn)
+                if n_prog > 0:
+                    cumulative_total += n_prog
+            cumulative_total += max_n_epochs
+
+        cumulative_offset = 0
+        phase_number = 1
+        self._training_component_order = [
+            c[0] for c in self.training_order
+        ]
 
         for component_order, train_components in enumerate(
             self.training_order
@@ -617,6 +793,7 @@ class SequentialTrainingScheduler:
                         self.setup_component_and_loss_weights(
                             parent_names + [component_name], n_batches
                         )
+                        before = len(history)
                         self._run_parent_annealing_phase(
                             component_name=component_name,
                             component_order=component_order,
@@ -628,26 +805,73 @@ class SequentialTrainingScheduler:
                             enable_kl_annealing=enable_kl_annealing,
                             kl_annealing_ratios=kl_annealing_ratios,
                             enable_kmeans=enable_kmeans,
+                            cumulative_offset=cumulative_offset,
+                            cumulative_total=cumulative_total,
+                            phase_number=phase_number,
                             kwargs=kwargs,
                         )
+                        actual = len(history[-1].epoch) if len(history) > before else n_prog_epochs
+                        cumulative_total -= (n_prog_epochs - actual)
+                        cumulative_offset += actual
+                        phase_number += 1
 
             # --- Regular training ---
+            is_child = self.run_progressive_training.get(component_name)
+            has_parents = is_child and bool(
+                self._get_parent_component(component_name)
+            )
+            do_kl_annealing = enable_kl_annealing and not has_parents
+
+            # Phase A: KL annealing (root components only)
+            if do_kl_annealing:
+                n_prog = self._get_progressive_epochs(component_name)
+                if n_prog > 0:
+                    self.setup_component_and_loss_weights(
+                        train_components, n_batches
+                    )
+                    before = len(history)
+                    self._run_kl_annealing_phase(
+                        component_name=component_name,
+                        component_order=component_order,
+                        x=x,
+                        history=history,
+                        experiment=experiment,
+                        n_epochs=n_prog,
+                        kl_annealing_ratios=kl_annealing_ratios,
+                        enable_kmeans=enable_kmeans,
+                        cumulative_offset=cumulative_offset,
+                        cumulative_total=cumulative_total,
+                        phase_number=phase_number,
+                        kwargs=kwargs,
+                    )
+                    actual = len(history[-1].epoch) if len(history) > before else n_prog
+                    cumulative_total -= (n_prog - actual)
+                    cumulative_offset += actual
+                    phase_number += 1
+
+            # Phase B: Regular GMM training
             self.setup_component_and_loss_weights(
                 train_components, n_batches
             )
-            self._run_regular_training_phase(
+            before = len(history)
+            self._run_gmm_training_phase(
                 component_name=component_name,
                 component_order=component_order,
                 x=x,
                 history=history,
                 experiment=experiment,
-                enable_kl_annealing=enable_kl_annealing,
-                kl_annealing_ratios=kl_annealing_ratios,
-                enable_kmeans=enable_kmeans,
-                max_n_epochs=max_n_epochs,
+                n_epochs=max_n_epochs,
                 is_single_component=is_single_component,
+                enable_kmeans=enable_kmeans,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
                 kwargs=kwargs,
             )
+            actual = len(history[-1].epoch) if len(history) > before else max_n_epochs
+            cumulative_total -= (max_n_epochs - actual)
+            cumulative_offset += actual
+            phase_number += 1
 
         return history
 
@@ -667,16 +891,17 @@ class SequentialTrainingScheduler:
         enable_kl_annealing,
         kl_annealing_ratios,
         enable_kmeans,
+        cumulative_offset,
+        cumulative_total,
+        phase_number,
         kwargs,
     ):
         """Run the parent→child annealing phase (progressive epochs)."""
         self._print_phase_header(
-            "PARENT ANNEALING",
+            "Parent Annealing"
+            + (" (w/ KL Annealing)" if enable_kl_annealing else ""),
             f"Parents: {', '.join(parent_names)} → Child: {component_name}",
             n_prog_epochs,
-            "standard_kl (child, β=3.0) + GMM (parent, β=1.0)"
-            if enable_kl_annealing
-            else "GMM only (both, β=1.0)",
         )
 
         run_name = (
@@ -696,6 +921,25 @@ class SequentialTrainingScheduler:
             enable_kl_annealing=enable_kl_annealing,
             kl_annealing_ratios=kl_annealing_ratios,
         )
+
+        callbacks_prog.append(
+            VerboseCallback(
+                labels=[(pn, 0) for pn in parent_names]
+                + [(component_name, 1)],
+                phase="Parent Annealing"
+                + (" (w/ KL Annealing)" if enable_kl_annealing else ""),
+                loss_prefixes={
+                    **{pn: 0 for pn in parent_names},
+                    component_name: 1,
+                },
+                phase_epochs=n_prog_epochs,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
+                component_order=self._training_component_order,
+            )
+        )
+
         callbacks_prog.append(
             AnnealingCallback(
                 schedule=schedule,
@@ -710,6 +954,7 @@ class SequentialTrainingScheduler:
                 x,
                 epochs=n_prog_epochs,
                 callbacks=callbacks_prog,
+                verbose=0,
                 **kwargs_prog,
             )
         )
@@ -722,78 +967,123 @@ class SequentialTrainingScheduler:
             print(f"  Frozen parent: {pn}")
         self._zero_component_variables(parent_names)
 
-    def _run_regular_training_phase(
+    def _run_kl_annealing_phase(
         self,
         component_name,
         component_order,
         x,
         history,
         experiment,
-        enable_kl_annealing,
+        n_epochs,
         kl_annealing_ratios,
         enable_kmeans,
-        max_n_epochs,
-        is_single_component,
+        cumulative_offset,
+        cumulative_total,
+        phase_number,
         kwargs,
     ):
-        """Run the final training phase for a single component."""
-        is_child = self.run_progressive_training.get(component_name)
-        has_parents = is_child and bool(
-            self._get_parent_component(component_name)
-        )
-        do_kl_annealing = enable_kl_annealing and not has_parents
-
-        # Build phase description
-        if is_child:
-            stage = "CHILD" if do_kl_annealing else "CHILD GMM"
-        else:
-            stage = "PARENT" if do_kl_annealing else "PARENT GMM"
-        kl_mode = (
-            "KL ANNEALING" if do_kl_annealing else "TRAINING"
-        )
+        """Run KL annealing (standard_kl → GMM) for a root component."""
         self._print_phase_header(
-            f"{stage} {kl_mode}",
+            "KL Annealing",
             f"Component: {component_name}",
-            max_n_epochs,
+            n_epochs,
         )
 
         run_name = (
             f"Training/{component_order}/KLAnnealing/{component_name}"
-            if do_kl_annealing
-            else f"Training/{component_order}/{component_name}"
         )
         self._mlflow_start_run(run_name, experiment)
 
+        schedule = self._make_final_kl_schedule(
+            component_name, n_epochs, kl_annealing_ratios
+        )
+        gmm_start = int(
+            n_epochs
+            * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+        )
+
         callbacks = deepcopy(kwargs.get("callbacks", []))
+        callbacks.append(
+            VerboseCallback(
+                labels=[(component_name, component_order)],
+                phase="KL Annealing",
+                loss_prefixes={component_name: component_order},
+                phase_epochs=n_epochs,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
+                component_order=self._training_component_order,
+            )
+        )
+        callbacks.append(
+            AnnealingCallback(
+                schedule=schedule,
+                kmeans_epoch=gmm_start if enable_kmeans else None,
+                scheduler=self,
+                component_name=component_name,
+            )
+        )
 
-        if do_kl_annealing:
-            schedule = self._make_final_kl_schedule(
-                component_name, max_n_epochs, kl_annealing_ratios
+        kwargs_copy = deepcopy(kwargs)
+        kwargs_copy.pop("epochs", None)
+        history.append(
+            self.model.fit(
+                x,
+                epochs=n_epochs,
+                callbacks=callbacks,
+                verbose=0,
+                **kwargs_copy,
             )
-            callbacks.append(
-                AnnealingCallback(
-                    schedule=schedule,
-                    kmeans_epoch=(
-                        int(max_n_epochs
-                            * (kl_annealing_ratios[0] + kl_annealing_ratios[1]))
-                        if enable_kmeans
-                        else None
-                    ),
-                    scheduler=self,
-                    component_name=component_name,
-                )
-            )
-        else:
-            # No KL annealing; optionally run k-means at epoch 0
-            callbacks.append(
-                AnnealingCallback(
-                    schedule=lambda epoch: {},
-                    kmeans_epoch=0 if enable_kmeans else None,
-                    scheduler=self,
-                    component_name=component_name,
-                )
-            )
+        )
 
+        mlflow.end_run()
+
+    def _run_gmm_training_phase(
+        self,
+        component_name,
+        component_order,
+        x,
+        history,
+        experiment,
+        n_epochs,
+        is_single_component,
+        enable_kmeans,
+        cumulative_offset,
+        cumulative_total,
+        phase_number,
+        kwargs,
+    ):
+        """Run regular GMM training for a single component."""
+        self._print_phase_header(
+            "Regular Training",
+            f"Component: {component_name}",
+            n_epochs,
+        )
+
+        run_name = f"Training/{component_order}/{component_name}"
+        self._mlflow_start_run(run_name, experiment)
+
+        callbacks = deepcopy(kwargs.get("callbacks", []))
+        callbacks.append(
+            VerboseCallback(
+                labels=[(component_name, component_order)],
+                phase="Regular Training",
+                loss_prefixes={component_name: component_order},
+                phase_epochs=n_epochs,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
+                component_order=self._training_component_order,
+            )
+        )
+        callbacks.append(
+            AnnealingCallback(
+                schedule=lambda epoch: {},
+                kmeans_epoch=0 if enable_kmeans else None,
+                scheduler=self,
+                component_name=component_name,
+            )
+        )
         callbacks.extend(
             self._common_callbacks(
                 kwargs, is_single_component, component_name
@@ -805,8 +1095,9 @@ class SequentialTrainingScheduler:
         history.append(
             self.model.fit(
                 x,
-                epochs=max_n_epochs,
+                epochs=n_epochs,
                 callbacks=callbacks,
+                verbose=0,
                 **kwargs_copy,
             )
         )
@@ -1041,6 +1332,21 @@ class SequentialTrainingScheduler:
                 component.set_progressive_scaler_iteration(
                     current_iteration=1.0, total_iterations=1.0
                 )
+
+            # Explicitly freeze/unfreeze all sublayers recursively
+            should_train = comp_name in train_components
+            visited = set()
+            def _set_trainable(layer):
+                if id(layer) in visited:
+                    return
+                visited.add(id(layer))
+                if hasattr(layer, 'trainable'):
+                    layer.trainable = should_train
+                for sub in getattr(layer, 'submodules', []):
+                    _set_trainable(sub)
+                for sub in getattr(layer, 'layers', []):
+                    _set_trainable(sub)
+            _set_trainable(component)
 
             # KL Variables
             if comp_name in getattr(

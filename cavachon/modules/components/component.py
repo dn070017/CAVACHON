@@ -17,6 +17,12 @@ from cavachon.losses.negative_log_data_likelihood import (
     NegativeLogDataLikelihood,
 )
 from cavachon.losses.standard_kl_divergence import StandardKLDivergence
+from cavachon.modules.base.encoder_latent_parameterizer import (
+    EncoderLatentParameterizer,
+)
+from cavachon.modules.base.decoder_data_parameterizer import (
+    DecoderDataParameterizer,
+)
 from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 from cavachon.modules.preprocessors import Preprocessor
 
@@ -1165,7 +1171,20 @@ class Component(tf.keras.Model):
                 loss_fn = self.loss.get(key)
                 if loss_fn:
                     loss_value = loss_fn(y_true[key], y_pred[key])
-                    loss_metrics[key] = loss_value
+                    if hasattr(loss_fn, "weight"):
+                        orig_w = loss_fn.weight
+                        loss_fn.weight = tf.constant(
+                            1.0, dtype=tf.float32
+                        )
+                        raw = loss_fn(y_true[key], y_pred[key])
+                        loss_fn.weight = orig_w
+                        loss_metrics[key] = tf.cond(
+                            tf.equal(orig_w, 0.0),
+                            lambda: raw,
+                            lambda: loss_value,
+                        )
+                    else:
+                        loss_metrics[key] = loss_value
 
         return loss_metrics
 
