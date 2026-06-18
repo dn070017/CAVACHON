@@ -127,7 +127,8 @@ class VerboseCallback(tf.keras.callbacks.Callback):
     def __init__(self, labels, phase="Regular Training",
                  loss_prefixes=None, phase_epochs=None,
                  cumulative_offset=0, cumulative_total=None,
-                 phase_number=1, component_order=None):
+                 phase_number=1, component_order=None,
+                 debug=True):
         super().__init__()
         self.labels = labels
         self.phase = phase
@@ -137,6 +138,7 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         self.cumulative_total = cumulative_total
         self.phase_number = phase_number
         self.component_order = component_order or []
+        self.debug = debug
         self._epoch_start = None
 
     def _strip_component_prefix(self, key):
@@ -186,19 +188,66 @@ class VerboseCallback(tf.keras.callbacks.Callback):
 
         for cn in self.component_order:
             metrics = comp_metrics[cn]
-            if not metrics:
-                continue
             comp = self.model.components.get(cn) if hasattr(self.model, 'components') else None
             is_trainable = comp.trainable if comp else False
-            items = "  ".join(f"{k}={v:.3f}" for k, v in metrics.items())
-            if is_trainable:
+
+            if metrics:
+                items = "  ".join(f"{k}={v:.3f}" for k, v in metrics.items())
+                if is_trainable:
+                    ci = self.component_order.index(cn)
+                    c = self._COLORS[ci % len(self._COLORS)]
+                    print(f"→ {c}{self._BOLD}{cn} (Training): {items}{self._RESET}")
+                else:
+                    print(f"→ {cn} (Frozen): {items}")
+            elif is_trainable and self.debug and comp is not None:
                 ci = self.component_order.index(cn)
                 c = self._COLORS[ci % len(self._COLORS)]
-                print(f"→ {c}{self._BOLD}{cn} (Training): {items}{self._RESET}")
+                print(f"→ {c}{self._BOLD}{cn} (Training): (no metrics){self._RESET}")
             else:
-                print(f"→ {cn} (Frozen): {items}")
+                continue
+
+            if self.debug and comp is not None:
+                ci = self.component_order.index(cn)
+                c = self._COLORS[ci % len(self._COLORS)] if is_trainable else ""
+                tag = "(Training): " if is_trainable else "(Frozen): "
+                self._print_debug_line(cn, comp, c, tag)
 
         print(f"→ {elapsed:.1f}s")
+
+    def _print_debug_line(self, cn, comp, color, tag="(Training): "):
+        """Print per-component weight debug info aligned under metrics."""
+        indent = " " * (len("→ ") + len(cn) + len(tag) + 1)
+
+        parts = []
+        try:
+            gmm = self.model._gmm_kl_weights.get(cn)
+            parts.append(f"GMM weight={gmm.numpy():.2f}" if gmm is not None else "GMM weight=N/A")
+        except Exception:
+            parts.append("GMM weight=N/A")
+
+        try:
+            std = self.model._standard_kl_weights.get(cn)
+            parts.append(f"KL weight={std.numpy():.2f}" if std is not None else "KL weight=N/A")
+        except Exception:
+            parts.append("KL weight=N/A")
+
+        try:
+            dw = self.model._data_loss_weights.get(cn, {})
+            data_val = sum(float(v.numpy()) for v in dw.values()) if dw else 0.0
+            parts.append(f"data weight={data_val:.2f}")
+        except Exception:
+            parts.append("data weight=N/A")
+
+        try:
+            ps = comp.hierarchical_encoder.progressive_scaler
+            cur = float(ps.current_iteration.numpy())
+            tot = float(ps.total_iterations.numpy())
+            alpha = min(cur / max(tot, 1e-7), 1.0)
+            parts.append(f"\u03b1\u00b2={(alpha * alpha):.2f}")
+        except Exception:
+            parts.append("\u03b1\u00b2=N/A")
+
+        print(f"{color}{indent}{'  '.join(parts)}{self._RESET if color else ''}")
 
 
 class AnnealingCallback(tf.keras.callbacks.Callback):
@@ -697,7 +746,7 @@ class SequentialTrainingScheduler:
     def fit(
         self,
         x: tf.data.Dataset,
-        kl_annealing_epochs: int = 5,
+        kl_annealing_epochs: int = 25,
         kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
         enable_kmeans: bool = True,
         **kwargs,
