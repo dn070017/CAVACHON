@@ -542,6 +542,8 @@ class SequentialTrainingScheduler:
         noise_std: float
             Standard deviation of noise to add to centers
         """
+        print(f"  Perform GMM K-means Initialization for [{component_name}].")
+
         # 1. Extract latent representations from end of vanilla phase
         self.model.trainable = False
         outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
@@ -562,12 +564,13 @@ class SequentialTrainingScheduler:
         assignments = self._compute_cluster_assignments(z_tensor, centers)
         assignments_np = assignments.numpy()
 
-        # Count points in each cluster
+        # Count points in each cluster (debug)
         cluster_counts = np.zeros(n_clusters, dtype=np.int32)
         for k in range(n_clusters):
             cluster_counts[k] = np.sum(assignments_np == k)
-        for k in range(n_clusters):
-            pct = 100.0 * cluster_counts[k] / n_samples
+        # for k in range(n_clusters):
+        #     pct = 100.0 * cluster_counts[k] / n_samples
+        #     print(f"    cluster {k}: {cluster_counts[k]} samples ({pct:.1f}%)")
 
         # 5. Optionally add small noise to centers
         if add_noise:
@@ -579,9 +582,7 @@ class SequentialTrainingScheduler:
                 dtype=tf.float32,
             )
             centers = centers + noise
-            print(f"  Added Gaussian noise (std={noise_std}) to centers")
-        else:
-            print("  No noise added to centers")
+            # print(f"  Added Gaussian noise (std={noise_std}) to centers")
 
         # Initialize GMM prior parameters
         # 6a. Initialize means (loc_bias)
@@ -651,7 +652,7 @@ class SequentialTrainingScheduler:
     def fit(
         self,
         x: tf.data.Dataset,
-        kl_annealing_epochs: int = 25,
+        kl_annealing_epochs: int = 5,
         kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
         enable_kmeans: bool = False,
         **kwargs,
@@ -712,7 +713,7 @@ class SequentialTrainingScheduler:
 
         cumulative_offset = 0
         phase_number = 1
-        self._training_component_order = [
+        self.component_order = [
             c[0] for c in self.training_order
         ]
 
@@ -723,6 +724,7 @@ class SequentialTrainingScheduler:
             self.setup_component_and_loss_weights(
                 train_components
             )
+            self._compile_model(self.learning_rate)  # retrace with current trainable_variables
 
             # --- Parent annealing ---
             if self.run_progressive_training.get(component_name):
@@ -732,9 +734,23 @@ class SequentialTrainingScheduler:
                         component_name
                     )
                     if n_prog_epochs > 0:
-                        self.setup_component_and_loss_weights(
-                            parent_names + [component_name]
-                        )
+                        # Parents stay frozen; only set their data weights to 1.0
+                        # so the schedule can fade them 1→0 during annealing.
+                        for pn in parent_names:
+                            self._set_component_weights(
+                                pn, data_scale=1.0, gmm_kl=1.0, standard_kl=0.0,
+                            )
+                        # DEBUG: track vars by component ownership
+                        try:
+                            tv = {id(v) for v in self.model.trainable_variables}
+                            for cn in self.component_order:
+                                comp = self.model.components[cn]
+                                comp_vars = {id(v) for v in comp.trainable_variables}
+                                overlap = tv & comp_vars
+                                print(f"  DEBUG: Parent Annealing start. "
+                                      f"{cn} owns {len(overlap)} of {len(tv)} trainable vars")
+                        except Exception:
+                            pass
                         before = len(history)
                         self._run_parent_annealing_phase(
                             component_name=component_name,
@@ -763,6 +779,7 @@ class SequentialTrainingScheduler:
                 self.setup_component_and_loss_weights(
                     train_components
                 )
+                self._compile_model(self.learning_rate)
                 before = len(history)
                 self._run_kl_annealing_phase(
                     component_name=component_name,
@@ -787,6 +804,7 @@ class SequentialTrainingScheduler:
             self.setup_component_and_loss_weights(
                 train_components
             )
+            self._compile_model(self.learning_rate)
             before = len(history)
             self._run_gmm_training_phase(
                 component_name=component_name,
@@ -806,6 +824,21 @@ class SequentialTrainingScheduler:
             cumulative_total -= (max_n_epochs - actual)
             cumulative_offset += actual
             phase_number += 1
+
+            # DEBUG: snapshot parent weights
+            try:
+                for tc in self.training_order:
+                    other = tc[0]
+                    if other != component_name:
+                        pns = self._get_parent_component(other)
+                        if component_name in pns:
+                            comp = self.model.components[component_name]
+                            snap = sum(float(tf.reduce_sum(w).numpy()) for w in comp.weights)
+                            setattr(self, f"_snap_{component_name}", snap)
+                            self._snap_detail = {id(w): float(tf.reduce_sum(w).numpy()) for w in comp.weights}
+                            print(f"  DEBUG: Snapshot {component_name} all Σw = {snap:.4f}")
+            except Exception:
+                pass
 
         return history
 
@@ -837,13 +870,6 @@ class SequentialTrainingScheduler:
         phase, then pins it to 1.0 afterwards.  Freezes parent
         components and zeros their loss weights on completion.
         """
-        self._print_phase_header(
-            "Parent Annealing"
-            + (" (w/ KL Annealing)" if kl_annealing_enabled else ""),
-            f"Parents: {', '.join(parent_names)} → Child: {component_name}",
-            n_prog_epochs,
-        )
-
         run_name = (
             f"Training/{component_order}/ParentAnnealing/"
             f"{'-'.join(parent_names)}_to_{component_name}"
@@ -881,7 +907,7 @@ class SequentialTrainingScheduler:
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
-                component_order=self._training_component_order,
+                component_order=self.component_order,
             )
         )
 
@@ -908,11 +934,25 @@ class SequentialTrainingScheduler:
 
         self._set_component_progressive(component_name, active=False)
 
-        # Freeze parents and zero their weights
-        for pn in parent_names:
-            self.model.components[pn].trainable = False
-            print(f"  Frozen parent: {pn}")
+        # Zero parent loss weights (parents were already frozen)
         self._zero_component_variables(parent_names)
+
+        # DEBUG: verify ATAC weights unchanged
+        try:
+            if parent_names:
+                pn = parent_names[0]
+                atac = self.model.components[pn]
+                now = sum(float(tf.reduce_sum(w).numpy()) for w in atac.weights)
+                before = getattr(self, f"_snap_{pn}", None)
+                print(f"  DEBUG: {pn} Σw after parent annealing = {now:.4f} "
+                      f"(snapshot={before})")
+                if hasattr(self, '_snap_detail'):
+                    changed = sum(1 for w in atac.weights
+                                  if abs(float(tf.reduce_sum(w).numpy()) -
+                                         self._snap_detail.get(id(w), 0)) > 1e-4)
+                    print(f"  DEBUG: {changed} of {len(list(atac.weights))} layers changed")
+        except Exception:
+            pass
 
     def _run_kl_annealing_phase(
         self,
@@ -930,12 +970,6 @@ class SequentialTrainingScheduler:
         kwargs,
     ):
         """Run KL annealing (standard_kl → GMM) for a root component."""
-        self._print_phase_header(
-            "KL Annealing",
-            f"Component: {component_name}",
-            n_epochs,
-        )
-
         run_name = (
             f"Training/{component_order}/KLAnnealing/{component_name}"
         )
@@ -959,7 +993,7 @@ class SequentialTrainingScheduler:
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
-                component_order=self._training_component_order,
+                component_order=self.component_order,
             )
         )
         callbacks.append(
@@ -1001,12 +1035,6 @@ class SequentialTrainingScheduler:
         kwargs,
     ):
         """Run regular GMM training for a single component."""
-        self._print_phase_header(
-            "Regular Training",
-            f"Component: {component_name}",
-            n_epochs,
-        )
-
         run_name = f"Training/{component_order}/{component_name}"
         self._mlflow_start_run(run_name, experiment)
 
@@ -1020,7 +1048,7 @@ class SequentialTrainingScheduler:
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
-                component_order=self._training_component_order,
+                component_order=self.component_order,
             )
         )
         callbacks.append(
@@ -1076,6 +1104,8 @@ class SequentialTrainingScheduler:
                 result = {}
                 for pn in parent_names:
                     result[pn] = 1.0 - p
+                    result[f"{pn}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 1.0
+                    result[f"{pn}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
                 result[component_name] = p
                 return result
             return schedule, None
@@ -1085,6 +1115,8 @@ class SequentialTrainingScheduler:
             result = {}
             for pn in parent_names:
                 result[pn] = 1.0 - p
+                result[f"{pn}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 1.0
+                result[f"{pn}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
             result[component_name] = p
             result[f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 3.0 * p
             result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 0.0
@@ -1130,14 +1162,31 @@ class SequentialTrainingScheduler:
     # ==================================================================
 
     def _compile_model(self, learning_rate):
-        """Compile the model once with all loss-backing Variables."""
+        """Compile the model.  Creates a new optimizer when the trainable
+        variable set has changed, otherwise reuses the existing one so
+        momentum is preserved within a component's phases.
+        """
         all_components = [c.get("name") for c in self.component_configs]
-        optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-            learning_rate=learning_rate
-        )
+        current_tv = {id(v) for v in self.model.trainable_variables}
+        if getattr(self.model, 'optimizer', None) is not None and \
+           getattr(self, '_last_trainable', None) == current_tv:
+            optimizer = self.model.optimizer
+        else:
+            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                learning_rate=learning_rate
+            )
+        self._last_trainable = current_tv
+        # Pass current weight values to preserve phase-level adjustments
+        std_w = {}
+        gmm_w = {}
+        for cn in all_components:
+            d = getattr(self.model, '_standard_kl_weights', {})
+            std_w[cn] = float(d[cn].numpy()) if cn in d else 0.0
+            d = getattr(self.model, '_gmm_kl_weights', {})
+            gmm_w[cn] = float(d[cn].numpy()) if cn in d else 1.0
         self.model.compile(
-            standard_kl_weights={c: 0.0 for c in all_components},
-            gmm_kl_weights={c: 1.0 for c in all_components},
+            standard_kl_weights=std_w,
+            gmm_kl_weights=gmm_w,
             optimizer=optimizer,
         )
 
@@ -1166,17 +1215,6 @@ class SequentialTrainingScheduler:
                     Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS, 0
                 )
         return 0
-
-    @staticmethod
-    def _print_phase_header(title, subtitle, epochs, kl_mode=None):
-        """Print a formatted phase header."""
-        print(f"\n{'═' * 70}")
-        print(title)
-        print(f"  {subtitle}")
-        print(f"  Epochs: {epochs}")
-        if kl_mode:
-            print(f"  KL mode: {kl_mode}")
-        print(f"{'═' * 70}\n")
 
     def _common_callbacks(
         self, kwargs, is_single_component, component_name

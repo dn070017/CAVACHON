@@ -158,15 +158,24 @@ class TensorUtils:
         """
 
         layers = []
+        print(f"  DEBUG create_backbone_layers: name={name}")
         for no_layer in range(0, n_layers):
             n_neurons = min(base_n_neurons * rate**no_layer, max_n_neurons)
-            layers.append(tf.keras.layers.Dense(n_neurons, activation=activation))
-            layers.append(tf.keras.layers.LayerNormalization())
-
+            d = tf.keras.layers.Dense(
+                n_neurons, activation=activation,
+                name=f"{name}_dense_{no_layer}",
+            )
+            ln = tf.keras.layers.LayerNormalization(
+                name=f"{name}_layer_norm_{no_layer}",
+            )
+            layers.append(d)
+            layers.append(ln)
         if reverse:
             layers.reverse()
-
-        return tf.keras.Sequential(layers, name=name)
+        seq = tf.keras.Sequential(layers, name=name)
+        for layer in seq.layers[:2]:
+            print(f"    layer name: '{layer.name}'")
+        return seq
 
     @staticmethod
     def create_tensor_from_df(

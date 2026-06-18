@@ -50,6 +50,7 @@ class DecoderDataParameterizer(tf.keras.Model):
 
         """
         super().__init__(*args, **kwargs)
+        print(f"  DEBUG DecoderDataParameterizer: self.name={self.name}")
 
         distribution_parameterizer = ReflectionHandler.get_class_by_name(
             distribution_name, "modules/parameterizers", "Parameterizer"
@@ -59,7 +60,7 @@ class DecoderDataParameterizer(tf.keras.Model):
             n_layers=2,
             base_n_neurons=32,
             activation="swish",
-            name=Constants.MODULE_BACKBONE,
+            name=f"{self.name}_{Constants.MODULE_BACKBONE}",
         )
 
         input_dims = 0
@@ -71,7 +72,7 @@ class DecoderDataParameterizer(tf.keras.Model):
         self.x_parameterizer = distribution_parameterizer.make(
             input_dims=input_dims,
             event_dims=n_vars,
-            name=Constants.MODULE_X_PARAMETERIZER,
+            name=f"{self.name}_{Constants.MODULE_X_PARAMETERIZER}",
         )
 
     def compute_attribution_target(self, inputs: tf.Tensor):

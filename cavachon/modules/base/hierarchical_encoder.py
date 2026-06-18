@@ -57,15 +57,16 @@ class HierarchicalEncoder(tf.keras.Model):
             'hierarchical_encoder'.
         """
         super().__init__(name=name)
+        print(f"  DEBUG HierarchicalEncoder: name={name}")
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)
         self.r_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias)],
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias, name=f"{name}_r_dense")],
             name=Constants.MODULE_R_NETWORK
         )
         self.b_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias)],
+            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias, name=f"{name}_b_dense")],
             name=Constants.MODULE_B_NETWORK
         )
 

@@ -1170,7 +1170,6 @@ class Component(tf.keras.Model):
             for key in y_true:
                 loss_fn = self.loss.get(key)
                 if loss_fn:
-                    loss_value = loss_fn(y_true[key], y_pred[key])
                     if hasattr(loss_fn, "weight"):
                         orig_w = loss_fn.weight
                         loss_fn.weight = tf.constant(
@@ -1178,13 +1177,9 @@ class Component(tf.keras.Model):
                         )
                         raw = loss_fn(y_true[key], y_pred[key])
                         loss_fn.weight = orig_w
-                        loss_metrics[key] = tf.cond(
-                            tf.equal(orig_w, 0.0),
-                            lambda: raw,
-                            lambda: loss_value,
-                        )
+                        loss_metrics[key] = raw
                     else:
-                        loss_metrics[key] = loss_value
+                        loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 
         return loss_metrics
 

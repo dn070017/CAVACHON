@@ -642,16 +642,23 @@ class Model(tf.keras.Model):
                     )
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            gradients = tape.gradient(loss, self.trainable_variables)
+            trainable = self.trainable_variables
+            gradients = tape.gradient(loss, trainable)
             gradients = TensorUtils.remove_nan_gradients(gradients)
-            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+            self.optimizer.apply_gradients(zip(gradients, trainable))
 
             loss_metrics = {"loss": loss}
             for key in y_true:
                 loss_fn = self.loss.get(key)
                 if loss_fn:
-                    loss_value = loss_fn(y_true[key], y_pred[key])
-                    loss_metrics[key] = loss_value
+                    if hasattr(loss_fn, "weight") and hasattr(loss_fn.weight, "assign"):
+                        orig_w = loss_fn.weight
+                        loss_fn.weight = tf.constant(1.0, dtype=tf.float32)
+                        raw = loss_fn(y_true[key], y_pred[key])
+                        loss_fn.weight = orig_w
+                        loss_metrics[key] = raw
+                    else:
+                        loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 
         return loss_metrics
 
