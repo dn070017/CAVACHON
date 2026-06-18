@@ -248,12 +248,6 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
             and epoch == self.kmeans_epoch
             and not self._kmeans_done
         ):
-            print(f"\n{'=' * 70}")
-            print(
-                f"K-MEANS INITIALIZATION AT EPOCH {epoch} - "
-                f"{self.component_name}"
-            )
-            print(f"{'=' * 70}\n")
             # Save per-component trainable state before k-means
             saved_trainable = {
                 name: comp.trainable
@@ -274,7 +268,6 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
 
 class OptimizerStateCallback(tf.keras.callbacks.Callback):
     """Snapshot optimizer state each epoch; restore on early stop."""
-
     def __init__(self):
         super().__init__()
         self._opt_states = {}
@@ -299,6 +292,24 @@ class OptimizerStateCallback(tf.keras.callbacks.Callback):
                     break
         except Exception:
             pass
+
+
+class EarlyStoppingCallback(tf.keras.callbacks.EarlyStopping):
+    """EarlyStopping with custom red message using the cumulative epoch."""
+
+    def __init__(self, cumulative_offset=0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._cumulative_offset = cumulative_offset
+
+    def on_train_end(self, logs=None):
+        stopped_epoch = self.stopped_epoch
+        super().on_train_end(logs)
+        if stopped_epoch > 0 and self.restore_best_weights:
+            epoch = self._cumulative_offset + self.best_epoch
+            print(
+                f"\033[91mRestoring Model Weights from Epoch {epoch}"
+                f"\033[0m"
+            )
 
 
 class SequentialTrainingScheduler:
@@ -571,7 +582,13 @@ class SequentialTrainingScheduler:
         noise_std: float
             Standard deviation of noise to add to centers
         """
-        print(f"  Perform GMM K-means Initialization for [{component_name}].")
+        ci = self.component_order.index(component_name)
+        color = VerboseCallback._COLORS[ci % len(VerboseCallback._COLORS)]
+        print(
+            f"\033[91mPerform GMM K-means Initialization for "
+            f"{color}{VerboseCallback._BOLD}[{component_name}]\033[91m."
+            f"{VerboseCallback._RESET}"
+        )
 
         # 1. Extract latent representations from end of vanilla phase
         self.model.trainable = False
@@ -593,7 +610,6 @@ class SequentialTrainingScheduler:
         assignments = self._compute_cluster_assignments(z_tensor, centers)
         assignments_np = assignments.numpy()
 
-        # Count points in each cluster (debug)
         cluster_counts = np.zeros(n_clusters, dtype=np.int32)
         for k in range(n_clusters):
             cluster_counts[k] = np.sum(assignments_np == k)
@@ -683,7 +699,7 @@ class SequentialTrainingScheduler:
         x: tf.data.Dataset,
         kl_annealing_epochs: int = 5,
         kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
-        enable_kmeans: bool = False,
+        enable_kmeans: bool = True,
         **kwargs,
     ) -> List[tf.keras.callbacks.History]:
         """Fit model with multi-phase hierarchical training.
@@ -769,17 +785,6 @@ class SequentialTrainingScheduler:
                             self._set_component_weights(
                                 pn, data_scale=1.0, gmm_kl=1.0, standard_kl=0.0,
                             )
-                        # DEBUG: track vars by component ownership
-                        try:
-                            tv = {id(v) for v in self.model.trainable_variables}
-                            for cn in self.component_order:
-                                comp = self.model.components[cn]
-                                comp_vars = {id(v) for v in comp.trainable_variables}
-                                overlap = tv & comp_vars
-                                print(f"  DEBUG: Parent Annealing start. "
-                                      f"{cn} owns {len(overlap)} of {len(tv)} trainable vars")
-                        except Exception:
-                            pass
                         before = len(history)
                         self._run_parent_annealing_phase(
                             component_name=component_name,
@@ -854,21 +859,6 @@ class SequentialTrainingScheduler:
             cumulative_offset += actual
             phase_number += 1
 
-            # DEBUG: snapshot parent weights
-            try:
-                for tc in self.training_order:
-                    other = tc[0]
-                    if other != component_name:
-                        pns = self._get_parent_component(other)
-                        if component_name in pns:
-                            comp = self.model.components[component_name]
-                            snap = sum(float(tf.reduce_sum(w).numpy()) for w in comp.weights)
-                            setattr(self, f"_snap_{component_name}", snap)
-                            self._snap_detail = {id(w): float(tf.reduce_sum(w).numpy()) for w in comp.weights}
-                            print(f"  DEBUG: Snapshot {component_name} all Σw = {snap:.4f}")
-            except Exception:
-                pass
-
         return history
 
     # ==================================================================
@@ -926,8 +916,7 @@ class SequentialTrainingScheduler:
             VerboseCallback(
                 labels=[(pn, 0) for pn in parent_names]
                 + [(component_name, 1)],
-                phase="Parent Annealing"
-                + (" (w/ KL Annealing)" if kl_annealing_enabled else ""),
+                phase="Parent Annealing",
                 loss_prefixes={
                     **{pn: 0 for pn in parent_names},
                     component_name: 1,
@@ -966,23 +955,6 @@ class SequentialTrainingScheduler:
 
         # Zero parent loss weights (parents were already frozen)
         self._zero_component_variables(parent_names)
-
-        # DEBUG: verify ATAC weights unchanged
-        try:
-            if parent_names:
-                pn = parent_names[0]
-                atac = self.model.components[pn]
-                now = sum(float(tf.reduce_sum(w).numpy()) for w in atac.weights)
-                before = getattr(self, f"_snap_{pn}", None)
-                print(f"  DEBUG: {pn} Σw after parent annealing = {now:.4f} "
-                      f"(snapshot={before})")
-                if hasattr(self, '_snap_detail'):
-                    changed = sum(1 for w in atac.weights
-                                  if abs(float(tf.reduce_sum(w).numpy()) -
-                                         self._snap_detail.get(id(w), 0)) > 1e-4)
-                    print(f"  DEBUG: {changed} of {len(list(atac.weights))} layers changed")
-        except Exception:
-            pass
 
     def _run_kl_annealing_phase(
         self,
@@ -1093,7 +1065,8 @@ class SequentialTrainingScheduler:
         callbacks.append(OptimizerStateCallback())
         callbacks.extend(
             self._common_callbacks(
-                kwargs, is_single_component, component_name
+                kwargs, is_single_component, component_name,
+                cumulative_offset=cumulative_offset,
             )
         )
 
@@ -1216,7 +1189,6 @@ class SequentialTrainingScheduler:
             std_w[cn] = float(d[cn].numpy()) if cn in d else 0.0
             d = getattr(self.model, '_gmm_kl_weights', {})
             gmm_w[cn] = float(d[cn].numpy()) if cn in d else 1.0
-        print(f"  DEBUG _compile_model: gmm_w={ {k:round(v,2) for k,v in gmm_w.items()} }")
         self.model.compile(
             standard_kl_weights=std_w,
             gmm_kl_weights=gmm_w,
@@ -1250,7 +1222,8 @@ class SequentialTrainingScheduler:
         return 0
 
     def _common_callbacks(
-        self, kwargs, is_single_component, component_name
+        self, kwargs, is_single_component, component_name,
+        cumulative_offset=0,
     ):
         """Return common callbacks: PeriodicTSNE + EarlyStopping."""
         callbacks = []
@@ -1267,14 +1240,15 @@ class SequentialTrainingScheduler:
             )
         if self.early_stopping:
             callbacks.append(
-                tf.keras.callbacks.EarlyStopping(
+                EarlyStoppingCallback(
+                    cumulative_offset=cumulative_offset,
                     monitor="loss",
                     min_delta=5,
                     patience=max(
                         10, int(kwargs.get("epochs", 1) / 20)
                     ),
                     restore_best_weights=True,
-                    verbose=1,
+                    verbose=0,
                 )
             )
         return callbacks

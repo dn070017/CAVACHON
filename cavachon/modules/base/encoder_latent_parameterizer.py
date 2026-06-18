@@ -31,7 +31,6 @@ class EncoderLatentParameterizer(tf.keras.Model):
 
     def __init__(self, n_layers: int = 3, n_latent_dims: int = 5, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print(f"  DEBUG EncoderLatentParameterizer: self.name={self.name}")
         self.backbone_network = TensorUtils.create_backbone_layers(
             n_layers, reverse=True, name=f"{self.name}_{Constants.MODULE_BACKBONE}"
         )

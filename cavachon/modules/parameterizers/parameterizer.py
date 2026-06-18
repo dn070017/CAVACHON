@@ -218,7 +218,6 @@ class Parameterizer(tf.keras.Model):
             f"{cls.__name__}", "layers/parameterizers", "Layer"
         )
         layer = layer_class(event_dims=event_dims, name=name, **kwargs)
-        print(f"  DEBUG Parameterizer.make: name={name}")
         outputs = layer(inputs.get(Constants.TENSOR_NAME_X))
         outputs = cls.modify_outputs(
             inputs=inputs,

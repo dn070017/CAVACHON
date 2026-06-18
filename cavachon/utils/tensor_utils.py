@@ -158,7 +158,6 @@ class TensorUtils:
         """
 
         layers = []
-        print(f"  DEBUG create_backbone_layers: name={name}")
         for no_layer in range(0, n_layers):
             n_neurons = min(base_n_neurons * rate**no_layer, max_n_neurons)
             d = tf.keras.layers.Dense(
@@ -173,8 +172,6 @@ class TensorUtils:
         if reverse:
             layers.reverse()
         seq = tf.keras.Sequential(layers, name=name)
-        for layer in seq.layers[:2]:
-            print(f"    layer name: '{layer.name}'")
         return seq
 
     @staticmethod

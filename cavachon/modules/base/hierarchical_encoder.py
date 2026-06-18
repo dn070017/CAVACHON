@@ -57,7 +57,6 @@ class HierarchicalEncoder(tf.keras.Model):
             'hierarchical_encoder'.
         """
         super().__init__(name=name)
-        print(f"  DEBUG HierarchicalEncoder: name={name}")
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)

@@ -50,7 +50,6 @@ class DecoderDataParameterizer(tf.keras.Model):
 
         """
         super().__init__(*args, **kwargs)
-        print(f"  DEBUG DecoderDataParameterizer: self.name={self.name}")
 
         distribution_parameterizer = ReflectionHandler.get_class_by_name(
             distribution_name, "modules/parameterizers", "Parameterizer"
