@@ -27,8 +27,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             total iterations in the progressive training. Defaults to 5000.
 
         scale: float, optional
-            multiplier applied to alpha before scaling inputs.
-            Defaults to 1.0.
+            multiplier applied to the final output. Defaults to 1.0.
 
         name: str, optional
             Name for the tensorflow layer. Defaults to 'progressive_scaler'.
@@ -41,8 +40,8 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
     def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:
         """Forward pass (stateless — no mutation)."""
-        alpha_squared = self._compute_alpha_squared()
-        return self.scale * alpha_squared * inputs
+        progress = self._progress()
+        return self.scale * progress * inputs
 
     def increment(self):
         """Advance one iteration, clamp to [0, total_iterations]."""
@@ -60,22 +59,27 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             tf.clip_by_value(self.current_iteration, 0.0, self.total_iterations)
         )
 
-    def _compute_alpha_squared(self):
-        """Return α² ∈ [0, 1] derived from the iteration counters."""
-        alpha = self.current_iteration / tf.maximum(self.total_iterations, 1.0)
-        alpha = tf.clip_by_value(alpha, 0.0, 1.0)
-        return alpha ** 2
+    def _progress(self):
+        """Return (current/total)² ∈ [0, 1] — the scaling progress.
+
+        Lower-bound clipped at 1e-8 (not 0) so that train_step can
+        recover the raw unweighted loss via weighted_loss / weight_scalar
+        without hitting division-by-zero.
+        """
+        fraction = self.current_iteration / tf.maximum(self.total_iterations, 1.0)
+        fraction = tf.clip_by_value(fraction, 1e-8, 1.0)
+        return fraction ** 2
 
     def numpy(self):
-        """Return current effective weight = scale × α² as a Python float."""
-        return float(self.scale * self._compute_alpha_squared())
+        """Return current effective weight = scale × progress as a Python float."""
+        return float(self.scale * self._progress())
 
     def assign(self, value):
         """MutableVariable-compatible setter. Delegates to pin_to."""
         self.pin_to(float(value))
 
     def pin_to(self, value: float):
-        """Pin the scaler output to *value* (computes α² = value / scale)."""
+        """Pin output to *value* (sets progress = value / scale)."""
         target = float(value) / max(float(self.scale), 1e-7)
         self.total_iterations.assign(1.0)
         if target <= 0.0:

@@ -3,6 +3,7 @@ import tensorflow as tf
 from cavachon.distributions.mixture_multivariate_normal_diag_distribution import (
     MixtureMultivariateNormalDiagDistribution,
 )
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.distributions.multivariate_normal_diag_distribution import (
     MultivariateNormalDiagDistribution,
 )
@@ -18,35 +19,17 @@ class GMMKLDivergence(tf.keras.losses.Loss):
 
     def __init__(
         self,
-        weight_var=None,  # ← Accept a tf.Variable
+        weight: float = 1.0,
         name: str = "gmm_kl_divergence", 
         **kwargs
     ):
-        """Constructor for GMMKLDivergence
-
-        Parameters
-        ----------
-        weight_var: float, optional
-            the scaling factor for the loss. The output will be
-            weight * loss. Defaults to 1.0.
-
-        name: str, optional
-            name for the tf.keras.losses.Loss (will be used when
-            reporting the loss during training_step in Component and
-            Model). Defaults to 'kl_divergence'.
-
-        kwargs: Mapping[str, Any]
-            additional parameters for tf.keras.losses.Loss
-
-        """
+        """GMM KL with progressive scaler: effective weight = scale × α²."""
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
-        # Use the provided variable, or create a constant
-        if weight_var is not None:
-            self.weight = weight_var
-        else:
-            self.weight = tf.constant(1.0, dtype=tf.float32)
+        self.weight = ProgressiveScaler(
+            total_iterations=1, scale=float(weight),
+        )
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Compute the GMMKLDivergence loss
@@ -145,6 +128,4 @@ class GMMKLDivergence(tf.keras.losses.Loss):
             kl_divergence < 0, tf.zeros_like(kl_divergence), kl_divergence
         )
 
-        if hasattr(self.weight, 'increment'):
-            return self.weight(tf.ones(())) * kl_divergence
-        return self.weight * kl_divergence
+        return self.weight(tf.ones(())) * kl_divergence

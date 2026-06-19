@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from cavachon.layers.progressive_scaler import ProgressiveScaler
+
 
 class StandardKLDivergence(tf.keras.losses.Loss):
     """StandardKLDivergence
@@ -14,31 +16,19 @@ class StandardKLDivergence(tf.keras.losses.Loss):
 
     def __init__(
         self, 
-        weight_var=None,  # ← Accept a tf.Variable,
+        weight: float = 3.0,
         name: str = "standard_kl_divergence", 
         **kwargs
     ):
-        """Constructor for StandardKLDivergence
-
-        Parameters
-        ----------
-        weight_var: float, optional
-            Scaling factor for the loss. Defaults to 1.0.
-
-        name: str, optional
-            Name for the loss (shows up in training logs). Defaults to 'standard_kl_divergence'.
-        """
-        
+        """Standard KL with progressive scaler: effective weight = scale × α²."""
         super().__init__(
             name=name,
-            reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE,  # Average over batch
+            reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE,
             **kwargs,
         )
-        # Use the provided variable, or create a constant
-        if weight_var is not None:
-            self.weight = weight_var
-        else:
-            self.weight = tf.constant(3.0, dtype=tf.float32)
+        self.weight = ProgressiveScaler(
+            total_iterations=1, scale=float(weight),
+        )
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Compute the vanilla KL divergence loss
@@ -94,6 +84,4 @@ class StandardKLDivergence(tf.keras.losses.Loss):
 
         # Step 6: Scale by weight and return
         # The reduction=SUM_OVER_BATCH_SIZE averages this automatically
-        if hasattr(self.weight, 'increment'):
-            return self.weight(tf.ones(())) * kl_divergence
-        return self.weight * kl_divergence
+        return self.weight(tf.ones(())) * kl_divergence

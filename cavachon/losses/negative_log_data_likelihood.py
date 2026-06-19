@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.utils.reflection_handler import ReflectionHandler
 
 
@@ -38,7 +39,9 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
             additional parameters for tf.keras.losses.Loss
 
         """
-        self.weight = weight
+        self.weight = ProgressiveScaler(
+            total_iterations=1, scale=float(weight),
+        )
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
@@ -72,6 +75,4 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
         dist_x_z = self.dist_x_z_class.from_parameterizer_output(y_pred)
         logpx_z = tf.reduce_sum(dist_x_z.log_prob(y_true), axis=-1)
 
-        if hasattr(self.weight, 'increment'):
-            return -self.weight(tf.ones(())) * logpx_z
-        return -self.weight * logpx_z
+        return -self.weight(tf.ones(())) * logpx_z

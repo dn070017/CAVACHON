@@ -19,6 +19,7 @@ from cavachon.distributions.multivariate_normal_diag_distribution import (
     MultivariateNormalDiagDistribution,
 )
 from cavachon.environment.constants import Constants
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 
 
 class PeriodicTSNECallback(tf.keras.callbacks.Callback):
@@ -329,9 +330,9 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
                     w = getattr(self.model, wdict, {}).get(cn)
                     if wdict == '_data_loss_weights' and isinstance(w, dict):
                         for v in w.values():
-                            if hasattr(v, 'increment') and float(v.total_iterations) > 1.0:
+                            if isinstance(v, ProgressiveScaler) and float(v.total_iterations) > 1.0:
                                 v.increment()
-                    elif w is not None and hasattr(w, 'increment') and float(w.total_iterations) > 1.0:
+                    elif w is not None and isinstance(w, ProgressiveScaler) and float(w.total_iterations) > 1.0:
                         w.increment()
         except Exception:
             pass
@@ -809,7 +810,6 @@ class SequentialTrainingScheduler:
         history = []
         max_n_epochs = kwargs.get("epochs", 100)
 
-        self._init_progressive_scalers()
         self._compile_model(self.learning_rate)
         experiment = self._mlflow_experiment()
         is_single_component = len(self.training_order) == 1
@@ -1238,41 +1238,6 @@ class SequentialTrainingScheduler:
     # Utilities
     # ==================================================================
 
-    def _init_progressive_scalers(self):
-        """Create ProgressiveScaler instances for all KL and data weights.
-
-        Replaces the default tf.Variable with ProgressiveScaler on the
-        model so losses can use per-batch progressive scaling.
-        """
-        from cavachon.layers.progressive_scaler import ProgressiveScaler
-
-        for cn in [c.get("name") for c in self.component_configs]:
-            if not hasattr(self.model, '_standard_kl_weights'):
-                self.model._standard_kl_weights = {}
-            self.model._standard_kl_weights[cn] = ProgressiveScaler(
-                scale=3.0, name=f"{cn}_standard_kl_weight",
-            )
-
-            if not hasattr(self.model, '_gmm_kl_weights'):
-                self.model._gmm_kl_weights = {}
-            self.model._gmm_kl_weights[cn] = ProgressiveScaler(
-                scale=1.0, name=f"{cn}_gmm_kl_weight",
-            )
-
-            if not hasattr(self.model, '_data_loss_weights'):
-                self.model._data_loss_weights = {}
-            if cn not in self.model._data_loss_weights:
-                self.model._data_loss_weights[cn] = {}
-            mod_weight = self.modality_weight.get(cn, {})
-            for cc in self.component_configs:
-                if cc.get("name") == cn:
-                    for mod_name in cc.get("modality_names", []):
-                        mod_w = mod_weight.get(mod_name, 1.0)
-                        self.model._data_loss_weights[cn][mod_name] = ProgressiveScaler(
-                            scale=mod_w, name=f"{cn}_{mod_name}_data_weight",
-                        )
-                    break
-
     def _compile_model(self, learning_rate):
         """Compile the model.  Creates a new optimizer when the trainable
         variable set has changed, otherwise reuses the existing one so
@@ -1288,14 +1253,13 @@ class SequentialTrainingScheduler:
                 learning_rate=learning_rate
             )
         self._last_trainable = current_tv
-        # Pass current weight values to preserve phase-level adjustments
         std_w = {}
         gmm_w = {}
         for cn in all_components:
             d = getattr(self.model, '_standard_kl_weights', {})
-            std_w[cn] = float(d[cn].numpy()) if cn in d else 0.0
+            std_w[cn] = float(d[cn].scale) if cn in d else 3.0
             d = getattr(self.model, '_gmm_kl_weights', {})
-            gmm_w[cn] = float(d[cn].numpy()) if cn in d else 1.0
+            gmm_w[cn] = float(d[cn].scale) if cn in d else 1.0
         self.model.compile(
             standard_kl_weights=std_w,
             gmm_kl_weights=gmm_w,
@@ -1384,19 +1348,19 @@ class SequentialTrainingScheduler:
         model = self.model
         if comp_name in getattr(model, '_gmm_kl_weights', {}):
             w = model._gmm_kl_weights[comp_name]
-            if hasattr(w, 'pin_to'):
+            if isinstance(w, ProgressiveScaler):
                 w.pin_to(float(gmm_kl))
             else:
                 w.assign(float(gmm_kl))
         if comp_name in getattr(model, '_standard_kl_weights', {}):
             w = model._standard_kl_weights[comp_name]
-            if hasattr(w, 'pin_to'):
+            if isinstance(w, ProgressiveScaler):
                 w.pin_to(float(standard_kl))
             else:
                 w.assign(float(standard_kl))
         for mod_name, var in model._data_loss_weights.get(comp_name, {}).items():
             mod_w = self.modality_weight.get(comp_name, {}).get(mod_name, 1.0)
-            if hasattr(var, 'pin_to'):
+            if isinstance(var, ProgressiveScaler):
                 var.pin_to(mod_w * float(data_scale))
             else:
                 var.assign(mod_w * float(data_scale))

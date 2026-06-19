@@ -82,34 +82,22 @@ class MockModel:
                 gmm_w = 1.0
 
             if has_standard:
-                if cn not in self._standard_kl_weights:
-                    self._standard_kl_weights[cn] = tf.Variable(
-                        standard_w, trainable=False, dtype=tf.float32,
-                        name=f"{cn}_standard_kl_weight",
-                    )
-                else:
-                    w = self._standard_kl_weights[cn]
-                    if not hasattr(w, 'increment'):
-                        w.assign(standard_w)
                 loss[f"{cn}_standard_kl_divergence"] = StandardKLDivergence(
-                    weight_var=self._standard_kl_weights[cn],
+                    weight=standard_w,
                     name=f"{cn}_standard_kl_divergence",
                 )
+                self._standard_kl_weights[cn] = loss[
+                    f"{cn}_standard_kl_divergence"
+                ].weight
 
             if has_gmm:
-                if cn not in self._gmm_kl_weights:
-                    self._gmm_kl_weights[cn] = tf.Variable(
-                        gmm_w, trainable=False, dtype=tf.float32,
-                        name=f"{cn}_gmm_kl_weight",
-                    )
-                else:
-                    w = self._gmm_kl_weights[cn]
-                    if not hasattr(w, 'increment'):
-                        w.assign(gmm_w)
                 loss[f"{cn}_gmm_kl_divergence"] = GMMKLDivergence(
-                    weight_var=self._gmm_kl_weights[cn],
+                    weight=gmm_w,
                     name=f"{cn}_gmm_kl_divergence",
                 )
+                self._gmm_kl_weights[cn] = loss[
+                    f"{cn}_gmm_kl_divergence"
+                ].weight
 
             if cn not in self._data_loss_weights:
                 self._data_loss_weights[cn] = {}
@@ -117,18 +105,11 @@ class MockModel:
                 nldl_name = (
                     f"{cn}_{mod}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                 )
-                if mod not in self._data_loss_weights[cn]:
-                    var = tf.Variable(
-                        loss_weights.pop(nldl_name, 1.0),
-                        trainable=False, dtype=tf.float32,
-                        name=f"{cn}_{mod}_data_weight",
-                    )
-                    self._data_loss_weights[cn][mod] = var
-                else:
-                    var = self._data_loss_weights[cn][mod]
+                weight = loss_weights.pop(nldl_name, 1.0)
                 loss[nldl_name] = NegativeLogDataLikelihood(
-                    "MultivariateNormalDiag", var, name=nldl_name,
+                    "MultivariateNormalDiag", weight, name=nldl_name,
                 )
+                self._data_loss_weights[cn][mod] = loss[nldl_name].weight
 
         self.loss = loss
 

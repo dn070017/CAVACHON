@@ -6,6 +6,7 @@ import tensorflow as tf
 
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.to_dense import ToDense
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameterizer_layer import (
     MixtureMultivariateNormalDiagParameterizerLayer,
 )
@@ -1171,13 +1172,16 @@ class Component(tf.keras.Model):
                 loss_fn = self.loss.get(key)
                 if loss_fn:
                     if hasattr(loss_fn, "weight"):
-                        orig_w = loss_fn.weight
-                        loss_fn.weight = tf.constant(
-                            1.0, dtype=tf.float32
-                        )
-                        raw = loss_fn(y_true[key], y_pred[key])
-                        loss_fn.weight = orig_w
-                        loss_metrics[key] = raw
+                        if isinstance(loss_fn.weight, ProgressiveScaler):
+                            weighted_loss = loss_fn(y_true[key], y_pred[key])
+                            weight_scalar = loss_fn.weight(tf.ones(()))
+                            loss_metrics[key] = weighted_loss / weight_scalar
+                        else:
+                            orig_w = loss_fn.weight
+                            loss_fn.weight = tf.constant(1.0, dtype=tf.float32)
+                            raw = loss_fn(y_true[key], y_pred[key])
+                            loss_fn.weight = orig_w
+                            loss_metrics[key] = raw
                     else:
                         loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 

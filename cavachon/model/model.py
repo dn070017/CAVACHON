@@ -15,6 +15,7 @@ from cavachon.layers.modifiers import ToDense
 from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
 from cavachon.losses.standard_kl_divergence import StandardKLDivergence
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.modules.components.component import Component
 from cavachon.utils.general_utils import GeneralUtils
 from cavachon.utils.tensor_utils import TensorUtils
@@ -451,7 +452,10 @@ class Model(tf.keras.Model):
         standard_kl_weights = standard_kl_weights or {}
         gmm_kl_weights = gmm_kl_weights or {}
 
-        # Create two separate weight variables
+        # Scheduler-facing index: maps component name → ProgressiveScaler
+        # so the scheduler can call pin_to / activate / increment directly.
+        # Populated below from the loss's .weight attribute; NOT used for
+        # determining which losses to create or what scale to initialize.
         if not hasattr(self, "_standard_kl_weights"):
             self._standard_kl_weights = {}
         if not hasattr(self, "_gmm_kl_weights"):
@@ -461,7 +465,8 @@ class Model(tf.keras.Model):
         kwargs.pop("loss_weights", None)
 
         if "loss" not in kwargs:
-            loss = dict()
+            loss = getattr(self, "loss", None)
+            loss = loss if isinstance(loss, dict) else {}
             for component_config in self.component_configs:
                 component_name = component_config.get("name")
 
@@ -478,51 +483,34 @@ class Model(tf.keras.Model):
                     gmm_w = 1.0
 
                 if has_standard:
-                    if component_name not in self._standard_kl_weights:
-                        self._standard_kl_weights[component_name] = tf.Variable(
-                            standard_w,
-                            trainable=False,
-                            dtype=tf.float32,
-                            name=f"{component_name}_standard_kl_weight",
-                        )
-                    else:
-                        w = self._standard_kl_weights[component_name]
-                        if not hasattr(w, 'increment'):
-                            w.assign(standard_w)
-
                     loss.setdefault(
-                        f"{component_name}_"
-                        f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
+                        f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
                         StandardKLDivergence(
-                            weight_var=self._standard_kl_weights[component_name],
+                            weight=standard_w,
                             name=f"{component_name}_"
                             f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
                         ),
                     )
+                    # scheduler index
+                    self._standard_kl_weights[component_name] = loss[
+                        f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
+                    ].weight
 
                 if has_gmm:
-                    if component_name not in self._gmm_kl_weights:
-                        self._gmm_kl_weights[component_name] = tf.Variable(
-                            gmm_w,
-                            trainable=False,
-                            dtype=tf.float32,
-                            name=f"{component_name}_gmm_kl_weight",
-                        )
-                    else:
-                        w = self._gmm_kl_weights[component_name]
-                        if not hasattr(w, 'increment'):
-                            w.assign(gmm_w)
-
                     loss.setdefault(
-                        f"{component_name}_"
-                        f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
+                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
                         GMMKLDivergence(
-                            weight_var=self._gmm_kl_weights[component_name],
+                            weight=gmm_w,
                             name=f"{component_name}_"
                             f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
                         ),
                     )
+                    # scheduler index
+                    self._gmm_kl_weights[component_name] = loss[
+                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
+                    ].weight
 
+                # scheduler index (per-component, per-modality ProgressiveScaler)
                 if not hasattr(self, "_data_loss_weights"):
                     self._data_loss_weights = {}
                 if component_name not in self._data_loss_weights:
@@ -535,24 +523,19 @@ class Model(tf.keras.Model):
                         f"{component_name}_{modality_name}_"
                         f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     )
-                    existing = self._data_loss_weights[component_name].get(modality_name)
-                    if existing is not None and hasattr(existing, 'increment'):
-                        var = existing
-                    else:
-                        var = tf.Variable(
-                            loss_weights.pop(nldl_name, 1.0),
-                            trainable=False, dtype=tf.float32,
-                            name=f"{component_name}_{modality_name}_data_weight",
-                        )
-                        self._data_loss_weights[component_name][modality_name] = var
+                    weight = loss_weights.pop(nldl_name, 1.0)
                     loss.setdefault(
                         nldl_name,
                         NegativeLogDataLikelihood(
                             distribution_names.get(modality_name),
-                            var,
+                            weight,
                             name=nldl_name,
                         ),
                     )
+                    # scheduler index
+                    self._data_loss_weights[component_name][modality_name] = loss[
+                        nldl_name
+                    ].weight
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -602,7 +585,7 @@ class Model(tf.keras.Model):
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
                 )
-                
+
                 modality_names = component_config.get(
                     Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
                 )
@@ -618,13 +601,9 @@ class Model(tf.keras.Model):
                 )
                 # Check which KL losses are compiled
                 standard_kl_name = (
-                    f"{component_name}_"
-                    f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
                 )
-                gmm_kl_name = (
-                    f"{component_name}_"
-                    f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
-                )
+                gmm_kl_name = f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
 
                 if standard_kl_name in self.loss and gmm_kl_name in self.loss:
                     # PHASE 2: Both losses active
@@ -659,12 +638,12 @@ class Model(tf.keras.Model):
             for key in y_true:
                 loss_fn = self.loss.get(key)
                 if loss_fn:
-                    if hasattr(loss_fn, "weight") and hasattr(loss_fn.weight, "assign"):
-                        orig_w = loss_fn.weight
-                        loss_fn.weight = tf.constant(1.0, dtype=tf.float32)
-                        raw = loss_fn(y_true[key], y_pred[key])
-                        loss_fn.weight = orig_w
-                        loss_metrics[key] = raw
+                    if hasattr(loss_fn, "weight") and isinstance(
+                        loss_fn.weight, ProgressiveScaler
+                    ):
+                        weighted_loss = loss_fn(y_true[key], y_pred[key])
+                        weight_scalar = loss_fn.weight(tf.ones(()))
+                        loss_metrics[key] = weighted_loss / weight_scalar
                     else:
                         loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 
@@ -905,9 +884,7 @@ class Model(tf.keras.Model):
         requested_components = set(components or self.components.keys())
         unknown_components = requested_components.difference(self.components.keys())
         if unknown_components:
-            raise ValueError(
-                f"Unknown component names: {sorted(unknown_components)}"
-            )
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
         outputs = {
             Constants.MODEL_OUTPUTS_Z_PARAMS: dict(),
@@ -993,9 +970,7 @@ class Model(tf.keras.Model):
         requested_components = set(components or self.components.keys())
         unknown_components = requested_components.difference(self.components.keys())
         if unknown_components:
-            raise ValueError(
-                f"Unknown component names: {sorted(unknown_components)}"
-            )
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
         accumulated_z_hat = dict(z_hat_seed or {})
         outputs = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
@@ -1096,9 +1071,7 @@ class Model(tf.keras.Model):
         requested_components = set(components or self.components.keys())
         unknown_components = requested_components.difference(self.components.keys())
         if unknown_components:
-            raise ValueError(
-                f"Unknown component names: {sorted(unknown_components)}"
-            )
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
         outputs = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
         for component_config in self.component_configs:
@@ -1109,9 +1082,7 @@ class Model(tf.keras.Model):
             component_z_hat = z_hat.get(component_name)
             if component_z_hat is None:
                 if strict:
-                    raise ValueError(
-                        f"Missing z_hat for component '{component_name}'."
-                    )
+                    raise ValueError(f"Missing z_hat for component '{component_name}'.")
                 continue
 
             component_input_config = dict(component_config)
@@ -1136,8 +1107,8 @@ class Model(tf.keras.Model):
                 training=training and component.trainable,
             )
             for key, value in component_outputs.items():
-                outputs[Constants.MODEL_OUTPUTS_X_PARAMS][
-                    f"{component_name}_{key}"
-                ] = value
+                outputs[Constants.MODEL_OUTPUTS_X_PARAMS][f"{component_name}_{key}"] = (
+                    value
+                )
 
         return outputs
