@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 
 import tensorflow as tf
 
+from cavachon.callbacks import AnnealingCallback
 from cavachon.environment.constants import Constants
 from cavachon.scheduler.sequential_training_scheduler import (
-    AnnealingCallback,
     SequentialTrainingScheduler,
 )
 
