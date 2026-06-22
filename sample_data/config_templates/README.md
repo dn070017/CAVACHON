@@ -355,11 +355,26 @@ The configs for the components in the model. See also [Modalities (in Component)
   * defaults: `n_latent_dims * 2 + 1`
   * type: `int`.
   * description: the number of components of Gaussian-mixture priors used to compute KL-divergence and perform online clustering.
-* `n_progressive_epochs`:
+* `n_parent_annealing_epochs`:
   * required: `False`.
-  * defaults: `500`.
+  * defaults: `1`.
   * type: `int`.
-  * description: number of progressive epochs used during the training process. The weight of the data likelihood will be scaled linearly with `epoch/n_progressive_epochs`.
+  * description: number of parent annealing epochs used during the training process. During the parent annealing phase, the weight of the child's data likelihood is scaled quadratically from 0 to 1 with `(epoch/n_parent_annealing_epochs)²` while the parent's data weight fades from 1.0 to 0.0.
+* `n_kl_annealing_epochs`:
+  * required: `False`.
+  * defaults: `25`.
+  * type: `int`.
+  * description: number of epochs for the standalone KL annealing phase (standard_kl → GMM crossfade) for this component. When > 0 the KL annealing phase runs; when 0 it is skipped.
+* `enable_kmeans_init`:
+  * required: `False`.
+  * defaults: `True`.
+  * type: `bool`.
+  * description: whether to run k-means initialization for the GMM priors of this component before GMM training.
+* `kl_annealing_ratio`:
+  * required: `False`.
+  * defaults: `[0.5, 0.2, 0.3]`
+  * type: `List[float]`.
+  * description: ratios for the three sub-phases within KL annealing (standard_kl only, crossfade, gmm only). Ignored when `n_kl_annealing_epochs` is 0.
 * `conditioned_on_z`:
   * required: `False`.
   * defaults: `List[]`

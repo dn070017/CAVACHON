@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Tuple
 
 from cavachon.config.config_mapping.config_mapping import ConfigMapping
 from cavachon.utils.general_utils import GeneralUtils
@@ -69,9 +69,25 @@ class ComponentConfigMapping(ConfigMapping):
         modality names, and the values are the corresponding number of
         decoder layers.
 
-    n_progressive_epochs: int
-        number of progressive epochs.
+    n_parent_annealing_epochs: int
+        number of parent annealing epochs. During the parent annealing
+        phase, the weight of the child's data likelihood is scaled
+        quadratically from 0 to 1 with ``(epoch/n_parent_annealing_epochs)²``
+        while the parent's data weight fades from 1.0 to 0.0.
 
+    n_kl_annealing_epochs: int
+        number of epochs for the standalone KL annealing phase
+        (standard_kl → GMM crossfade) for this component. When > 0 the
+        KL annealing phase runs; when 0 it is skipped.
+
+    enable_kmeans_init: bool
+        whether to run k-means initialization for the GMM priors of this
+        component before GMM training.
+
+    kl_annealing_ratio: Tuple[float, float, float]
+        ratios for the three sub-phases within KL annealing:
+        (standard_kl_only, crossfade, gmm_only). Ignored when
+        ``n_kl_annealing_epochs`` is 0.
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
@@ -109,8 +125,24 @@ class ComponentConfigMapping(ConfigMapping):
         n_encoder_layers: int, optional
             number of encoder layers. Defaults to 3.
 
-        n_progressive_epochs: int, optional
-            number of progressive epochs. Defaults to 1.
+        n_parent_annealing_epochs: int, optional
+            number of parent annealing epochs. Defaults to 1.
+
+        n_kl_annealing_epochs: int, optional
+            number of epochs for the standalone KL annealing phase
+            (standard_kl → GMM crossfade) for this component. When > 0
+            the KL annealing phase runs; when 0 it is skipped. Defaults
+            to 25.
+
+        enable_kmeans_init: bool, optional
+            whether to run k-means initialization for the GMM priors of
+            this component before GMM training. Defaults to True.
+
+        kl_annealing_ratio: Tuple[float, float, float], optional
+            ratios for the three sub-phases within KL annealing:
+            (standard_kl_only, crossfade, gmm_only). Ignored when
+            ``n_kl_annealing_epochs`` is 0. Defaults to
+            ``(0.5, 0.2, 0.3)``.
         """
         self.name: str
         self.conditioned_on_z: List[str] = list()
@@ -125,7 +157,10 @@ class ComponentConfigMapping(ConfigMapping):
         self.n_latent_priors: int = 0  # will be changed during postprocessing
         self.n_encoder_layers: int = 3
         self.n_decoder_layers: Mapping[str, int] = dict()
-        self.n_progressive_epochs: int = 1
+        self.n_parent_annealing_epochs: int = 1
+        self.n_kl_annealing_epochs: int = 25
+        self.enable_kmeans_init: bool = True
+        self.kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
 
         super().__init__(
             kwargs,
@@ -144,7 +179,10 @@ class ComponentConfigMapping(ConfigMapping):
                 "n_latent_priors",
                 "n_encoder_layers",
                 "n_decoder_layers",
-                "n_progressive_epochs",
+                "n_parent_annealing_epochs",
+                "n_kl_annealing_epochs",
+                "enable_kmeans_init",
+                "kl_annealing_ratio",
             ],
         )
 

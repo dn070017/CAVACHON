@@ -404,9 +404,6 @@ class SequentialTrainingScheduler:
     def fit(
         self,
         x: tf.data.Dataset,
-        kl_annealing_epochs: int = 25,
-        kl_annealing_ratios: Tuple[float, float, float] = (0.5, 0.2, 0.3),
-        enable_kmeans: bool = True,
         **kwargs,
     ) -> List[tf.keras.callbacks.History]:
         """Fit model with multi-phase hierarchical training.
@@ -414,24 +411,14 @@ class SequentialTrainingScheduler:
         Compiles the model once and uses Variable-backed loss weights
         so callbacks can adjust weights at runtime without recompilation.
 
+        Per-component ``n_kl_annealing_epochs``, ``enable_kmeans_init``,
+        and ``kl_annealing_ratio`` are read from
+        ``self.component_configs``.
+
         Parameters
         ----------
         x: tf.data.Dataset
             input dataset created by DataLoader.
-
-        kl_annealing_epochs: int, optional
-            number of epochs for the standalone KL annealing phase
-            (standard_kl → GMM crossfade).  Applied to every component
-            when > 0.  Defaults to 25.
-
-        kl_annealing_ratios: Tuple[float, float, float], optional
-            ratios for the three sub-phases within KL annealing:
-            (standard_kl_only, crossfade, gmm_only).
-            Defaults to (0.5, 0.2, 0.3).
-
-        enable_kmeans: bool, optional
-            whether to run k-means initialization before GMM training.
-            Defaults to False.
 
         **kwargs: Mapping[str, Any]
             additional arguments passed to self.model.fit.
@@ -456,11 +443,12 @@ class SequentialTrainingScheduler:
             is_child = self.run_progressive_training.get(cn)
             has_parents = is_child and bool(self._get_parent_component(cn))
             if has_parents:
-                cumulative_total += self._get_progressive_epochs(cn)
-                if kl_annealing_epochs > 0:
-                    cumulative_total += kl_annealing_epochs
-            elif kl_annealing_epochs > 0:
-                cumulative_total += kl_annealing_epochs
+                cumulative_total += self._get_parent_annealing_epochs(cn)
+                kl_ep = self._get_kl_annealing_epochs(cn)
+                if kl_ep > 0:
+                    cumulative_total += kl_ep
+            elif (kl_ep := self._get_kl_annealing_epochs(cn)) > 0:
+                cumulative_total += kl_ep
             cumulative_total += max_n_epochs
 
         cumulative_offset = 0
@@ -482,7 +470,7 @@ class SequentialTrainingScheduler:
             if self.run_progressive_training.get(component_name):
                 parent_names = self._get_parent_component(component_name)
                 if parent_names:
-                    n_prog_epochs = self._get_progressive_epochs(
+                    n_prog_epochs = self._get_parent_annealing_epochs(
                         component_name
                     )
                     if n_prog_epochs > 0:
@@ -493,6 +481,15 @@ class SequentialTrainingScheduler:
                                 pn, data_scale=1.0, gmm_kl=1.0, standard_kl=0.0,
                             )
                         before = len(history)
+                        comp_kl_epochs = self._get_kl_annealing_epochs(
+                            component_name
+                        )
+                        comp_enable_kmeans_init = self._get_enable_kmeans_init(
+                            component_name
+                        )
+                        comp_kl_annealing_ratio = self._get_kl_annealing_ratios(
+                            component_name
+                        )
                         self._run_parent_annealing_phase(
                             component_name=component_name,
                             component_order=component_order,
@@ -502,9 +499,9 @@ class SequentialTrainingScheduler:
                             x=x.take(n_batches * n_prog_epochs),
                             history=history,
                             experiment=experiment,
-                            kl_annealing_enabled=kl_annealing_epochs > 0,
-                            kl_annealing_ratios=kl_annealing_ratios,
-                            enable_kmeans=enable_kmeans,
+                            kl_annealing_enabled=comp_kl_epochs > 0,
+                            kl_annealing_ratios=comp_kl_annealing_ratio,
+                            enable_kmeans_init=comp_enable_kmeans_init,
                             cumulative_offset=cumulative_offset,
                             cumulative_total=cumulative_total,
                             phase_number=phase_number,
@@ -515,8 +512,15 @@ class SequentialTrainingScheduler:
                         cumulative_offset += actual
                         phase_number += 1
 
-            # --- KL annealing (all components, when enabled) ---
-            if kl_annealing_epochs > 0:
+            # --- KL annealing (when enabled for this component) ---
+            comp_kl_epochs = self._get_kl_annealing_epochs(component_name)
+            if comp_kl_epochs > 0:
+                comp_enable_kmeans_init = self._get_enable_kmeans_init(
+                    component_name
+                )
+                comp_kl_annealing_ratio = self._get_kl_annealing_ratios(
+                    component_name
+                )
                 self.setup_component_and_loss_weights(
                     train_components
                 )
@@ -525,19 +529,19 @@ class SequentialTrainingScheduler:
                 self._run_kl_annealing_phase(
                     component_name=component_name,
                     component_order=component_order,
-                    x=x.take(n_batches * kl_annealing_epochs),
+                    x=x.take(n_batches * comp_kl_epochs),
                     history=history,
                     experiment=experiment,
-                    n_epochs=kl_annealing_epochs,
-                    kl_annealing_ratios=kl_annealing_ratios,
-                    enable_kmeans=enable_kmeans,
+                    n_epochs=comp_kl_epochs,
+                    kl_annealing_ratios=comp_kl_annealing_ratio,
+                    enable_kmeans_init=comp_enable_kmeans_init,
                     cumulative_offset=cumulative_offset,
                     cumulative_total=cumulative_total,
                     phase_number=phase_number,
                     kwargs=kwargs,
                 )
-                actual = len(history[-1].epoch) if len(history) > before else kl_annealing_epochs
-                cumulative_total -= (kl_annealing_epochs - actual)
+                actual = len(history[-1].epoch) if len(history) > before else comp_kl_epochs
+                cumulative_total -= (comp_kl_epochs - actual)
                 cumulative_offset += actual
                 phase_number += 1
 
@@ -555,7 +559,7 @@ class SequentialTrainingScheduler:
                 experiment=experiment,
                 n_epochs=max_n_epochs,
                 is_single_component=is_single_component,
-                enable_kmeans=enable_kmeans,
+                enable_kmeans_init=self._get_enable_kmeans_init(component_name),
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
@@ -584,7 +588,7 @@ class SequentialTrainingScheduler:
         experiment,
         kl_annealing_enabled,
         kl_annealing_ratios,
-        enable_kmeans,
+        enable_kmeans_init,
         cumulative_offset,
         cumulative_total,
         phase_number,
@@ -639,7 +643,7 @@ class SequentialTrainingScheduler:
         callbacks_prog.append(
             AnnealingCallback(
                 schedule=schedule,
-                kmeans_epoch=kmeans_epoch if enable_kmeans else None,
+                kmeans_epoch=kmeans_epoch if enable_kmeans_init else None,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -672,7 +676,7 @@ class SequentialTrainingScheduler:
         experiment,
         n_epochs,
         kl_annealing_ratios,
-        enable_kmeans,
+        enable_kmeans_init,
         cumulative_offset,
         cumulative_total,
         phase_number,
@@ -708,7 +712,7 @@ class SequentialTrainingScheduler:
         callbacks.append(
             AnnealingCallback(
                 schedule=schedule,
-                kmeans_epoch=gmm_start if enable_kmeans else None,
+                kmeans_epoch=gmm_start if enable_kmeans_init else None,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -738,7 +742,7 @@ class SequentialTrainingScheduler:
         experiment,
         n_epochs,
         is_single_component,
-        enable_kmeans,
+        enable_kmeans_init,
         cumulative_offset,
         cumulative_total,
         phase_number,
@@ -764,7 +768,7 @@ class SequentialTrainingScheduler:
         callbacks.append(
             AnnealingCallback(
                 schedule=lambda epoch: {},
-                kmeans_epoch=0 if enable_kmeans else None,
+                kmeans_epoch=0 if enable_kmeans_init else None,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -877,6 +881,10 @@ class SequentialTrainingScheduler:
         """Compile the model.  Creates a new optimizer when the trainable
         variable set has changed, otherwise reuses the existing one so
         momentum is preserved within a component's phases.
+
+        ProgressiveScaler state (current_iteration, total_iterations) is
+        saved before recompile and restored afterwards so that pinned
+        weights (e.g. zeroed parents) survive recompilation.
         """
         all_components = [c.get("name") for c in self.component_configs]
         current_tv = {id(v) for v in self.model.trainable_variables} if hasattr(self.model, 'trainable_variables') else set()
@@ -888,18 +896,74 @@ class SequentialTrainingScheduler:
                 learning_rate=learning_rate
             )
         self._last_trainable = current_tv
+
+        # Save ProgressiveScaler state before recompile
+        saved_std = {}
+        saved_gmm = {}
+        saved_data = {}
+        d = getattr(self.model, '_standard_kl_weights', {})
+        for cn in all_components:
+            if cn in d and isinstance(d[cn], ProgressiveScaler):
+                saved_std[cn] = (
+                    float(d[cn].current_iteration),
+                    float(d[cn].total_iterations),
+                )
+        d = getattr(self.model, '_gmm_kl_weights', {})
+        for cn in all_components:
+            if cn in d and isinstance(d[cn], ProgressiveScaler):
+                saved_gmm[cn] = (
+                    float(d[cn].current_iteration),
+                    float(d[cn].total_iterations),
+                )
+        d = getattr(self.model, '_data_loss_weights', {})
+        for cn, mods in d.items():
+            for mod, w in mods.items():
+                if isinstance(w, ProgressiveScaler):
+                    saved_data.setdefault(cn, {})[mod] = (
+                        float(w.current_iteration),
+                        float(w.total_iterations),
+                    )
+
+        # Read scales (and data weight scales) from existing ProgressiveScalers
         std_w = {}
         gmm_w = {}
+        data_w = {}
         for cn in all_components:
             d = getattr(self.model, '_standard_kl_weights', {})
             std_w[cn] = float(d[cn].scale) if cn in d else 3.0
             d = getattr(self.model, '_gmm_kl_weights', {})
             gmm_w[cn] = float(d[cn].scale) if cn in d else 1.0
-        self.model.compile(
+            d = getattr(self.model, '_data_loss_weights', {})
+            for mod, w in d.get(cn, {}).items():
+                if isinstance(w, ProgressiveScaler):
+                    data_w[f"{cn}_{mod}_{Constants.MODEL_LOSS_DATA_POSTFIX}"] = float(w.scale)
+
+        compile_kwargs = dict(
             standard_kl_weights=std_w,
             gmm_kl_weights=gmm_w,
             optimizer=optimizer,
         )
+        if data_w:
+            compile_kwargs["loss_weights"] = data_w
+        self.model.compile(**compile_kwargs)
+
+        # Restore ProgressiveScaler state after recompile
+        for cn, (ci, ti) in saved_std.items():
+            w = getattr(self.model, '_standard_kl_weights', {}).get(cn)
+            if w is not None and isinstance(w, ProgressiveScaler):
+                w.current_iteration.assign(ci)
+                w.total_iterations.assign(ti)
+        for cn, (ci, ti) in saved_gmm.items():
+            w = getattr(self.model, '_gmm_kl_weights', {}).get(cn)
+            if w is not None and isinstance(w, ProgressiveScaler):
+                w.current_iteration.assign(ci)
+                w.total_iterations.assign(ti)
+        for cn, mods in saved_data.items():
+            for mod, (ci, ti) in mods.items():
+                w = getattr(self.model, '_data_loss_weights', {}).get(cn, {}).get(mod)
+                if w is not None and isinstance(w, ProgressiveScaler):
+                    w.current_iteration.assign(ci)
+                    w.total_iterations.assign(ti)
 
     def _mlflow_experiment(self):
         """Set up MLflow experiment and return the experiment object."""
@@ -918,14 +982,42 @@ class SequentialTrainingScheduler:
             checkpoint=False,
         )
 
-    def _get_progressive_epochs(self, component_name):
-        """Get progressive epochs from component config."""
+    def _get_parent_annealing_epochs(self, component_name):
+        """Get parent annealing epochs from component config."""
         for c in self.component_configs:
             if c.get("name") == component_name:
                 return c.get(
-                    Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS, 0
+                    Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS, 0
                 )
         return 0
+
+    def _get_kl_annealing_epochs(self, component_name):
+        """Get KL annealing epochs from component config."""
+        for c in self.component_configs:
+            if c.get("name") == component_name:
+                return c.get(
+                    Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS, 0
+                )
+        return 0
+
+    def _get_enable_kmeans_init(self, component_name):
+        """Get enable_kmeans_init flag from component config."""
+        for c in self.component_configs:
+            if c.get("name") == component_name:
+                return c.get(
+                    Constants.CONFIG_FIELD_COMPONENT_ENABLE_KMEANS_INIT, True
+                )
+        return True
+
+    def _get_kl_annealing_ratios(self, component_name):
+        """Get KL annealing ratios from component config."""
+        for c in self.component_configs:
+            if c.get("name") == component_name:
+                return c.get(
+                    Constants.CONFIG_FIELD_COMPONENT_KL_ANNEALING_RATIO,
+                    (0.5, 0.2, 0.3),
+                )
+        return (0.5, 0.2, 0.3)
 
     def _common_callbacks(
         self, kwargs, is_single_component, component_name,

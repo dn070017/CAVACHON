@@ -13,7 +13,10 @@ model:
           n_decoder_layers: 3
       n_encoder_layers: 3
       n_latent_dims: 30
-      n_progressive_epochs: 1
+      n_parent_annealing_epochs: 1
+      n_kl_annealing_epochs: 25
+      enable_kmeans_init: true
+      kl_annealing_ratio: [0.5, 0.2, 0.3]
       max_n_epochs: 1000
     - name: RNA Component
       conditioned_on_z_hat: 
@@ -23,7 +26,10 @@ model:
           n_decoder_layers: 3
       n_encoder_layers: 3
       n_latent_dims: 30
-      n_progressive_epochs: 500
+      n_parent_annealing_epochs: 500
+      n_kl_annealing_epochs: 25
+      enable_kmeans_init: true
+      kl_annealing_ratio: [0.5, 0.2, 0.3]
       max_n_epochs: 1000
   training:
     optimizer:

@@ -131,12 +131,20 @@ class MockModel:
 # Helper: build component configs for parent1 → parent2 → child1
 # ---------------------------------------------------------------------------
 
-def make_component_config(name, conditioned_on_z_hat=None, n_progressive_epochs=0):
+def make_component_config(
+    name,
+    conditioned_on_z_hat=None,
+    n_parent_annealing_epochs=0,
+    n_kl_annealing_epochs=0,
+    enable_kmeans_init=True,
+):
     cfg = {
         "name": name,
         Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
         Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: conditioned_on_z_hat or [],
-        Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS: n_progressive_epochs,
+        Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS: n_parent_annealing_epochs,
+        Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS: n_kl_annealing_epochs,
+        Constants.CONFIG_FIELD_COMPONENT_ENABLE_KMEANS_INIT: enable_kmeans_init,
         Constants.CONFIG_FIELD_COMPONENT_N_VARS: {"modality": 10},
         "modality_names": ["modality"],
         Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES: {
@@ -300,7 +308,7 @@ class SetupAndZeroTestCase(unittest.TestCase):
             make_component_config(
                 "child1",
                 conditioned_on_z_hat=["parent1", "parent2"],
-                n_progressive_epochs=5,
+                n_parent_annealing_epochs=5,
             ),
         ]
         self.model = MockModel(self.configs)
@@ -388,6 +396,13 @@ class SetupAndZeroTestCase(unittest.TestCase):
 
     def test_set_component_weights_single_api(self):
         """_set_component_weights sets GMM, standard, and data in one call."""
+        # Recompile with scales that accommodate the target values
+        # (ProgressiveScaler clamps effective weight to [0, scale])
+        self.model.compile(
+            standard_kl_weights={"parent1": 3.0, "parent2": 0.0, "child1": 0.0},
+            gmm_kl_weights={"parent1": 2.0, "parent2": 1.0, "child1": 1.0},
+            optimizer=tf.keras.optimizers.Adam(1e-3),
+        )
         self.scheduler._set_component_weights(
             "parent1", data_scale=0.5, gmm_kl=2.0, standard_kl=3.0,
         )
@@ -454,7 +469,7 @@ class FullPipelineTestCase(unittest.TestCase):
             make_component_config(
                 "child1",
                 conditioned_on_z_hat=["parent1", "parent2"],
-                n_progressive_epochs=10,
+                n_parent_annealing_epochs=10,
             ),
         ]
         self.model = MockModel(self.configs)
@@ -493,7 +508,7 @@ class FullPipelineTestCase(unittest.TestCase):
     def test_pipeline_no_kl_annealing(self):
         """Parent annealing without KL annealing ends with frozen parents."""
         sched = self._make_scheduler()
-        sched.fit(tf.data.Dataset.range(1), kl_annealing_epochs=0)
+        sched.fit(tf.data.Dataset.range(1))
 
         # Parents frozen
         self.assertFalse(self.model.components["parent1"].trainable)
@@ -519,7 +534,9 @@ class FullPipelineTestCase(unittest.TestCase):
         """After full pipeline with KL annealing, child ends with GMM=1.0, std_KL=0.0."""
         sched = self._make_scheduler()
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
-        sched.fit(tf.data.Dataset.range(1), kl_annealing_epochs=20)
+        for cfg in sched.component_configs:
+            cfg[Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS] = 20
+        sched.fit(tf.data.Dataset.range(1))
 
         # After full pipeline: child GMM should be 1.0, std_kl 0.0
         self.assertAlmostEqual(
@@ -533,7 +550,10 @@ class FullPipelineTestCase(unittest.TestCase):
         """Root component KL annealing during regular training: std_KL → GMM."""
         sched = self._make_scheduler(training_order=[["parent1"]])
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
-        sched.fit(tf.data.Dataset.range(1), kl_annealing_epochs=20, epochs=100)
+        sched.component_configs[0][
+            Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS
+        ] = 20
+        sched.fit(tf.data.Dataset.range(1), epochs=100)
 
         # After cross-fade: GMM=1.0, std_kl=0.0
         self.assertAlmostEqual(
@@ -573,13 +593,13 @@ class FullPipelineTestCase(unittest.TestCase):
         sched = self._make_scheduler()
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
         sched.component_configs[2][
-            Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
+            Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS
         ] = 10
 
         # Keep parent phases tiny (no callbacks → 0 captures)
         captures = self._capture_trajectory(
             sched, tf.data.Dataset.range(1),
-            kl_annealing_epochs=0, epochs=1,
+            epochs=1,
         )
         # Captures: parent1 k-means(1) + parent2 k-means(1) + wt(10) + child1 k-means(1) = 13
         wt = captures[2:12]
@@ -626,12 +646,14 @@ class FullPipelineTestCase(unittest.TestCase):
         sched = self._make_scheduler()
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
         sched.component_configs[2][
-            Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
+            Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS
         ] = 10
+        for cfg in sched.component_configs:
+            cfg[Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS] = 10
 
         captures = self._capture_trajectory(
             sched, tf.data.Dataset.range(1),
-            kl_annealing_epochs=10, epochs=1,
+            epochs=1,
         )
         # Phases: p1 KL(10) + p1 GMM(1) + p2 KL(10) + p2 GMM(1)
         #        + c1 wt(10) + c1 KL(10) + c1 GMM(1) = 43
@@ -703,11 +725,16 @@ class FullPipelineTestCase(unittest.TestCase):
         """
         sched = self._make_scheduler(training_order=[["parent1"]])
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
+        sched.component_configs[0][
+            Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS
+        ] = 20
+        sched.component_configs[0][
+            Constants.CONFIG_FIELD_COMPONENT_KL_ANNEALING_RATIO
+        ] = (0.4, 0.3, 0.3)
 
         captures = self._capture_trajectory(
             sched, tf.data.Dataset.range(1),
-            kl_annealing_epochs=20, epochs=20,
-            kl_annealing_ratios=(0.4, 0.3, 0.3),
+            epochs=20,
         )
         # Phases: KL annealing (20) + GMM training (20) = 40 captures
         kl_captures = captures[:20]
@@ -757,12 +784,14 @@ class FullPipelineTestCase(unittest.TestCase):
         kl_epochs = 15
         wt_epochs = 10
         sched.component_configs[2][
-            Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
+            Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS
         ] = wt_epochs
+        for cfg in sched.component_configs:
+            cfg[Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS] = kl_epochs
 
         captures = self._capture_trajectory(
             sched, tf.data.Dataset.range(1),
-            kl_annealing_epochs=kl_epochs, epochs=train_epochs,
+            epochs=train_epochs,
         )
         # Phases:
         # parent1 KL(15) + parent1 GMM(20) = 35
@@ -852,13 +881,13 @@ class FullPipelineTestCase(unittest.TestCase):
         sched = self._make_scheduler()
         sched.initialize_gmm_priors_with_kmeans = MagicMock()
         sched.component_configs[2][
-            Constants.CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS
+            Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS
         ] = 10
 
         train_epochs = 20
         captures = self._capture_trajectory(
             sched, tf.data.Dataset.range(1),
-            kl_annealing_epochs=0, epochs=train_epochs,
+            epochs=train_epochs,
         )
         # Captures: parent1(20) + parent2(20) + wt(10) + child1(20) = 70
         wt_start = 40  # after parent1 + parent2
