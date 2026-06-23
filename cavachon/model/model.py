@@ -628,7 +628,18 @@ class Model(tf.keras.Model):
                         ),
                     )
 
-            loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
+            #loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
+            loss_values = []
+            for key in y_true:
+                loss_fn = self.loss.get(key)
+                if loss_fn is not None:
+                    loss_values.append(loss_fn(y_true[key], y_pred[key]))
+
+            loss = tf.add_n(loss_values)
+
+            if self.losses:
+                loss += tf.add_n(self.losses)
+            
             trainable = self.trainable_variables
             gradients = tape.gradient(loss, trainable)
             gradients = TensorUtils.remove_nan_gradients(gradients)
