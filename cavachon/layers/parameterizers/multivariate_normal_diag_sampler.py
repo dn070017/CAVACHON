@@ -38,7 +38,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
             sampling results.
         """
         loc, scale_diag = tf.split(inputs, 2, axis=-1)
-        if training:
+        if training and self.trainable:
             epsilon = tf.random.normal(shape=tf.shape(loc))
             return epsilon * scale_diag + loc
         else:
