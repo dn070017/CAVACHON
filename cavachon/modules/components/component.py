@@ -468,6 +468,7 @@ class Component(tf.keras.Model):
             is_conditioned_on_z=is_conditioned_on_z,
             is_conditioned_on_z_hat=is_conditioned_on_z_hat,
             progressive_step=progressive_iterations,
+            use_bias=kwargs.get("use_bias", False),
             name=name,
         )
 
@@ -753,11 +754,15 @@ class Component(tf.keras.Model):
             **kwargs,
         )
 
+        reparameterize_z_hat = kwargs.get("reparameterize_z_hat", True)
+        use_bias = not reparameterize_z_hat
+
         hierarchical_encoder = cls.setup_hierarchical_encoder(
             n_latent_dims=n_latent_dims,
             is_conditioned_on_z=z_conditional_dims is not None,
             is_conditioned_on_z_hat=z_hat_conditional_dims is not None,
             progressive_iterations=progressive_iterations,
+            use_bias=use_bias,
             name=f"{name}_hierarchical_encoder",
             **kwargs,
         )

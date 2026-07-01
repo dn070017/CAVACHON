@@ -3,6 +3,9 @@ from typing import Any, List, Mapping
 from cavachon.config.config_mapping.analysis_attribution_score_config_mapping import (
     AnalysisAttributionScoreConfigMapping,
 )
+from cavachon.config.config_mapping.analysis_clustering_config_mapping import (
+    AnalysisClusteringConfigMapping,
+)
 from cavachon.config.config_mapping.analysis_generic_config_mapping import (
     AnalysisGenericConfigMapping,
 )
@@ -19,10 +22,10 @@ class AnalysisConfigMapping(ConfigMapping):
 
     Attributes
     ----------
-    clustering: List[AnalysisGenericConfigMapping]
+    clustering: List[AnalysisClusteringConfigMapping]
         config for clustering.
 
-    visualize_embedding: List[AnalysisVisualizeEmbeddingConfigMapping]
+    visualize_embedding: List[AnalysisVisualizeEmbedding]
         config for embedding visualization.
 
     differential_analysis: List[AnalysisGenericConfigMapping]
@@ -42,10 +45,10 @@ class AnalysisConfigMapping(ConfigMapping):
 
         Parameters
         ----------
-        clustering: Dict[str, str], optional
-            config for clustering. The keys are the modality names, the
-            values are the component that is used to identify the
-            clusters of modalities. Defaults to dict().
+        clustering: List[Mapping[str, Any]], optional
+            config for clustering. Each element is a mapping with
+            ``modality``, ``component`` and optionally ``use_rep``.
+            Defaults to [].
 
         annotation_colnames: List[str], optional
             column names for the annotated cluster that needs to be
@@ -58,9 +61,9 @@ class AnalysisConfigMapping(ConfigMapping):
 
         """
         # change default values here
-        self.clustering: Mapping[str, str] = dict()
-        self.differential_analysis: Mapping[str, str] = dict()
-        self.visualize_embedding: Mapping[str, str] = dict()
+        self.clustering: List[AnalysisClusteringConfigMapping] = []
+        self.differential_analysis: List[AnalysisGenericConfigMapping] = []
+        self.visualize_embedding: List[AnalysisVisualizeEmbedding] = []
         self.annotation_colnames: List[str] = []
         self.conditional_attribution_scores: List[
             AnalysisAttributionScoreConfigMapping
@@ -77,7 +80,7 @@ class AnalysisConfigMapping(ConfigMapping):
             ],
         )
 
-        self.clustering = [AnalysisGenericConfigMapping(**x) for x in self.clustering]
+        self.clustering = [AnalysisClusteringConfigMapping(**x) for x in self.clustering]
 
         self.visualize_embedding = [
             AnalysisVisualizeEmbedding(**x) for x in self.visualize_embedding

@@ -88,6 +88,12 @@ class ComponentConfigMapping(ConfigMapping):
         ratios for the three sub-phases within KL annealing:
         (standard_kl_only, crossfade, gmm_only). Ignored when
         ``n_kl_annealing_epochs`` is 0.
+
+    reparameterize_z_hat: bool
+        whether to reparameterize z_hat (i.e. sample the latent
+        variables). When set to False, the hierarchical encoder
+        uses bias terms instead of sampling, which is equivalent
+        to using a deterministic encoder.
     """
 
     def __init__(self, **kwargs: Mapping[str, Any]):
@@ -143,6 +149,11 @@ class ComponentConfigMapping(ConfigMapping):
             (standard_kl_only, crossfade, gmm_only). Ignored when
             ``n_kl_annealing_epochs`` is 0. Defaults to
             ``(0.5, 0.2, 0.3)``.
+
+        reparameterize_z_hat: bool, optional
+            whether to reparameterize z_hat (i.e. sample the latent
+            variables). When set to False, the hierarchical encoder
+            uses bias terms instead of sampling. Defaults to True.
         """
         self.name: str
         self.conditioned_on_z: List[str] = list()
@@ -161,6 +172,7 @@ class ComponentConfigMapping(ConfigMapping):
         self.n_kl_annealing_epochs: int = 25
         self.enable_kmeans_init: bool = True
         self.kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
+        self.reparameterize_z_hat: bool = True
 
         super().__init__(
             kwargs,
@@ -183,6 +195,7 @@ class ComponentConfigMapping(ConfigMapping):
                 "n_kl_annealing_epochs",
                 "enable_kmeans_init",
                 "kl_annealing_ratio",
+                "reparameterize_z_hat",
             ],
         )
 

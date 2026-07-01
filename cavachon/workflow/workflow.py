@@ -1,7 +1,6 @@
 import os
 import warnings
 from copy import deepcopy
-from itertools import product
 from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
@@ -99,7 +98,6 @@ class Workflow:
         self.predict()
 
         self.perform_clustering_analysis()
-        self.compute_integrated_clusters()
         self.visualize_embedding()
 
         outdir = os.path.join(self.config.io.outdir, "mdata")
@@ -350,13 +348,21 @@ class Workflow:
         for clustering_config in self.config.analysis.clustering:
             component = clustering_config.component
             modality = clustering_config.modality
-            analysis.compute_cluster_log_probability(
-                modality=modality,
-                component=component,
-                batch_size=batch_size,
-                batch_effect_colnames=self.batch_effect_colnames,
-                distribution_names=self.distribution_names,
-            )
+            use_rep = clustering_config.use_rep
+            if use_rep == "z_hat":
+                analysis.compute_integrated_cluster_log_probability(
+                    modality=modality,
+                    component=component,
+                    batch_size=batch_size,
+                )
+            else:
+                analysis.compute_cluster_log_probability(
+                    modality=modality,
+                    component=component,
+                    batch_size=batch_size,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
+                )
 
         return
 
@@ -377,6 +383,9 @@ class Workflow:
                 f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
             )
             extension = "html" if interactive else "png"
+            print(adata.obsm.keys())
+            file_label = f"{title}.{extension}".lower().replace(" ", "_")
+            print(f"{outdir}/{file_label}")
             InteractiveVisualization.embedding(
                 adata=adata,
                 title=title,
@@ -385,228 +394,8 @@ class Workflow:
                 color=color,
                 width=800,
                 height=760,
-                filename=f"{outdir}/{title}.{extension}".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
             )
-
-    def compute_integrated_clusters(self) -> None:
-        """Compute integrated z_hat clusters for hierarchical components.
-
-        Computes integrated cluster assignments by transforming parent and child
-        GMM priors through the learned b_network weights.
-        Creates cluster labels like 'cluster_RNA_integrated' and saves to mdata.
-        """
-        # Detect hierarchical components
-        for component_config in self.config.components:
-            component_name = component_config.get("name")
-            parent_names = component_config.get("conditioned_on_z_hat", [])
-
-            if not parent_names:
-                continue  # Skip non-hierarchical components
-
-            # Handle multiple modalities per component
-            modality_names = component_config.get("modality_names", [])
-            modalities_to_save = modality_names if modality_names else [component_name]
-
-            # Use first modality for z_hat extraction
-            first_modality = modalities_to_save[0]
-
-            # Extract GMM parameters for all parent component(s)
-            parent_params = []
-            parent_dims = []
-
-            for parent_name in parent_names:
-                # Get the learned GMM prior parameterizer
-                prior_parameterizer = self.model.components[
-                    parent_name
-                ].z_prior_parameterizer
-                prior_parameters = tf.squeeze(prior_parameterizer(tf.ones((1, 1))))
-
-                # Extract from the output tensor
-                # Structure: [logits, loc_cluster0, scale_cluster0, loc_cluster1, scale_cluster1, ...]
-                logits = prior_parameters[:, 0].numpy()
-                n_clusters = len(logits)
-                params = prior_parameters[:, 1:].numpy()  # [n_clusters, params]
-                n_dims = params.shape[1] // 2
-
-                # Extract loc (mean)and scale (std) for each cluster
-                loc = params[:, :n_dims]  # [n_clusters, n_dims]
-                scale = params[:, n_dims:]  # [n_clusters, n_dims]
-
-                parent_params.append(
-                    {
-                        "pi": tf.nn.softmax(logits).numpy(),
-                        "mu": loc,
-                        "sigma2": scale**2,
-                        "K": n_clusters,
-                        "D": n_dims,
-                    }
-                )
-                parent_dims.append(n_dims)
-
-            # Extract GMM parameters for child component
-            child_parameterizer = self.model.components[
-                component_name
-            ].z_prior_parameterizer
-            child_parameters = tf.squeeze(child_parameterizer(tf.ones((1, 1))))
-
-            child_logits = child_parameters[:, 0].numpy()
-            n_clusters = len(child_logits)
-
-            params = child_parameters[:, 1:].numpy()
-            n_dims = params.shape[1] // 2
-
-            child_mu = params[:, :n_dims]
-            child_scale = params[:, n_dims:]
-
-            child_pi = tf.nn.softmax(child_logits).numpy()
-            child_sigma2 = child_scale**2
-
-            # Extract both r_network and b_network weights
-            component_hierarchical_encoder = self.model.components[
-                component_name
-            ].hierarchical_encoder
-
-            # r_network: transforms z_child before concatenation
-            # r_network weights (no bias since use_bias=False)
-            W_r = component_hierarchical_encoder.r_network.get_weights()[0]
-
-            # b_network: combines [z_parent, r_network(z_child)]
-            # b_network weights (no bias since use_bias=False)
-            W_b = component_hierarchical_encoder.b_network.get_weights()[0]
-
-            # Split W_b (b_network weights) by parent dimensions
-            W_parent_parts = []
-            offset = 0
-            for dim in parent_dims:
-                W_parent_parts.append(W_b[offset : offset + dim, :])
-                offset += dim
-            W_child_raw = W_b[offset:, :]
-
-            # Compose W_child (child weights) with W_r (r network)
-            # This accounts for: z_hat = W_b @ [z_parent, W_r @ z_child]
-            W_child_effective = W_child_raw @ W_r
-
-            # Compute all integrated cluster parameters (vectorized)
-            # Create all combinations of parent×child clusters
-            cluster_ranges = [range(p["K"]) for p in parent_params] + [
-                range(len(child_pi))
-            ]
-            n_clusters = np.prod([len(r) for r in cluster_ranges])
-            D_out = W_b.shape[1]  # Output dim is second axis
-
-            mu_zhat = np.zeros((n_clusters, D_out))
-            sigma2_zhat = np.zeros((n_clusters, D_out))
-            pi_zhat = np.zeros(n_clusters)
-
-            # Compute parameters for each integrated cluster
-            for idx, indices in enumerate(product(*cluster_ranges)):
-                parent_idx = indices[:-1]
-                child_idx = indices[-1]
-
-                # Integrated mean: μ_zhat = W_parent @ μ_parent + W_child_effective @ μ_child
-                mu_zhat[idx] = np.zeros(D_out)
-                for p_idx, W_p, p_params in zip(
-                    parent_idx, W_parent_parts, parent_params
-                ):
-                    mu_zhat[idx] += W_p.T @ p_params["mu"][p_idx]
-                mu_zhat[idx] += W_child_effective.T @ child_mu[child_idx]
-
-                # Integrated variance: σ²_zhat = W²_parent @ σ²_parent + W²_child_effective @ σ²_child
-                sigma2_zhat[idx] = np.zeros(D_out)
-                for p_idx, W_p, p_params in zip(
-                    parent_idx, W_parent_parts, parent_params
-                ):
-                    sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
-                sigma2_zhat[idx] += (W_child_effective**2).T @ child_sigma2[child_idx]
-
-                # Integrated prior: π_zhat = π_parent × π_child (product of priors)
-                pi_zhat[idx] = child_pi[child_idx]
-                for p_idx, p_params in zip(parent_idx, parent_params):
-                    pi_zhat[idx] *= p_params["pi"][p_idx]
-
-            print(f"\n{'=' * 70}")
-            print(f"DEBUG: Integrated clustering for {component_name}")
-            print(f"  Parent clusters: {[p['K'] for p in parent_params]}")
-            print(f"  Child clusters: {len(child_pi)}")
-            print(f"  Total integrated clusters created: {n_clusters}")
-            print("\nIntegrated cluster parameters:")
-            print(f"  pi_zhat (cluster priors): {pi_zhat}")
-            print("  mu_zhat sample (first 3 clusters, first 3 dims):")
-            for i in range(min(3, n_clusters)):
-                print(f"    Cluster {i}: {mu_zhat[i, :3]}")
-            print("  sigma2_zhat sample (first 3 clusters, first 3 dims):")
-            for i in range(min(3, n_clusters)):
-                print(f"    Cluster {i}: {sigma2_zhat[i, :3]}")
-            print(f"{'=' * 70}")
-
-            # Compute MAP assignment for each sample
-            z_hat = self.mdata.mod[first_modality].obsm[f"z_hat_{component_name}"]
-            N = z_hat.shape[0]
-            print(f"  Sample count: {N}")
-
-            # Compute log posterior for each sample-cluster pair
-            logpy = np.log(pi_zhat + 1e-7)
-            logpy_zhat = np.zeros((N, n_clusters))
-
-            for k in range(n_clusters):
-                # Compute log likelihood: log N(z_hat | μ_k, σ²_k)
-                diff = z_hat - mu_zhat[k]
-                log_likelihood = -0.5 * np.sum(
-                    np.log(2 * np.pi * sigma2_zhat[k]) + (diff**2) / sigma2_zhat[k],
-                    axis=1,
-                )
-                # Log posterior = log prior + log likelihood
-                logpy_zhat[:, k] = logpy[k] + log_likelihood
-
-            # Assign each sample to cluster with highest posterior
-            cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
-
-            print("\nInitial assignment:")
-            unique, counts = np.unique(cluster, return_counts=True)
-            for u, c in zip(unique, counts):
-                print(f"  Cluster {u}: {c} samples")
-
-            # Cleanup - remove clusters with too few samples
-            min_n_obs = 36
-            cluster_labels = [f"Cluster {x:03d}" for x in cluster]
-
-            temp_series = pd.Series(cluster_labels)
-            _keep = temp_series.value_counts()
-            while (_keep < min_n_obs).sum() > 0:
-                keep = []
-                for i, x in zip(_keep.index, _keep):
-                    if x >= min_n_obs:
-                        keep.append(int(i.split(" ")[1]))
-                if len(keep) == 0:
-                    break
-
-                logpy_zhat = logpy_zhat[:, keep]
-                cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
-
-                # Recompute counts
-                cluster_labels = [f"Cluster {x:03d}" for x in cluster]
-                temp_series = pd.Series(cluster_labels)
-                _keep = temp_series.value_counts()
-
-            unique_clusters = np.unique(cluster)
-            remap = {old: new for new, old in enumerate(unique_clusters)}
-            cluster_final = np.array([remap[c] for c in cluster])
-
-            print("\nAfter cleanup and remapping:")
-            print(f"  Final clusters: {len(unique_clusters)}")
-            unique, counts = np.unique(cluster_final, return_counts=True)
-            for u, c in zip(unique, counts):
-                print(f"  Cluster {u:03d}: {c} samples")
-            print(f"{'=' * 70}\n")
-
-            cluster_key = f"cluster_{component_name}_integrated"
-            final_labels = [f"Cluster {x:03d}" for x in cluster_final]
-
-            for modality in modalities_to_save:
-                self.mdata.mod[modality].obs[cluster_key] = final_labels
-                self.mdata.mod[modality].obsm[
-                    f"logpy_zhat_{component_name}_integrated"
-                ] = logpy_zhat
 
     def visualize_knn(self, use_cluster, n_neighbors) -> None:
         """Visualize k-nearest neighbors"""

@@ -465,3 +465,33 @@ class ApplicationConfig:
             if not is_wrt_in_component:
                 message = f"'{with_respect_to}' (with_respect_to) is not in the config of components."
                 raise KeyError(message)
+
+        for clustering_config in self.analysis.clustering:
+            if clustering_config.use_rep == "z_hat":
+                component = clustering_config.component
+                component_config = None
+                for c in self.components:
+                    if c.name == component:
+                        component_config = c
+                        break
+                if component_config is None:
+                    message = f"'{component}' is not in the config of components."
+                    raise KeyError(message)
+                if not getattr(component_config, "reparameterize_z_hat", False):
+                    message = "".join(
+                        (
+                            f"'{component}' in the config file {self.filename} does ",
+                            "not have reparameterize_z_hat set to True, so z_hat ",
+                            "clustering is not allowed.",
+                        )
+                    )
+                    raise KeyError(message)
+                if len(component_config.conditioned_on_z_hat) == 0:
+                    message = "".join(
+                        (
+                            f"'{component}' in the config file {self.filename} has no ",
+                            "parents in conditioned_on_z_hat, so z_hat clustering is ",
+                            "not allowed.",
+                        )
+                    )
+                    raise KeyError(message)

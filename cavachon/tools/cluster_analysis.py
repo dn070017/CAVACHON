@@ -1,4 +1,5 @@
 import warnings
+from itertools import product
 from typing import Dict, List, Optional, Sequence, Union
 
 import muon as mu
@@ -131,6 +132,223 @@ class ClusterAnalysis:
             _keep = self.mdata.mod[modality].obs[f"cluster_{component}"].value_counts()
 
         return logpy_z
+
+    @staticmethod
+    def _extract_gmm_parameters(prior_parameterizer):
+        """Extract GMM parameters from a trained z_prior_parameterizer.
+
+        Uses the ``parameters`` property to retrieve the learned prior
+        parameters without a forward pass.
+
+        Parameters
+        ----------
+        prior_parameterizer : MixtureMultivariateNormalDiagParameterizerLayer
+            the trained prior parameterizer layer.
+
+        Returns
+        -------
+        dict
+            keys: ``pi`` (mixing weights), ``mu`` (means), ``sigma2``
+            (variances), ``K`` (n_components), ``D`` (event_dims).
+        """
+        parameters = prior_parameterizer.parameters.numpy()
+        logits = parameters[:, 0]
+        n_clusters = len(logits)
+        params = parameters[:, 1:]
+        n_dims = params.shape[1] // 2
+        mu = params[:, :n_dims]
+        scale = params[:, n_dims:]
+        return {
+            "pi": tf.nn.softmax(tf.convert_to_tensor(logits)).numpy(),
+            "mu": mu,
+            "sigma2": scale**2,
+            "K": n_clusters,
+            "D": n_dims,
+        }
+
+    @staticmethod
+    def _remove_small_clusters(logpy_z, cluster, min_n_obs):
+        """Iteratively remove clusters with fewer than ``min_n_obs``
+        observations and re-assign their members to the remaining clusters.
+        Remaps cluster indices to be contiguous after removal.
+
+        Parameters
+        ----------
+        logpy_z : np.ndarray
+            log-probability matrix of shape (n_samples, n_clusters).
+        cluster : np.ndarray
+            initial hard cluster assignments (n_samples,).
+        min_n_obs : int
+            minimum number of observations required to keep a cluster.
+
+        Returns
+        -------
+        tuple
+            (logpy_z, cluster_final, final_labels) where
+            ``cluster_final`` contains contiguous integer labels and
+            ``final_labels`` are formatted ``"Cluster NNN"`` strings.
+        """
+        cluster_labels = [f"Cluster {x:03d}" for x in cluster]
+        temp_series = pd.Series(cluster_labels)
+        _keep = temp_series.value_counts()
+        while (_keep < min_n_obs).sum() > 0:
+            keep = []
+            for i, x in zip(_keep.index, _keep):
+                if x >= min_n_obs:
+                    keep.append(int(i.split(" ")[1]))
+            if len(keep) == 0:
+                break
+            logpy_z = logpy_z[:, keep]
+            cluster = tf.argmax(logpy_z, axis=-1).numpy()
+            cluster_labels = [f"Cluster {x:03d}" for x in cluster]
+            temp_series = pd.Series(cluster_labels)
+            _keep = temp_series.value_counts()
+
+        unique_clusters = np.unique(cluster)
+        remap = {old: new for new, old in enumerate(unique_clusters)}
+        cluster_final = np.array([remap[c] for c in cluster])
+        final_labels = [f"Cluster {x:03d}" for x in cluster_final]
+        return logpy_z, cluster_final, final_labels
+
+    def compute_integrated_cluster_log_probability(
+        self,
+        modality: str,
+        component: str,
+        batch_size: int = 128,
+        min_n_obs: int = 36,
+    ) -> np.array:
+        """Compute the log probability of a sample being assigned to
+        each *integrated* cluster in z_hat space for a hierarchical
+        component.
+
+        Unlike ``compute_cluster_log_probability`` (which clusters in
+        ``z`` space of a single component), this method projects the
+        GMM parameters of every parent component **and** the child
+        component through the learned hierarchical-encoder weights
+        (``r_network`` and ``b_network``) to build a joint Gaussian
+        mixture in z_hat space.  Samples are then scored against that
+        joint mixture.
+
+        Results are stored in::
+
+            mdata.mod[modality].obs["cluster_{component}_integrated"]
+            mdata.mod[modality].obsm["logpy_zhat_{component}_integrated"]
+
+        Parameters
+        ----------
+        modality : str
+            the modality whose obsm contains the pre-computed
+            ``z_hat_{component}`` array and where results are saved.
+        component : str
+            name of the **child** (hierarchical) component.
+        batch_size : int, optional
+            number of samples to process at once while scoring.
+            Defaults to 128.
+        min_n_obs : int, optional
+            clusters with fewer than this many observations are
+            iteratively removed. Defaults to 36.
+
+        Returns
+        -------
+        np.ndarray
+            ``logpy_zhat``, log-probability of sample *i* being assigned
+            to each integrated cluster *j*.
+
+        Raises
+        ------
+        ValueError
+            if ``component`` has no ``conditioned_on_z_hat`` parents.
+        """
+        comp = self.model.components[component]
+        parent_names = comp.conditioned_on_z_hat
+
+        if not parent_names:
+            raise ValueError(
+                f"Component '{component}' has no conditioned_on_z_hat parents. "
+                "Integrated clustering requires hierarchical components."
+            )
+
+        parent_params = []
+        parent_dims = []
+        for parent_name in parent_names:
+            parent_parameterizer = self.model.components[
+                parent_name
+            ].z_prior_parameterizer
+            p_params = self._extract_gmm_parameters(parent_parameterizer)
+            parent_params.append(p_params)
+            parent_dims.append(p_params["D"])
+
+        child_parameterizer = comp.z_prior_parameterizer
+        child_params = self._extract_gmm_parameters(child_parameterizer)
+
+        hierarchical_encoder = comp.hierarchical_encoder
+        W_r = hierarchical_encoder.r_network.get_weights()[0]
+        W_b = hierarchical_encoder.b_network.get_weights()[0]
+
+        W_parent_parts: list = []
+        offset = 0
+        for dim in parent_dims:
+            W_parent_parts.append(W_b[offset : offset + dim, :])
+            offset += dim
+        W_child_raw = W_b[offset:, :]
+        W_child_effective = W_child_raw @ W_r
+        cluster_ranges = [range(p["K"]) for p in parent_params] + [
+            range(child_params["K"])
+        ]
+        n_clusters = np.prod([len(r) for r in cluster_ranges], dtype=int)
+        D_out = W_b.shape[1]
+
+        mu_zhat = np.zeros((n_clusters, D_out))
+        sigma2_zhat = np.zeros((n_clusters, D_out))
+        pi_zhat = np.zeros(n_clusters)
+
+        for idx, indices in enumerate(product(*cluster_ranges)):
+            parent_idx = indices[:-1]
+            child_idx = indices[-1]
+
+            for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
+                mu_zhat[idx] += W_p.T @ p_params["mu"][p_idx]
+            mu_zhat[idx] += W_child_effective.T @ child_params["mu"][child_idx]
+
+            for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
+                sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
+            sigma2_zhat[idx] += (W_child_effective**2).T @ child_params["sigma2"][
+                child_idx
+            ]
+
+            pi_zhat[idx] = child_params["pi"][child_idx]
+            for p_idx, p_params in zip(parent_idx, parent_params):
+                pi_zhat[idx] *= p_params["pi"][p_idx]
+        z_hat_all = self.mdata.mod[modality].obsm[
+            f"z_hat_{component}"
+        ]
+        N = z_hat_all.shape[0]
+        logpy = np.log(pi_zhat + 1e-7)
+        logpy_zhat = np.zeros((N, n_clusters))
+
+        for start in range(0, N, batch_size):
+            end = min(start + batch_size, N)
+            z_hat_batch = z_hat_all[start:end]
+            for k in range(n_clusters):
+                diff = z_hat_batch - mu_zhat[k]
+                log_likelihood = -0.5 * np.sum(
+                    np.log(2 * np.pi * sigma2_zhat[k])
+                    + (diff**2) / sigma2_zhat[k],
+                    axis=1,
+                )
+                logpy_zhat[start:end, k] = logpy[k] + log_likelihood
+
+        cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
+        logpy_zhat, _, final_labels = self._remove_small_clusters(
+            logpy_zhat, cluster, min_n_obs
+        )
+
+        cluster_key = f"cluster_{component}_integrated"
+        logpy_key = f"logpy_zhat_{component}_integrated"
+        self.mdata.mod[modality].obs[cluster_key] = final_labels
+        self.mdata.mod[modality].obsm[logpy_key] = logpy_zhat
+
+        return logpy_zhat
 
     def compute_neighbors_with_same_annotations(
         self,
