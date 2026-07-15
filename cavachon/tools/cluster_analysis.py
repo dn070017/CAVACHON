@@ -210,12 +210,54 @@ class ClusterAnalysis:
         final_labels = [f"Cluster {x:03d}" for x in cluster_final]
         return logpy_z, cluster_final, final_labels
 
+    @staticmethod
+    def _label_small_clusters(
+        cluster: np.ndarray,
+        min_n_obs: int,
+        small_cluster_label: str = "Unassigned",
+    ) -> List[str]:
+        """Assign ``small_cluster_label`` to clusters with fewer than
+        ``min_n_obs`` observations.
+
+        Unlike ``_remove_small_clusters``, this method does not remove
+        any clusters or recompute hard assignments. Observations that
+        belong to a cluster with fewer than ``min_n_obs`` observations
+        are labeled with ``small_cluster_label``, while all other
+        observations keep their original formatted cluster label.
+
+        Parameters
+        ----------
+        cluster : np.ndarray
+            initial hard cluster assignments (n_samples,).
+
+        min_n_obs : int
+            minimum number of observations required to keep a cluster.
+
+        small_cluster_label : str, optional
+            label to assign to observations in small clusters. Defaults
+            to "Unassigned".
+
+        Returns
+        -------
+        List[str]
+            formatted cluster labels, one per observation.
+
+        """
+        unique, counts = np.unique(cluster, return_counts=True)
+        small_clusters = set(unique[counts < min_n_obs])
+        labels = [
+            small_cluster_label if c in small_clusters else f"Cluster {c:03d}"
+            for c in cluster
+        ]
+        return labels
+
     def compute_integrated_cluster_log_probability(
         self,
         modality: str,
         component: str,
         batch_size: int = 128,
         min_n_obs: int = 36,
+        small_cluster_label: str = "Unassigned",
     ) -> np.array:
         """Compute the log probability of a sample being assigned to
         each *integrated* cluster in z_hat space for a hierarchical
@@ -245,8 +287,13 @@ class ClusterAnalysis:
             number of samples to process at once while scoring.
             Defaults to 128.
         min_n_obs : int, optional
-            clusters with fewer than this many observations are
-            iteratively removed. Defaults to 36.
+            clusters with fewer than this many observations are labeled
+            as ``small_cluster_label`` instead of a numbered cluster.
+            Defaults to 36.
+
+        small_cluster_label : str, optional
+            label assigned to observations in small clusters. Defaults
+            to "Unassigned".
 
         Returns
         -------
@@ -339,8 +386,8 @@ class ClusterAnalysis:
                 logpy_zhat[start:end, k] = logpy[k] + log_likelihood
 
         cluster = tf.argmax(logpy_zhat, axis=-1).numpy()
-        logpy_zhat, _, final_labels = self._remove_small_clusters(
-            logpy_zhat, cluster, min_n_obs
+        final_labels = self._label_small_clusters(
+            cluster, min_n_obs, small_cluster_label=small_cluster_label
         )
 
         cluster_key = f"cluster_{component}_integrated"
