@@ -349,17 +349,20 @@ class Workflow:
             component = clustering_config.component
             modality = clustering_config.modality
             use_rep = clustering_config.use_rep
+            min_n_obs = clustering_config.min_n_obs
             if use_rep == "z_hat":
                 analysis.compute_integrated_cluster_log_probability(
                     modality=modality,
                     component=component,
                     batch_size=batch_size,
+                    min_n_obs=min_n_obs,
                 )
             else:
                 analysis.compute_cluster_log_probability(
                     modality=modality,
                     component=component,
                     batch_size=batch_size,
+                    min_n_obs=min_n_obs,
                     batch_effect_colnames=self.batch_effect_colnames,
                     distribution_names=self.distribution_names,
                 )
