@@ -338,7 +338,8 @@ class ClusterAnalysis:
             W_parent_parts.append(W_b[offset : offset + dim, :])
             offset += dim
         W_child_raw = W_b[offset:, :]
-        W_child_effective = W_child_raw @ W_r
+        W_child_effective = W_r @ W_child_raw
+        W_child_effective_sigma2 = (W_r**2) @ (W_child_raw**2)
         cluster_ranges = [range(p["K"]) for p in parent_params] + [
             range(child_params["K"])
         ]
@@ -359,7 +360,7 @@ class ClusterAnalysis:
 
             for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
                 sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
-            sigma2_zhat[idx] += (W_child_effective**2).T @ child_params["sigma2"][
+            sigma2_zhat[idx] += W_child_effective_sigma2.T @ child_params["sigma2"][
                 child_idx
             ]
 
