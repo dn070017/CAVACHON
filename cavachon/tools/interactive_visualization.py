@@ -248,7 +248,7 @@ class InteractiveVisualization:
                 model = TSNE(random_state=0)
                 transformed_matrix = model.fit_transform(matrix)
             if method == "umap":
-                model = umap.UMAP(random_state=0)
+                model = umap.UMAP(random_state=0, n_neighbors=30, min_dist=0.0)
                 transformed_matrix = model.fit_transform(matrix)
 
             if isinstance(use_rep, str):
