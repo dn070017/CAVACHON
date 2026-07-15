@@ -551,6 +551,7 @@ class SequentialTrainingScheduler:
             )
             self._compile_model(self.learning_rate)
             before = len(history)
+            kmeans_initialized_in_kl_phase = comp_kl_epochs > 0
             self._run_gmm_training_phase(
                 component_name=component_name,
                 component_order=component_order,
@@ -559,7 +560,8 @@ class SequentialTrainingScheduler:
                 experiment=experiment,
                 n_epochs=max_n_epochs,
                 is_single_component=is_single_component,
-                enable_kmeans_init=self._get_enable_kmeans_init(component_name),
+                enable_kmeans_init=self._get_enable_kmeans_init(component_name)
+                and not kmeans_initialized_in_kl_phase,
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
