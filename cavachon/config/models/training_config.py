@@ -23,7 +23,7 @@ class TrainingConfig(BaseConfigModel):
     """Training configuration model."""
 
     optimizer: OptimizerConfig = Field(default_factory=lambda: OptimizerConfig(name="adam", learning_rate=1e-4))
-    max_n_epochs: int = 500
+    max_regular_training_epochs: int = 500
     train: bool = True
     early_stopping: Union[bool, EarlyStoppingConfig] = True
 

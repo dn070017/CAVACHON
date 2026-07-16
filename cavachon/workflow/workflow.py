@@ -267,7 +267,7 @@ class Workflow:
 
         """
         batch_size = self.config.dataset.batch_size
-        max_epochs = self.config.training.max_n_epochs
+        max_epochs = self.config.training.max_regular_training_epochs
 
         # shuffle dataset if needed
         if self.config.dataset.shuffle:

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import model_validator
 
@@ -33,6 +33,7 @@ class ComponentConfig(BaseConfigModel):
     enable_kmeans_init: bool = True
     kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
     reparameterize_z_hat: bool = True
+    max_regular_training_epochs: Optional[int] = None
 
     @model_validator(mode="before")
     @classmethod
