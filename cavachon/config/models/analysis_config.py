@@ -67,12 +67,21 @@ class AnalysisVisualizeEmbeddingConfig(BaseConfigModel):
 class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
     """Differential expression analysis configuration.
 
-    Extends ``AnalysisGenericConfig`` with the cluster column and
-    sampling parameters used by ``DifferentialAnalysis.across_clusters_pairwise``.
+    Two modes are supported based on whether ``group_a`` and ``group_b``
+    are provided:
+
+    - **Pairwise mode** (default): both ``group_a`` and ``group_b`` are
+      empty. The workflow calls ``across_clusters_pairwise``, comparing
+      every pair of clusters automatically.
+    - **Single-pair mode**: both ``group_a`` and ``group_b`` are
+      specified. The workflow calls ``between_two_groups`` for that one
+      pair only.
 
     """
 
     use_cluster: str = ""
+    group_a: str = ""
+    group_b: str = ""
     z_sampling_size: int = 5
     x_sampling_size: int = 1000
     batch_size: int = 128
@@ -89,8 +98,16 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
 class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     """Hierarchical differential expression analysis configuration.
 
-    Extends ``AnalysisGenericConfig`` with the parameters used by
-    ``HierarchicalDifferentialAnalysis.between_clusters``.
+    Two modes are supported based on whether ``donor_cluster`` and
+    ``recipient_cluster`` are provided:
+
+    - **Pairwise mode** (default): both ``donor_cluster`` and
+      ``recipient_cluster`` are empty. The workflow calls
+      ``across_clusters_pairwise``, running interventions between every
+      pair of clusters automatically.
+    - **Single-pair mode**: both ``donor_cluster`` and
+      ``recipient_cluster`` are specified. The workflow calls
+      ``between_clusters`` for that one pair only.
 
     """
 

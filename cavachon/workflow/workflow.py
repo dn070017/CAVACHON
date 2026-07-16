@@ -416,18 +416,49 @@ class Workflow:
             modality_name = analysis_config.modality
             component = analysis_config.component
             use_cluster = analysis_config.use_cluster
-            results = analysis.across_clusters_pairwise(
-                component,
-                modality_name,
-                use_cluster,
-                z_sampling_size=analysis_config.z_sampling_size,
-                x_sampling_size=analysis_config.x_sampling_size,
-                batch_size=analysis_config.batch_size,
-                keep_only_significant=analysis_config.keep_only_significant,
-                sort_output=analysis_config.sort_output,
-            )
-            target = (modality_name, component, use_cluster)
-            self.differential_analysis_results[target] = results
+            if analysis_config.group_a and analysis_config.group_b:
+                # Single-pair mode: explicit group_a vs group_b
+                obs = self.mdata[modality_name].obs
+                index_a = obs[obs[use_cluster] == analysis_config.group_a].index
+                index_b = obs[obs[use_cluster] == analysis_config.group_b].index
+                result = analysis.between_two_groups(
+                    group_a_index=index_a,
+                    group_b_index=index_b,
+                    component=component,
+                    modality=modality_name,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
+                    batch_size=analysis_config.batch_size,
+                    sort_output=analysis_config.sort_output,
+                )
+                if analysis_config.keep_only_significant:
+                    result = result.loc[
+                        (result["K(A>B|Z)"].abs() >= 3.2)
+                        | (result["K(B>A|Z)"].abs() >= 3.2)
+                    ]
+                target = (
+                    modality_name,
+                    component,
+                    analysis_config.group_a,
+                    analysis_config.group_b,
+                )
+                self.differential_analysis_results[target] = {
+                    f"{analysis_config.group_a}/{analysis_config.group_b}": result
+                }
+            else:
+                # Pairwise mode: all cluster combinations
+                results = analysis.across_clusters_pairwise(
+                    component,
+                    modality_name,
+                    use_cluster,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
+                    batch_size=analysis_config.batch_size,
+                    keep_only_significant=analysis_config.keep_only_significant,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (modality_name, component, use_cluster)
+                self.differential_analysis_results[target] = results
 
         for target, result in self.differential_analysis_results.items():
             for cluster, degs in result.items():
@@ -451,26 +482,49 @@ class Workflow:
             self.dataloader.batch_effect_encoders,
         )
         for analysis_config in self.config.analysis.hierarchical_differential_analysis:
-            result = analysis.between_clusters(
-                donor_cluster=analysis_config.donor_cluster,
-                recipient_cluster=analysis_config.recipient_cluster,
-                component=analysis_config.component,
-                modality=analysis_config.modality,
-                use_cluster=analysis_config.use_cluster,
-                n_samples=analysis_config.n_samples,
-                seed=analysis_config.seed,
-                batch_size=analysis_config.batch_size,
-                donor_components=analysis_config.donor_components,
-                sort_output=analysis_config.sort_output,
-            )
-            target = (
-                analysis_config.modality,
-                analysis_config.component,
-                analysis_config.donor_cluster,
-                analysis_config.recipient_cluster,
-            )
-            filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
-            result.to_csv(filename, sep="\t")
+            if analysis_config.donor_cluster and analysis_config.recipient_cluster:
+                # Single-pair mode: explicit donor -> recipient
+                result = analysis.between_clusters(
+                    donor_cluster=analysis_config.donor_cluster,
+                    recipient_cluster=analysis_config.recipient_cluster,
+                    component=analysis_config.component,
+                    modality=analysis_config.modality,
+                    use_cluster=analysis_config.use_cluster,
+                    n_samples=analysis_config.n_samples,
+                    seed=analysis_config.seed,
+                    batch_size=analysis_config.batch_size,
+                    donor_components=analysis_config.donor_components,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (
+                    analysis_config.modality,
+                    analysis_config.component,
+                    analysis_config.donor_cluster,
+                    analysis_config.recipient_cluster,
+                )
+                filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
+                result.to_csv(filename, sep="\t")
+            else:
+                # Pairwise mode: all cluster combinations (like DEG)
+                results = analysis.across_clusters_pairwise(
+                    component=analysis_config.component,
+                    modality=analysis_config.modality,
+                    use_cluster=analysis_config.use_cluster,
+                    donor_components=analysis_config.donor_components,
+                    n_samples=analysis_config.n_samples,
+                    seed=analysis_config.seed,
+                    batch_size=analysis_config.batch_size,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (
+                    analysis_config.modality,
+                    analysis_config.component,
+                    analysis_config.use_cluster,
+                )
+                for pair_key, result in results.items():
+                    pair = pair_key.replace("->", "_to_").replace("/", "_")
+                    filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
+                    result.to_csv(filename, sep="\t")
 
         return
 
