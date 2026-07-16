@@ -88,7 +88,6 @@ class Workflow:
         self.model = Model.make(
             component_configs=self.config.components, name=self.config.model.name
         )
-        # print(f"LATENT OTOTJEDLKJSLFDSJ: {self.model.n_latent_dims}")
 
         self.setup_train_scheduler()
         if self.config.model.load_weights:
@@ -356,9 +355,7 @@ class Workflow:
                 f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
             )
             extension = "html" if interactive else "png"
-            print(adata.obsm.keys())
             file_label = f"{title}.{extension}".lower().replace(" ", "_")
-            print(f"{outdir}/{file_label}")
             InteractiveVisualization.embedding(
                 adata=adata,
                 title=title,
