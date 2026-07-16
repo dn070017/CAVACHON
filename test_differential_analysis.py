@@ -19,7 +19,7 @@ import pandas as pd
 import scipy.sparse as sp
 import tensorflow as tf
 
-from cavachon.config.config_mapping.component_config_mapping import ComponentConfigMapping
+from cavachon.config.models.component_config import ComponentConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.model.model import Model
 from cavachon.tools.differential_analysis import DifferentialAnalysis
@@ -42,7 +42,7 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 def make_model():
     """Model with n_vars_batch_effect=1 to match zero-padded DataLoader output."""
-    comp_A_config = ComponentConfigMapping(
+    comp_A_config = ComponentConfig(
         name="comp_A",
         modalities=[{"name": "RNA", "distribution_names": "MultivariateNormalDiag", "n_vars": 8}],
         n_vars={"RNA": 8},
@@ -53,7 +53,7 @@ def make_model():
         conditioned_on_z=[],
         conditioned_on_z_hat=[],
     )
-    comp_B_config = ComponentConfigMapping(
+    comp_B_config = ComponentConfig(
         name="comp_B",
         modalities=[{"name": "ATAC", "distribution_names": "MultivariateNormalDiag", "n_vars": 6}],
         n_vars={"ATAC": 6},

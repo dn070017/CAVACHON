@@ -9,9 +9,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from cavachon.config.application_config import ApplicationConfig
+from cavachon.config.models.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
-from cavachon.environment.constants import Constants
 from cavachon.filter.anndata_filter_handler import AnnDataFilterHandler
 from cavachon.io.file_reader import FileReader
 from cavachon.modality.modality import Modality
@@ -64,7 +63,7 @@ class Workflow:
             path to the configuration file (config.yaml)
 
         """
-        self.config: ApplicationConfig = ApplicationConfig(filename)
+        self.config: ApplicationConfig = ApplicationConfig.from_yaml(filename)
         self.mdata: Optional[mu.MuData] = None
         self.dataloader: Optional[DataLoader] = None
         self.anndata_filters: AnnDataFilterHandler = AnnDataFilterHandler.from_config(
@@ -132,7 +131,7 @@ class Workflow:
         modalities = dict()
         for modality_name in config.modality_names:
             modality_config = config.modality[modality_name]
-            h5ad = modality_config.get(Constants.CONFIG_FIELD_MODALITY_H5AD)
+            h5ad = modality_config.h5ad
             if h5ad:
                 adata = anndata.read_h5ad(os.path.join(config.io.datadir, h5ad))
             else:
@@ -142,15 +141,9 @@ class Workflow:
                 Modality(
                     adata,
                     name=modality_name,
-                    modality_type=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_TYPE
-                    ),
-                    distribution_name=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_DIST
-                    ),
-                    batch_effect_colnames=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_BATCH_COLNAMES
-                    ),
+                    modality_type=modality_config.type,
+                    distribution_name=modality_config.dist,
+                    batch_effect_colnames=modality_config.batch_effect_colnames,
                 ),
             )
 
@@ -180,37 +173,31 @@ class Workflow:
         processed_component_configs = list()
         for component_config in self.config.components:
             component_vars = dict()
-            for modality_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            ):
+            for modality_name in component_config.modality_names:
                 component_vars.setdefault(
                     modality_name, self.mdata[modality_name].n_vars
                 )
 
-            component_config[Constants.CONFIG_FIELD_COMPONENT_N_VARS] = component_vars
+            component_config.n_vars = component_vars
             processed_component_configs.append(component_config)
 
         self.config.components = processed_component_configs
-        self.config.model[Constants.CONFIG_FIELD_MODEL_COMPONENT] = (
-            processed_component_configs
-        )
+        self.config.model.components = processed_component_configs
 
         return
 
     def setup_dataloader(self) -> None:
         """Setup mdata and update n_vars_batch_effect in the component config."""
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         self.distribution_names = dict()
         self.batch_effect_colnames = dict()
         for modality_name, modality_config in self.config.modality.items():
             self.distribution_names.setdefault(
-                modality_name, modality_config.get(Constants.CONFIG_FIELD_MODALITY_DIST)
+                modality_name, modality_config.dist
             )
             self.batch_effect_colnames.setdefault(
                 modality_name,
-                modality_config.get(Constants.CONFIG_FIELD_MODALITY_BATCH_COLNAMES),
+                modality_config.batch_effect_colnames,
             )
 
         self.dataloader = DataLoader(
@@ -226,34 +213,22 @@ class Workflow:
         nvars = self.dataloader.n_vars_batch_effect
         for component_config in self.config.components:
             component_vars = dict()
-            for modality_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            ):
+            for modality_name in component_config.modality_names:
                 component_vars[modality_name] = nvars.get(modality_name)
-            component_config[Constants.CONFIG_FIELD_COMPONENT_N_VARS_BATCH] = (
-                component_vars
-            )
+            component_config.n_vars_batch_effect = component_vars
             processed_component_configs.append(component_config)
 
         self.config.components = processed_component_configs
-        self.config.model[Constants.CONFIG_FIELD_MODEL_COMPONENT] = (
-            processed_component_configs
-        )
+        self.config.model.components = processed_component_configs
 
         return
 
     def setup_train_scheduler(self) -> None:
         """Setup the training scheduler"""
-        optimizer_config = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_OPTIMIZER
-        )
-        optimizer = optimizer_config.get("name")
-        learning_rate = optimizer_config.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_LEARNING_RATE
-        )
-        early_stopping = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING
-        )
+        optimizer_config = self.config.training.optimizer
+        optimizer = optimizer_config.name
+        learning_rate = optimizer_config.learning_rate
+        early_stopping = self.config.training.early_stopping
         self.train_scheduler = SequentialTrainingScheduler(
             self.model,
             self.mdata,
@@ -291,15 +266,11 @@ class Workflow:
         set to True.
 
         """
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
-        max_epochs = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_N_EPOCHS
-        )
+        batch_size = self.config.dataset.batch_size
+        max_epochs = self.config.training.max_n_epochs
 
         # shuffle dataset if needed
-        if self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_SHUFFLE):
+        if self.config.dataset.shuffle:
             train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(
                 batch_size
             )
@@ -332,18 +303,14 @@ class Workflow:
         """Predict generative process for self.mdata."""
         self.model.trainable = False
         self.model.compile()
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         self.outputs = self.model.predict(self.mdata, batch_size=batch_size)
 
         return
 
     def perform_clustering_analysis(self) -> None:
         """Perform clustering analsis of each modality"""
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         analysis = ClusterAnalysis(self.mdata, self.model)
         for clustering_config in self.config.analysis.clustering:
             component = clustering_config.component
@@ -471,9 +438,7 @@ class Workflow:
         """Create visualization of conditional attribution score"""
         outdir = os.path.join(self.config.io.outdir, "attribution")
         os.makedirs(outdir, exist_ok=True)
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
 
         targets = list()
         for attribution_config in self.config.analysis.conditional_attribution_scores:

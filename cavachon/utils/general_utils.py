@@ -34,6 +34,12 @@ class GeneralUtils:
             reordered components.
 
         """
+        def _get(component_config, key, default=None):
+            """Unified accessor for dict and Pydantic model config entries."""
+            if isinstance(component_config, dict):
+                return component_config.get(key, default)
+            return getattr(component_config, key, default)
+
         component_id_mapping = dict()
         id_component_mapping = dict()
         if issubclass(type(component_configs), Mapping):
@@ -44,7 +50,7 @@ class GeneralUtils:
                 id_component_mapping.setdefault(i, component_config)
         else:
             for i, component_config in enumerate(component_configs):
-                component_name = component_config.get("name")
+                component_name = _get(component_config, "name")
                 component_id_mapping.setdefault(component_name, i)
                 id_component_mapping.setdefault(i, component_config)
 
@@ -55,11 +61,11 @@ class GeneralUtils:
         for i in component_ids:
             G.add_node(i)
         for component_id, component_config in id_component_mapping.items():
-            conditioned_on_z = component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z, []
+            conditioned_on_z = _get(
+                component_config, Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z, []
             )
-            conditioned_on_z_hat = component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
+            conditioned_on_z_hat = _get(
+                component_config, Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
             )
             if len(conditioned_on_z) + len(conditioned_on_z_hat) != 0:
                 for conditioned_on_name in itertools.chain(

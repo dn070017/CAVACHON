@@ -2,7 +2,7 @@ import itertools
 import os
 from collections import defaultdict
 from copy import deepcopy
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import mlflow
 import numpy as np
@@ -15,6 +15,7 @@ from cavachon.callbacks import (
     PeriodicTSNECallback,
     VerboseCallback,
 )
+from cavachon.config.models.training_config import EarlyStoppingConfig
 from cavachon.environment.constants import Constants
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 
@@ -30,7 +31,7 @@ class SequentialTrainingScheduler:
     model : tf.keras.Model
         input model that needs to be trained.
 
-    component_configs: List[ComponentConfigMapping]
+    component_configs: List[ComponentConfig]
         the config used to create the components in the model.
 
     optimizer: str
@@ -58,7 +59,7 @@ class SequentialTrainingScheduler:
         mdata,
         optimizer: str = "adam",
         learning_rate: float = 1e-4,
-        early_stopping: bool = True,
+        early_stopping: Union[bool, EarlyStoppingConfig] = True,
         batch_size: int = 128,
         outdir: Optional[str] = None,
         distribution_names: Optional[Mapping[str, str]] = None,
@@ -79,7 +80,7 @@ class SequentialTrainingScheduler:
         learning_rate: float, optional
             learning rate for the optimizer. Defaults to 1e-4.
 
-        early_stopping: bool, optional
+        early_stopping: Union[bool, EarlyStoppingConfig], optional
             whether or not to use early stopping when training the model.
 
         """
@@ -113,13 +114,9 @@ class SequentialTrainingScheduler:
         component_configs = self.component_configs
         training_order.append([])
         for component_config in component_configs:
-            component_name = component_config.get("name")
-            conditioned_on_z = component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z, []
-            )
-            conditioned_on_z_hat = component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
-            )
+            component_name = component_config.name
+            conditioned_on_z = component_config.conditioned_on_z
+            conditioned_on_z_hat = component_config.conditioned_on_z_hat
             if len(conditioned_on_z) == 0 and len(conditioned_on_z_hat) == 0:
                 self.run_progressive_training[component_name] = False
             else:
@@ -156,10 +153,10 @@ class SequentialTrainingScheduler:
         """
         modality_weight_by_component = defaultdict(dict)
         for component_config in self.component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             modality_weight = dict()
             if not constant:
-                n_vars = component_config.get(Constants.CONFIG_FIELD_COMPONENT_N_VARS)
+                n_vars = component_config.n_vars
                 total_vars = 0
                 total_scaled_weight = 0
                 for modality_name, n_var in n_vars.items():
@@ -389,10 +386,8 @@ class SequentialTrainingScheduler:
     def _get_parent_component(self, child_name: str) -> Optional[str]:
         """Get parent component name for the child."""
         for component_config in self.component_configs:
-            if component_config.get("name") == child_name:
-                conditioned_on_z_hat = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
-                )
+            if component_config.name == child_name:
+                conditioned_on_z_hat = component_config.conditioned_on_z_hat
                 if len(conditioned_on_z_hat) > 0:
                     return conditioned_on_z_hat
         return []
@@ -888,7 +883,7 @@ class SequentialTrainingScheduler:
         saved before recompile and restored afterwards so that pinned
         weights (e.g. zeroed parents) survive recompilation.
         """
-        all_components = [c.get("name") for c in self.component_configs]
+        all_components = [c.name for c in self.component_configs]
         current_tv = {id(v) for v in self.model.trainable_variables} if hasattr(self.model, 'trainable_variables') else set()
         if getattr(self.model, 'optimizer', None) is not None and \
            getattr(self, '_last_trainable', None) == current_tv:
@@ -987,38 +982,29 @@ class SequentialTrainingScheduler:
     def _get_parent_annealing_epochs(self, component_name):
         """Get parent annealing epochs from component config."""
         for c in self.component_configs:
-            if c.get("name") == component_name:
-                return c.get(
-                    Constants.CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS, 0
-                )
+            if c.name == component_name:
+                return c.n_parent_annealing_epochs
         return 0
 
     def _get_kl_annealing_epochs(self, component_name):
         """Get KL annealing epochs from component config."""
         for c in self.component_configs:
-            if c.get("name") == component_name:
-                return c.get(
-                    Constants.CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS, 0
-                )
+            if c.name == component_name:
+                return c.n_kl_annealing_epochs
         return 0
 
     def _get_enable_kmeans_init(self, component_name):
         """Get enable_kmeans_init flag from component config."""
         for c in self.component_configs:
-            if c.get("name") == component_name:
-                return c.get(
-                    Constants.CONFIG_FIELD_COMPONENT_ENABLE_KMEANS_INIT, True
-                )
+            if c.name == component_name:
+                return c.enable_kmeans_init
         return True
 
     def _get_kl_annealing_ratios(self, component_name):
         """Get KL annealing ratios from component config."""
         for c in self.component_configs:
-            if c.get("name") == component_name:
-                return c.get(
-                    Constants.CONFIG_FIELD_COMPONENT_KL_ANNEALING_RATIO,
-                    (0.5, 0.2, 0.3),
-                )
+            if c.name == component_name:
+                return c.kl_annealing_ratio
         return (0.5, 0.2, 0.3)
 
     def _common_callbacks(
@@ -1148,7 +1134,7 @@ class SequentialTrainingScheduler:
             frozen and their loss weights zeroed.
         """
         for component_config in self.component_configs:
-            comp_name = component_config.get("name")
+            comp_name = component_config.name
             component = self.model.components.get(comp_name)
 
             should_train = comp_name in train_components

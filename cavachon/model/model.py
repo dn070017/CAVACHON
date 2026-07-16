@@ -6,9 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from cavachon.config.config_mapping.component_config_mapping import (
-    ComponentConfigMapping,
-)
+from cavachon.config.models.component_config import ComponentConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
@@ -32,7 +30,7 @@ class Model(tf.keras.Model):
     components: Mapping[str, Component]
         the components which makes up the model.
 
-    component_configs: List[ComponentConfigMapping]
+    component_configs: List[ComponentConfig]
         the config used to create the components in the model.
 
     """
@@ -42,7 +40,7 @@ class Model(tf.keras.Model):
         inputs: Mapping[Any, tf.keras.Input],
         outputs: Mapping[Any, tf.Tensor],
         components: Mapping[str, Component],
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         name: str = "model",
         **kwargs,
     ):
@@ -68,7 +66,7 @@ class Model(tf.keras.Model):
         components: Mapping[str, Component]
             the components which makes up the model.
 
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         name: str, optional:
@@ -80,7 +78,7 @@ class Model(tf.keras.Model):
         """
         super().__init__(inputs=inputs, outputs=outputs, name=name)
         self.components: List[Component] = components
-        self.component_configs: List[ComponentConfigMapping] = component_configs
+        self.component_configs: List[ComponentConfig] = component_configs
 
     @classmethod
     def setup_inputs(
@@ -144,14 +142,14 @@ class Model(tf.keras.Model):
 
     @classmethod
     def setup_components(
-        cls, component_configs: List[ComponentConfigMapping], **kwargs
+        cls, component_configs: List[ComponentConfig], **kwargs
     ) -> Tuple:
         """Builder function for setting up components. Developers can
         overwrite this function to create custom Model.
 
         Parameters
         ----------
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         kwargs: Mapping[str, Any]
@@ -181,27 +179,26 @@ class Model(tf.keras.Model):
         n_vars_batch_effect = dict()
         for component_config in component_configs:
             modality_names = modality_names.union(
-                set(
-                    component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-                    )
-                )
+                set(component_config.modality_names)
             )
-            distributions.update(
-                component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
-                )
-            )
-            n_vars.update(component_config.get(Constants.CONFIG_FIELD_COMPONENT_N_VARS))
-            n_vars_batch_effect.update(component_config.get("n_vars_batch_effect"))
+            distributions.update(component_config.distribution_names)
+            n_vars.update(component_config.n_vars)
+            n_vars_batch_effect.update(component_config.n_vars_batch_effect)
 
-            component_name = component_config.get("name")
+            component_name = component_config.name
             conditional_dims_config = Model.prepare_conditional_dims_config(
                 component_config, components
             )
-            component_config.update(conditional_dims_config)
+            component_config.z_conditional_dims = conditional_dims_config.get(
+                "z_conditional_dims"
+            )
+            component_config.z_hat_conditional_dims = conditional_dims_config.get(
+                "z_hat_conditional_dims"
+            )
 
-            components.setdefault(component_name, Component.make(**component_config))
+            components.setdefault(
+                component_name, Component.make(**component_config.model_dump())
+            )
 
         return (
             components,
@@ -216,7 +213,7 @@ class Model(tf.keras.Model):
         cls,
         inputs: Mapping[Any, tf.keras.Input],
         components: List[Component],
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         **kwargs,
     ) -> Mapping[Any, tf.Tensor]:
         """Builder function for setting up outputs. Developers can
@@ -230,7 +227,7 @@ class Model(tf.keras.Model):
         components: Mapping[str, Component]
             components created by setup_components().
 
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         kwargs: Mapping[str, Any]
@@ -247,7 +244,7 @@ class Model(tf.keras.Model):
         z_hat_conditional = dict()
         outputs = dict()
         for component_config in component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             component = components.get(component_name)
             component_inputs = Model.prepare_component_inputs(
                 inputs,
@@ -274,7 +271,7 @@ class Model(tf.keras.Model):
     @classmethod
     def make(
         cls,
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         name: str = "cavachon",
         **kwargs,
     ) -> tf.keras.Model:
@@ -353,8 +350,6 @@ class Model(tf.keras.Model):
         if issubclass(type(x), mu.MuData):
             outputs = dict()
             use_which_component = dict()
-            field_save_x = Constants.CONFIG_FIELD_COMPONENT_MODALITY_SAVE_X
-            field_save_z = Constants.CONFIG_FIELD_COMPONENT_MODALITY_SAVE_Z
             save_x = dict()
             save_z = dict()
             save_z_hat = dict()
@@ -362,28 +357,26 @@ class Model(tf.keras.Model):
                 component_name = component_config.name
                 outputs.setdefault(f"{component_name}_z", list())
                 outputs.setdefault(f"{component_name}_z_hat", list())
-                modality_names = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_N_VARS
-                ).keys()
+                modality_names = component_config.n_vars.keys()
                 predict_x = False
 
                 for modality_name in modality_names:
-                    if component_config.get(field_save_x).get(modality_name):
+                    if component_config.save_x.get(modality_name):
                         predict_x = True
 
                     use_which_component.setdefault(modality_name, [])
                     use_which_component.get(modality_name).append(component_name)
                     save_x.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_x).get(modality_name),
+                        component_config.save_x.get(modality_name),
                     )
                     save_z.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_z).get(modality_name),
+                        component_config.save_z.get(modality_name),
                     )
                     save_z_hat.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_z).get(modality_name),
+                        component_config.save_z.get(modality_name),
                     )
                     if predict_x:
                         outputs.setdefault(
@@ -468,7 +461,7 @@ class Model(tf.keras.Model):
             loss = getattr(self, "loss", None)
             loss = loss if isinstance(loss, dict) else {}
             for component_config in self.component_configs:
-                component_name = component_config.get("name")
+                component_name = component_config.name
 
                 standard_w = standard_kl_weights.get(component_name, 0.0)
                 gmm_w = gmm_kl_weights.get(component_name, 0.0)
@@ -515,10 +508,8 @@ class Model(tf.keras.Model):
                     self._data_loss_weights = {}
                 if component_name not in self._data_loss_weights:
                     self._data_loss_weights[component_name] = {}
-                distribution_names = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
-                )
-                for modality_name in component_config.get("modality_names"):
+                distribution_names = component_config.distribution_names
+                for modality_name in component_config.modality_names:
                     nldl_name = (
                         f"{component_name}_{modality_name}_"
                         f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
@@ -580,15 +571,13 @@ class Model(tf.keras.Model):
             y_pred = dict()
 
             for component_config in self.component_configs:
-                component_name = component_config.get("name")
+                component_name = component_config.name
 
                 kl_divergence_name = (
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
                 )
 
-                modality_names = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-                )
+                modality_names = component_config.modality_names
 
                 # Get the prior parameters and z data (same for all phases)
                 prior_params = results.get(
@@ -751,7 +740,7 @@ class Model(tf.keras.Model):
 
     @staticmethod
     def prepare_conditional_dims_config(
-        component_config: ComponentConfigMapping, components: Mapping[str, Component]
+        component_config: ComponentConfig, components: Mapping[str, Component]
     ) -> Dict[str, int]:
         """Prepare the config for conditional dimensions used in
         `setup_components`. This function should not be used directly
@@ -759,7 +748,7 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
-        component_config: List[ComponentConfigMapping]
+        component_config: List[ComponentConfig]
             the config used to create the current component.
 
         components: Mapping[str, Component]
@@ -777,7 +766,9 @@ class Model(tf.keras.Model):
 
         conditionals = Model.prepare_conditionals()
         for config_key, dims_key in conditionals:
-            conditional_component_names = component_config.get(config_key, [])
+            conditional_component_names = (
+                getattr(component_config, config_key, None) or []
+            )
             if len(conditional_component_names) == 0:
                 conditional_dims_config.setdefault(dims_key, None)
             else:
@@ -792,7 +783,7 @@ class Model(tf.keras.Model):
     @staticmethod
     def prepare_component_inputs(
         batch: Mapping[str, tf.Tensor],
-        component_config: ComponentConfigMapping,
+        component_config: ComponentConfig,
         target_component: str,
         components: Mapping[str, Component],
         z_conditional: Mapping[str, tf.Tensor] = dict(),
@@ -805,7 +796,7 @@ class Model(tf.keras.Model):
         batch: Mapping[str, tf.Tensor]
             batch inputs.
 
-        component_config: List[ComponentConfigMapping]
+        component_config: List[ComponentConfig]
             the config used to create the current component.
 
         target_component: str
@@ -848,7 +839,9 @@ class Model(tf.keras.Model):
 
         for input_key, config_key, tensor_dict in conditionals:
             conditional_tensors = []
-            conditional_component_names = component_config.get(config_key, [])
+            conditional_component_names = (
+                getattr(component_config, config_key, None) or []
+            )
             if len(conditional_component_names) != 0:
                 for conditional_component_name in conditional_component_names:
                     conditional_tensors.append(
@@ -902,11 +895,11 @@ class Model(tf.keras.Model):
             Constants.MODEL_OUTPUTS_Z: dict(),
         }
         for component_config in self.component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             if component_name not in requested_components:
                 continue
 
-            component_input_config = dict(component_config)
+            component_input_config = component_config.model_dump()
             component_input_config.update(
                 {
                     Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
@@ -986,7 +979,7 @@ class Model(tf.keras.Model):
         accumulated_z_hat = dict(z_hat_seed or {})
         outputs = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
         for component_config in self.component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             if component_name not in requested_components:
                 continue
 
@@ -994,9 +987,7 @@ class Model(tf.keras.Model):
                 raise ValueError(f"Missing z for component '{component_name}'.")
 
             z_conditional = dict()
-            for parent_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z, []
-            ):
+            for parent_name in component_config.conditioned_on_z:
                 if parent_name in z:
                     z_conditional[parent_name] = z.get(parent_name)
                 elif strict:
@@ -1006,9 +997,7 @@ class Model(tf.keras.Model):
                     )
 
             z_hat_conditional = dict()
-            for parent_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT, []
-            ):
+            for parent_name in component_config.conditioned_on_z_hat:
                 if parent_name in accumulated_z_hat:
                     z_hat_conditional[parent_name] = accumulated_z_hat.get(parent_name)
                 elif strict:
@@ -1086,7 +1075,7 @@ class Model(tf.keras.Model):
 
         outputs = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
         for component_config in self.component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             if component_name not in requested_components:
                 continue
 
@@ -1096,7 +1085,7 @@ class Model(tf.keras.Model):
                     raise ValueError(f"Missing z_hat for component '{component_name}'.")
                 continue
 
-            component_input_config = dict(component_config)
+            component_input_config = component_config.model_dump()
             component_input_config.update(
                 {
                     Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],

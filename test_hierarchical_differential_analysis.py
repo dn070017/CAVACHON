@@ -40,7 +40,7 @@ skip_until_implemented = pytest.mark.skipif(
 import anndata as ad
 import muon as mu
 
-from cavachon.config.config_mapping.component_config_mapping import ComponentConfigMapping
+from cavachon.config.models.component_config import ComponentConfig
 from cavachon.model.model import Model
 
 np.random.seed(42)
@@ -53,7 +53,7 @@ _CLUSTER_KEY = "cluster_label"
 
 
 def _make_model():
-    comp_a = ComponentConfigMapping(
+    comp_a = ComponentConfig(
         name="comp_A",
         modalities=[{"name": "RNA", "distribution_names": "MultivariateNormalDiag", "n_vars": _N_RNA}],
         n_vars={"RNA": _N_RNA},
@@ -64,7 +64,7 @@ def _make_model():
         conditioned_on_z=[],
         conditioned_on_z_hat=[],
     )
-    comp_b = ComponentConfigMapping(
+    comp_b = ComponentConfig(
         name="comp_B",
         modalities=[{"name": "ATAC", "distribution_names": "MultivariateNormalDiag", "n_vars": _N_ATAC}],
         n_vars={"ATAC": _N_ATAC},
