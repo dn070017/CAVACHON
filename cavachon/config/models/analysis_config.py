@@ -77,6 +77,7 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
     x_sampling_size: int = 1000
     batch_size: int = 128
     keep_only_significant: bool = False
+    sort_output: bool = True
 
     @model_validator(mode="after")
     def _default_use_cluster(self) -> "AnalysisDifferentialAnalysisConfig":
@@ -100,6 +101,7 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     n_samples: int = 10
     seed: Optional[int] = None
     batch_size: int = 128
+    sort_output: bool = True
 
 
 class AnalysisConfig(BaseConfigModel):

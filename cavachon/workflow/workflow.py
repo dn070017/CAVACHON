@@ -424,6 +424,7 @@ class Workflow:
                 x_sampling_size=analysis_config.x_sampling_size,
                 batch_size=analysis_config.batch_size,
                 keep_only_significant=analysis_config.keep_only_significant,
+                sort_output=analysis_config.sort_output,
             )
             target = (modality_name, component, use_cluster)
             self.differential_analysis_results[target] = results
@@ -460,6 +461,7 @@ class Workflow:
                 seed=analysis_config.seed,
                 batch_size=analysis_config.batch_size,
                 donor_components=analysis_config.donor_components,
+                sort_output=analysis_config.sort_output,
             )
             target = (
                 analysis_config.modality,
