@@ -482,6 +482,8 @@ class Workflow:
             self.dataloader.batch_effect_encoders,
         )
         for analysis_config in self.config.analysis.hierarchical_differential_analysis:
+            donor_components = analysis_config.donor_components
+            donor_components_str = "_".join(donor_components) if donor_components else "all"
             if analysis_config.donor_cluster and analysis_config.recipient_cluster:
                 # Single-pair mode: explicit donor -> recipient
                 result = analysis.between_clusters(
@@ -498,8 +500,12 @@ class Workflow:
                 )
                 target = (
                     analysis_config.modality,
+                    "from",
                     analysis_config.component,
+                    "substitute",
+                    donor_components_str,
                     analysis_config.donor_cluster,
+                    "to",
                     analysis_config.recipient_cluster,
                 )
                 filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
@@ -518,11 +524,13 @@ class Workflow:
                 )
                 target = (
                     analysis_config.modality,
+                    "from",
                     analysis_config.component,
-                    analysis_config.use_cluster,
+                    "substitute",
+                    donor_components_str,
                 )
                 for pair_key, result in results.items():
-                    pair = pair_key.replace("->", "_to_").replace("/", "_")
+                    pair = pair_key.replace("->", "_to_").replace("/", "_").replace(" ", "_").lower()
                     filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
                     result.to_csv(filename, sep="\t")
 
