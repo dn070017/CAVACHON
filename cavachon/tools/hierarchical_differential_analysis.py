@@ -2,6 +2,7 @@
 
 import warnings
 from collections.abc import Mapping
+from itertools import combinations
 
 import muon as mu
 import numpy as np
@@ -186,6 +187,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         seed: int | None = None,
         batch_size: int = 128,
         donor_components: list[str] | None = None,
+        sort_output: bool = True,
     ) -> pd.DataFrame:
         """Compute differential expression between donor and recipient clusters.
 
@@ -225,6 +227,10 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
             Controls **which latent dimensions are swapped**; independent of the
             DEG decode target (``component`` / ``modality``).
+
+        sort_output : bool, optional
+            Sort the result by the maximum of the absolute Bayesian factors
+            ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order. Default ``True``.
 
         Returns
         -------
@@ -319,4 +325,93 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         )
         result["DonorComponents"] = ",".join(sorted(normalized_donor_components))
 
+        if sort_output:
+            sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
+            result = result.loc[sort_key.sort_values(ascending=False).index]
+
         return result
+
+    def across_clusters_pairwise(
+        self,
+        component: str,
+        modality: str,
+        use_cluster: str,
+        donor_components: list[str] | None = None,
+        n_samples: int = 10,
+        seed: int | None = None,
+        batch_size: int = 128,
+        sort_output: bool = True,
+    ) -> Mapping[str, pd.DataFrame]:
+        """Perform counterfactual intervention between every pair of clusters.
+
+        For each unordered pair of clusters (A, B), runs two interventions:
+        ``A -> B`` (substitute A's z into B) and ``B -> A`` (substitute B's
+        z into A), using ``between_clusters``. The ``donor_components``
+        parameter controls which model components' z latent vectors are
+        substituted.
+
+        Parameters
+        ----------
+        component : str
+            DEG target: model component whose output distribution is decoded.
+        modality : str
+            DEG target modality within ``component``.
+        use_cluster : str
+            Column in ``mdata[modality].obs`` containing cluster labels.
+        donor_components : list[str] | None, optional
+            Model components whose z vectors are replaced by donor samples.
+            Defaults to ``[component]``.
+        n_samples : int, optional
+            Monte-Carlo sampling rounds per intervention. Default ``10``.
+        seed : int | None, optional
+            NumPy random seed for reproducibility. Default ``None``.
+        batch_size : int, optional
+            Batch size for encoding/decoding. Default ``128``.
+
+        sort_output : bool, optional
+            Sort each result by the maximum of the absolute Bayesian factors
+            ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order. Default ``True``.
+
+        Returns
+        -------
+        Mapping[str, pd.DataFrame]
+            Keys are ``"ClusterA->ClusterB"`` and ``"ClusterB->ClusterA"``.
+            Values are Bayesian-factor tables with intervention metadata
+            (same columns as ``between_clusters``).
+        """
+        obs = self.mdata[modality].obs
+        unique_clusters = obs[use_cluster].unique()
+        results = {}
+
+        for cluster_a, cluster_b in combinations(unique_clusters, r=2):
+            # Direction A -> B
+            key_ab = f"{cluster_a}->{cluster_b}"
+            results[key_ab] = self.between_clusters(
+                donor_cluster=cluster_a,
+                recipient_cluster=cluster_b,
+                component=component,
+                modality=modality,
+                use_cluster=use_cluster,
+                donor_components=donor_components,
+                n_samples=n_samples,
+                seed=seed,
+                batch_size=batch_size,
+                sort_output=sort_output,
+            )
+
+            # Direction B -> A
+            key_ba = f"{cluster_b}->{cluster_a}"
+            results[key_ba] = self.between_clusters(
+                donor_cluster=cluster_b,
+                recipient_cluster=cluster_a,
+                component=component,
+                modality=modality,
+                use_cluster=use_cluster,
+                donor_components=donor_components,
+                n_samples=n_samples,
+                seed=seed,
+                batch_size=batch_size,
+                sort_output=sort_output,
+            )
+
+        return results
