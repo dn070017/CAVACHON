@@ -425,7 +425,6 @@ class SequentialTrainingScheduler:
         """
         n_batches = len(x)
         history = []
-        fallback_epochs = kwargs.get("epochs", 100)
 
         self._compile_model(self.learning_rate)
         experiment = self._mlflow_experiment()
@@ -435,9 +434,7 @@ class SequentialTrainingScheduler:
         cumulative_total = 0
         for tc in self.training_order:
             cn = tc[0]
-            comp_max_epochs = self._get_max_regular_training_epochs(
-                cn, fallback_epochs
-            )
+            comp_max_epochs = self._get_max_regular_training_epochs(cn)
             is_child = self.run_progressive_training.get(cn)
             has_parents = is_child and bool(self._get_parent_component(cn))
             if has_parents:
@@ -551,7 +548,7 @@ class SequentialTrainingScheduler:
             before = len(history)
             kmeans_initialized_in_kl_phase = comp_kl_epochs > 0
             comp_max_epochs = self._get_max_regular_training_epochs(
-                component_name, fallback_epochs
+                component_name
             )
             self._run_gmm_training_phase(
                 component_name=component_name,
@@ -1007,17 +1004,13 @@ class SequentialTrainingScheduler:
         return True
 
     def _get_max_regular_training_epochs(
-        self, component_name: str, fallback_epochs: int
+        self, component_name: str
     ) -> int:
-        """Get max regular training epochs from component config.
-
-        Falls back to ``fallback_epochs`` when the component does not
-        specify its own value.
-        """
+        """Get max regular training epochs from component config."""
         for c in self.component_configs:
             if c.name == component_name:
-                return c.max_regular_training_epochs or fallback_epochs
-        return fallback_epochs
+                return c.max_regular_training_epochs
+        return 100
 
     def _get_kl_annealing_ratios(self, component_name):
         """Get KL annealing ratios from component config."""

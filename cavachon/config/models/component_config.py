@@ -28,10 +28,10 @@ class ComponentConfig(BaseConfigModel):
     n_latent_priors: int = 0
     n_encoder_layers: int = 3
     n_decoder_layers: Dict[str, int] = {}
-    n_parent_annealing_epochs: int = 1
-    n_kl_annealing_epochs: int = 25
-    enable_kmeans_init: bool = True
-    kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
+    n_parent_annealing_epochs: Optional[int] = None
+    n_kl_annealing_epochs: Optional[int] = None
+    enable_kmeans_init: Optional[bool] = None
+    kl_annealing_ratio: Optional[Tuple[float, float, float]] = None
     reparameterize_z_hat: bool = True
     max_regular_training_epochs: Optional[int] = None
 

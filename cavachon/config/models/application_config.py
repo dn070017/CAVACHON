@@ -155,7 +155,24 @@ class ApplicationConfig(BaseConfigModel):
             c.name: c for c in self.components
         }
 
-        # 7. Validate analysis entries
+        # 7. Propagate training-level defaults to components when not set
+        for comp in self.components:
+            if comp.n_parent_annealing_epochs is None:
+                comp.n_parent_annealing_epochs = (
+                    self.training.n_parent_annealing_epochs
+                )
+            if comp.n_kl_annealing_epochs is None:
+                comp.n_kl_annealing_epochs = self.training.n_kl_annealing_epochs
+            if comp.enable_kmeans_init is None:
+                comp.enable_kmeans_init = self.training.enable_kmeans_init
+            if comp.kl_annealing_ratio is None:
+                comp.kl_annealing_ratio = self.training.kl_annealing_ratio
+            if comp.max_regular_training_epochs is None:
+                comp.max_regular_training_epochs = (
+                    self.training.max_regular_training_epochs
+                )
+
+        # 8. Validate analysis entries
         # 7a. clustering, differential_analysis, conditional_attribution_scores
         for entry in chain(
             self.analysis.clustering,
