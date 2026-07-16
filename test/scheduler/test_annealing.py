@@ -910,7 +910,7 @@ class FullPipelineTestCase(unittest.TestCase):
               f"Parent2 ({train_epochs} epochs) → "
               f"Child1 parent-annealing (10 epochs) → "
               f"Child1 final ({train_epochs} epochs)")
-        print(f"  progressive_epochs=10,  no KL annealing,  "
+        print(f"  parent_annealing_epochs=10,  no KL annealing,  "
               f"k-means @ epoch 0 for each component")
         print("  Note: child regular training is GMM only (no annealing needed)")
         print("=" * 110)

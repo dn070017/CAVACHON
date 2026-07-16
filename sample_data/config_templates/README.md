@@ -357,24 +357,29 @@ The configs for the components in the model. See also [Modalities (in Component)
   * description: the number of components of Gaussian-mixture priors used to compute KL-divergence and perform online clustering.
 * `n_parent_annealing_epochs`:
   * required: `False`.
-  * defaults: `1`.
+  * defaults: uses `training.n_parent_annealing_epochs` (default `1`) if not set here.
   * type: `int`.
   * description: number of parent annealing epochs used during the training process. During the parent annealing phase, the weight of the child's data likelihood is scaled quadratically from 0 to 1 with `(epoch/n_parent_annealing_epochs)²` while the parent's data weight fades from 1.0 to 0.0.
 * `n_kl_annealing_epochs`:
   * required: `False`.
-  * defaults: `25`.
+  * defaults: uses `training.n_kl_annealing_epochs` (default `25`) if not set here.
   * type: `int`.
   * description: number of epochs for the standalone KL annealing phase (standard_kl → GMM crossfade) for this component. When > 0 the KL annealing phase runs; when 0 it is skipped.
 * `enable_kmeans_init`:
   * required: `False`.
-  * defaults: `True`.
+  * defaults: uses `training.enable_kmeans_init` (default `True`) if not set here.
   * type: `bool`.
   * description: whether to run k-means initialization for the GMM priors of this component before GMM training.
 * `kl_annealing_ratio`:
   * required: `False`.
-  * defaults: `[0.5, 0.2, 0.3]`
+  * defaults: uses `training.kl_annealing_ratio` (default `[0.5, 0.2, 0.3]`) if not set here.
   * type: `List[float]`.
   * description: ratios for the three sub-phases within KL annealing (standard_kl only, crossfade, gmm only). Ignored when `n_kl_annealing_epochs` is 0.
+* `max_regular_training_epochs`:
+  * required: `False`.
+  * defaults: uses `training.max_regular_training_epochs` (default `500`) if not set here.
+  * type: `int`.
+  * description: maximum number of regular GMM training epochs for this component.
 * `conditioned_on_z`:
   * required: `False`.
   * defaults: `List[]`
@@ -426,11 +431,31 @@ The configs for the training process. See also [Optimizer](#optimizer).
   * defaults: `True`.
   * type: `bool`.
   * description: whether or not to use early stopping when training the model. Ignored if `train=False`.
-* `max_n_epochs`:
+* `max_regular_training_epochs`:
   * required: `False`.
-  * defaults: `1000`.
+  * defaults: `500`.
   * type: `int`.
-  * description: maxmimum number of epochs used during the training process (set globally for all components).
+  * description: default maximum number of regular GMM training epochs. Can be overridden per component with `components[].max_regular_training_epochs`.
+* `n_parent_annealing_epochs`:
+  * required: `False`.
+  * defaults: `1`.
+  * type: `int`.
+  * description: default number of parent annealing epochs. Can be overridden per component with `components[].n_parent_annealing_epochs`.
+* `n_kl_annealing_epochs`:
+  * required: `False`.
+  * defaults: `25`.
+  * type: `int`.
+  * description: default number of KL annealing epochs. Can be overridden per component with `components[].n_kl_annealing_epochs`.
+* `enable_kmeans_init`:
+  * required: `False`.
+  * defaults: `True`.
+  * type: `bool`.
+  * description: default flag for k-means initialization. Can be overridden per component with `components[].enable_kmeans_init`.
+* `kl_annealing_ratio`:
+  * required: `False`.
+  * defaults: `[0.5, 0.2, 0.3]`.
+  * type: `List[float]`.
+  * description: default KL annealing sub-phase ratios. Can be overridden per component with `components[].kl_annealing_ratio`.
 * `optimizer`:
   * required: `False`.
   * defaults: `OptimizerConfig({'name': 'adam', 'learning_rate': 1e-4})`
