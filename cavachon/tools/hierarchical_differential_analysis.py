@@ -8,6 +8,7 @@ import muon as mu
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tqdm import tqdm
 
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
@@ -187,6 +188,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         seed: int | None = None,
         batch_size: int = 128,
         donor_components: list[str] | None = None,
+        desc: str = "",
         sort_output: bool = True,
     ) -> pd.DataFrame:
         """Compute differential expression between donor and recipient clusters.
@@ -280,7 +282,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         x_means_substituted = []
         x_means_original = []
-        for _ in range(n_samples):
+        for _ in tqdm(range(n_samples), desc=desc, leave=False):
             recipient_mdata = self.sample_mdata_x(
                 recipient_index, x_sampling_size=len(recipient_index)
             )
@@ -383,7 +385,10 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         unique_clusters = obs[use_cluster].unique()
         results = {}
 
-        for cluster_a, cluster_b in combinations(unique_clusters, r=2):
+        for cluster_a, cluster_b in tqdm(
+            combinations(unique_clusters, r=2),
+            desc="Across clusters pairwise",
+        ):
             # Direction A -> B
             key_ab = f"{cluster_a}->{cluster_b}"
             results[key_ab] = self.between_clusters(
@@ -396,6 +401,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 n_samples=n_samples,
                 seed=seed,
                 batch_size=batch_size,
+                desc=f"{cluster_a}->{cluster_b}",
                 sort_output=sort_output,
             )
 
@@ -411,6 +417,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 n_samples=n_samples,
                 seed=seed,
                 batch_size=batch_size,
+                desc=f"{cluster_b}->{cluster_a}",
                 sort_output=sort_output,
             )
 

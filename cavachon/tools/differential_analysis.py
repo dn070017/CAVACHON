@@ -118,7 +118,10 @@ class DifferentialAnalysis:
         results = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
-        for cluster_a, cluster_b in combinations(unique_clusters, r=2):
+        for cluster_a, cluster_b in tqdm(
+            combinations(unique_clusters, r=2),
+            desc="Across clusters pairwise",
+        ):
             index_a = obs[obs[use_cluster] == cluster_a].index
             index_b = obs[obs[use_cluster] == cluster_b].index
             deg = self.between_two_groups(
@@ -197,7 +200,7 @@ class DifferentialAnalysis:
         results = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
-        for cluster in unique_clusters:
+        for cluster in tqdm(unique_clusters, desc="Across clusters"):
             index_a = obs[obs[use_cluster] == cluster].index
             index_b = obs[obs[use_cluster] != cluster].index
 
@@ -303,7 +306,7 @@ class DifferentialAnalysis:
         for modality_name in batch_effect.keys():
             batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
 
-        for _ in tqdm(range(z_sampling_size), desc=desc):
+        for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             mdata_group_a = self.sample_mdata_x(
                 index=group_a_index, x_sampling_size=x_sampling_size
             )
