@@ -148,6 +148,12 @@ The config for clustering.
 
 ## Differential Analysis
 The config for differential analysis.
+
+Two modes are supported based on whether `group_a` and `group_b` are provided:
+
+- **Pairwise mode** (default): `group_a` and `group_b` are both empty. Compares every pair of clusters automatically.
+- **Single-pair mode**: `group_a` and `group_b` are both specified. Compares only those two groups.
+
 * `modality`:
   * required: `True`
   * type: `str`
@@ -161,6 +167,16 @@ The config for differential analysis.
   * defaults: `"cluster_{component}"`
   * type: `str`
   * description: cluster column used to define groups. Defaults to the clustering result of the same component.
+* `group_a`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster label of the first group. When set together with `group_b`, runs single-pair mode. Leave empty for pairwise mode.
+* `group_b`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster label of the second group. When set together with `group_a`, runs single-pair mode. Leave empty for pairwise mode.
 * `z_sampling_size`:
   * required: `False`.
   * defaults: `5`
@@ -170,12 +186,81 @@ The config for differential analysis.
   * required: `False`.
   * defaults: `1000`
   * type: `int`
-  * description: number of decoded samples to draw per latent sample.
+  * description: number of decoded samples are drawn per latent sample.
 * `batch_size`:
   * required: `False`.
   * defaults: `128`
   * type: `int`
   * description: batch size used during sampling.
+* `keep_only_significant`:
+  * required: `False`.
+  * defaults: `False`
+  * type: `bool`
+  * description: whether to filter the output to significant results only.
+* `sort_output`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: sort results by the maximum of the absolute Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order.
+
+[back to top](#config-hierarchy)
+&nbsp;
+## Hierarchical Differential Analysis
+The config for hierarchical differential analysis.
+
+Two modes are supported based on whether `donor_cluster` and `recipient_cluster` are provided:
+
+- **Pairwise mode** (default): `donor_cluster` and `recipient_cluster` are both empty. Runs interventions between every pair of clusters automatically.
+- **Single-pair mode**: `donor_cluster` and `recipient_cluster` are both specified. Runs the intervention for that one pair only.
+
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+* `use_cluster`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster column used to define donor and recipient groups.
+* `donor_cluster`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster label of the donor group. When set together with `recipient_cluster`, runs single-pair mode. Leave empty for pairwise mode.
+* `recipient_cluster`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster label of the recipient group. When set together with `donor_cluster`, runs single-pair mode. Leave empty for pairwise mode.
+* `donor_components`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `List[str] | None`
+  * description: parent components whose latent values are substituted to control for hierarchy. Defaults to all `conditioned_on_z_hat` parents.
+* `n_samples`:
+  * required: `False`.
+  * defaults: `10`
+  * type: `int`
+  * description: number of substituted samples per cell.
+* `seed`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `int | None`
+  * description: random seed for reproducibility.
+* `batch_size`:
+  * required: `False`.
+  * defaults: `128`
+  * type: `int`
+  * description: batch size used during sampling.
+* `sort_output`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: sort results by the maximum of the absolute Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order.
 * `keep_only_significant`:
   * required: `False`.
   * defaults: `False`

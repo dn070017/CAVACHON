@@ -74,9 +74,9 @@ The template also includes an `analysis:` block with common post-training analys
 
 - **Clustering**: cluster cells in `z` or `z_hat` space (set `use_rep: z` or `use_rep: z_hat`).
 - **Visualize embedding**: make t-SNE/UMAP plots colored by annotations or clusters.
-- **Differential analysis**: find marker genes for each cluster.
+- **Differential analysis**: find marker genes between clusters. By default runs all pairwise comparisons; set `group_a` and `group_b` to compare a single pair.
 - **Conditional attribution scores**: see which parent latent dimensions drive a child's predictions.
-- **Hierarchical differential analysis**: compare gene expression across integrated clusters while controlling for donor components.
+- **Hierarchical differential analysis**: compare gene expression across integrated clusters while controlling for donor components. By default runs all pairwise interventions; set `donor_cluster` and `recipient_cluster` to run a single pair.
 
 Each entry is optional — remove the ones you do not need. The default values are sensible for a first run.
 

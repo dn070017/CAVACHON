@@ -74,8 +74,6 @@ analysis:
     - modality: RNA
       component: RNA
       use_cluster: cluster_RNA_integrated
-      donor_cluster: "Cluster 001"
-      recipient_cluster: "Cluster 002"
       donor_components:
         - ATAC
       n_samples: 10
