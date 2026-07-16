@@ -1,7 +1,7 @@
 from typing import List
 
-from cavachon.config.models.base import BaseConfigModel
-from cavachon.config.models.modality_file_config import ModalityFileConfig
+from cavachon.config.base import BaseConfigModel
+from cavachon.config.modality_file_config import ModalityFileConfig
 
 
 class SampleConfig(BaseConfigModel):

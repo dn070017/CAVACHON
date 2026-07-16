@@ -1,6 +1,6 @@
 from typing import List
 
-from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
 
 
 class ModalityFileMatrixConfig(BaseConfigModel):

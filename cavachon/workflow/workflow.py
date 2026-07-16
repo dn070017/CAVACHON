@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from cavachon.config.models.application_config import ApplicationConfig
+from cavachon.config.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.filter.anndata_filter_handler import AnnDataFilterHandler
 from cavachon.io.file_reader import FileReader

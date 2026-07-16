@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import model_validator
 
-from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
 from cavachon.utils.general_utils import GeneralUtils
 
 

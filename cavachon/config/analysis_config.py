@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from pydantic import field_validator, model_validator
 
-from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
 
 
 class AnalysisGenericConfig(BaseConfigModel):

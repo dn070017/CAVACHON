@@ -7,7 +7,7 @@ from anndata import AnnData
 from scipy.io import mmread
 from scipy.sparse import csr_matrix, vstack
 
-from cavachon.config.models.application_config import ApplicationConfig
+from cavachon.config.application_config import ApplicationConfig
 
 
 class FileReader:

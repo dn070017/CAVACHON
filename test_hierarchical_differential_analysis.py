@@ -40,7 +40,7 @@ skip_until_implemented = pytest.mark.skipif(
 import anndata as ad
 import muon as mu
 
-from cavachon.config.models.component_config import ComponentConfig
+from cavachon.config.component_config import ComponentConfig
 from cavachon.model.model import Model
 
 np.random.seed(42)

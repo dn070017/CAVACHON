@@ -1,6 +1,6 @@
 from pydantic import ConfigDict
 
-from cavachon.config.models.base import BaseConfigModel
+from cavachon.config.base import BaseConfigModel
 
 
 class FilterConfig(BaseConfigModel):

@@ -2,8 +2,8 @@ from typing import Tuple, Union
 
 from pydantic import model_validator, Field
 
-from cavachon.config.models.base import BaseConfigModel
-from cavachon.config.models.optimizer_config import OptimizerConfig
+from cavachon.config.base import BaseConfigModel
+from cavachon.config.optimizer_config import OptimizerConfig
 
 
 class EarlyStoppingConfig(BaseConfigModel):

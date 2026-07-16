@@ -2,8 +2,8 @@ from typing import List
 
 from pydantic import model_validator
 
-from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
-from cavachon.config.models.filter_config import FilterConfig
+from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.filter_config import FilterConfig
 from cavachon.environment.constants import Constants
 
 

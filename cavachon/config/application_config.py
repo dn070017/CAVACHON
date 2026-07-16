@@ -6,16 +6,16 @@ from typing import Any, Dict, List
 import yaml
 from pydantic import model_validator
 
-from cavachon.config.models.analysis_config import AnalysisConfig
-from cavachon.config.models.base import BaseConfigModel
-from cavachon.config.models.component_config import ComponentConfig
-from cavachon.config.models.dataset_config import DatasetConfig
-from cavachon.config.models.filter_config import FilterConfig
-from cavachon.config.models.io_config import IOConfig
-from cavachon.config.models.modality_config import ModalityConfig
-from cavachon.config.models.model_config import ModelConfig
-from cavachon.config.models.sample_config import SampleConfig
-from cavachon.config.models.training_config import TrainingConfig
+from cavachon.config.analysis_config import AnalysisConfig
+from cavachon.config.base import BaseConfigModel
+from cavachon.config.component_config import ComponentConfig
+from cavachon.config.dataset_config import DatasetConfig
+from cavachon.config.filter_config import FilterConfig
+from cavachon.config.io_config import IOConfig
+from cavachon.config.modality_config import ModalityConfig
+from cavachon.config.model_config import ModelConfig
+from cavachon.config.sample_config import SampleConfig
+from cavachon.config.training_config import TrainingConfig
 from cavachon.environment.constants import Constants
 from cavachon.utils.general_utils import GeneralUtils
 

@@ -1,4 +1,4 @@
-from cavachon.config.models.base import BaseConfigModel
+from cavachon.config.base import BaseConfigModel
 
 
 class DatasetConfig(BaseConfigModel):

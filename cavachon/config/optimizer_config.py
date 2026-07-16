@@ -1,6 +1,6 @@
 from pydantic import field_validator
 
-from cavachon.config.models.base import BaseConfigModel
+from cavachon.config.base import BaseConfigModel
 
 
 class OptimizerConfig(BaseConfigModel):

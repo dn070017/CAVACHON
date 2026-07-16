@@ -2,10 +2,10 @@ from typing import List
 
 from pydantic import Field
 
-from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
-from cavachon.config.models.component_config import ComponentConfig
-from cavachon.config.models.dataset_config import DatasetConfig
-from cavachon.config.models.training_config import TrainingConfig
+from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.component_config import ComponentConfig
+from cavachon.config.dataset_config import DatasetConfig
+from cavachon.config.training_config import TrainingConfig
 
 
 class ModelConfig(BaseConfigModel):

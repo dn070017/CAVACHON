@@ -19,7 +19,7 @@ import pandas as pd
 import scipy.sparse as sp
 import tensorflow as tf
 
-from cavachon.config.models.component_config import ComponentConfig
+from cavachon.config.component_config import ComponentConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.model.model import Model
 from cavachon.tools.differential_analysis import DifferentialAnalysis

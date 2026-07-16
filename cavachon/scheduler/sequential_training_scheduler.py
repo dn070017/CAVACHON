@@ -15,7 +15,7 @@ from cavachon.callbacks import (
     PeriodicTSNECallback,
     VerboseCallback,
 )
-from cavachon.config.models.training_config import EarlyStoppingConfig
+from cavachon.config.training_config import EarlyStoppingConfig
 from cavachon.environment.constants import Constants
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 
