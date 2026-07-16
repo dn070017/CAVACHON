@@ -1,5 +1,6 @@
 import itertools
 import os
+import warnings
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, List, Mapping, Optional, Tuple, Union
@@ -461,6 +462,7 @@ class SequentialTrainingScheduler:
             )
             self._compile_model(self.learning_rate)  # retrace with current trainable_variables
 
+            kmeans_initialized_in_parent_phase = False
             # --- Parent annealing ---
             if self.run_progressive_training.get(component_name):
                 parent_names = self._get_parent_component(component_name)
@@ -485,7 +487,7 @@ class SequentialTrainingScheduler:
                         comp_kl_annealing_ratio = self._get_kl_annealing_ratios(
                             component_name
                         )
-                        self._run_parent_annealing_phase(
+                        kmeans_initialized_in_parent_phase = self._run_parent_annealing_phase(
                             component_name=component_name,
                             component_order=component_order,
                             parent_names=parent_names,
@@ -547,6 +549,15 @@ class SequentialTrainingScheduler:
             self._compile_model(self.learning_rate)
             before = len(history)
             kmeans_initialized_in_kl_phase = comp_kl_epochs > 0
+            if self._get_enable_kmeans_init(component_name) and comp_kl_epochs == 0:
+                warnings.warn(
+                    f"Kmeans initialization is enabled but KL annealing is "
+                    f"disabled for component '{component_name}'. The latent "
+                    f"space may not be structured by standard KL "
+                    f"regularization before kmeans fires, which could result "
+                    f"in poor cluster priors. Consider enabling KL annealing "
+                    f"for better initialization quality."
+                )
             comp_max_epochs = self._get_max_regular_training_epochs(
                 component_name
             )
@@ -559,7 +570,8 @@ class SequentialTrainingScheduler:
                 n_epochs=comp_max_epochs,
                 is_single_component=is_single_component,
                 enable_kmeans_init=self._get_enable_kmeans_init(component_name)
-                and not kmeans_initialized_in_kl_phase,
+                and not kmeans_initialized_in_kl_phase
+                and not kmeans_initialized_in_parent_phase,
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
@@ -599,6 +611,11 @@ class SequentialTrainingScheduler:
         Activates the progressive scaler so alpha fades 0→1 over the
         phase, then pins it to 1.0 afterwards.  Freezes parent
         components and zeros their loss weights on completion.
+
+        Returns
+        -------
+        bool
+            True if kmeans initialization was applied during this phase.
         """
         run_name = (
             f"Training/{component_order}/ParentAnnealing/"
@@ -621,6 +638,7 @@ class SequentialTrainingScheduler:
             n_prog_epochs=n_prog_epochs,
             kl_annealing_enabled=kl_annealing_enabled,
             kl_annealing_ratios=kl_annealing_ratios,
+            enable_kmeans_init=enable_kmeans_init,
         )
 
         callbacks_prog.append(
@@ -643,7 +661,7 @@ class SequentialTrainingScheduler:
         callbacks_prog.append(
             AnnealingCallback(
                 schedule=schedule,
-                kmeans_epoch=kmeans_epoch if enable_kmeans_init else None,
+                kmeans_epoch=kmeans_epoch,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -666,6 +684,8 @@ class SequentialTrainingScheduler:
 
         # Zero parent loss weights (parents were already frozen)
         self._zero_component_variables(parent_names)
+
+        return kmeans_epoch is not None
 
     def _run_kl_annealing_phase(
         self,
@@ -691,10 +711,18 @@ class SequentialTrainingScheduler:
         schedule = self._make_final_kl_schedule(
             component_name, n_epochs, kl_annealing_ratios
         )
-        gmm_start = int(
-            n_epochs
-            * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
-        )
+        # Kmeans fires at the end of ratio[0] (standard KL-only phase),
+        # so priors are initialized when GMM KL weight is still 0.0.
+        # The crossfade in ratio[1] then smoothly introduces GMM KL.
+        kmeans_epoch = int(n_epochs * kl_annealing_ratios[0])
+        if enable_kmeans_init and kmeans_epoch == 0:
+            warnings.warn(
+                f"Kmeans initialization epoch is 0 for component "
+                f"'{component_name}': ratio[0] ({kl_annealing_ratios[0]}) × "
+                f"n_kl_annealing_epochs ({n_epochs}) = 0. "
+                f"Kmeans will fire at epoch 0, which may effectively "
+                f"disable initialization if ratio[0] is too small."
+            )
 
         callbacks = deepcopy(kwargs.get("callbacks", []))
         callbacks.append(
@@ -712,7 +740,7 @@ class SequentialTrainingScheduler:
         callbacks.append(
             AnnealingCallback(
                 schedule=schedule,
-                kmeans_epoch=gmm_start if enable_kmeans_init else None,
+                kmeans_epoch=kmeans_epoch if enable_kmeans_init else None,
                 scheduler=self,
                 component_name=component_name,
             )
@@ -806,6 +834,7 @@ class SequentialTrainingScheduler:
         n_prog_epochs,
         kl_annealing_enabled,
         kl_annealing_ratios,
+        enable_kmeans_init,
     ):
         """Return (schedule_fn, kmeans_epoch) for the parent annealing phase.
 
@@ -824,7 +853,7 @@ class SequentialTrainingScheduler:
                     result[f"{pn}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
                 result[component_name] = p
                 return result
-            return schedule, None
+            return schedule, 0 if enable_kmeans_init else None
 
         def schedule(epoch):
             p = epoch / n_prog_epochs
@@ -838,7 +867,7 @@ class SequentialTrainingScheduler:
             result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 0.0
             return result
 
-        return schedule, None
+        return schedule, 0 if enable_kmeans_init else None
 
     def _make_final_kl_schedule(
         self, component_name, total_epochs, kl_annealing_ratios
