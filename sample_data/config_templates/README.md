@@ -79,17 +79,12 @@ The configs for analysis and visualization are specified under the field `analys
   * description: the config for clustering. See [Clustering](#clustering) for more details.
 * `visualize_embedding`:
   * required: `False`.
-  * type: `List[VisualizeEmbeddingConfig]`
-  * description: the config for embedding visualization. See [VisualizeEmbedding](#visualize-embedding) for more details.
+  * type: `List[AnalysisVisualizeEmbeddingConfig]`
+  * description: the config for embedding visualization. See [Visualize Embedding](#visualize-embedding) for more details.
 * `differential_analysis`:
   * required: `False`.
-  * type: `List[AnalysisDifferentialAnalysisConfig]`
+  * type: `List[AnalysisGenericConfig]`
   * description: the config for differential analysis. See [Differential Analysis](#differential-analysis) for more details.
-* `embedding_methods`:
-  * required: `False`.
-  * defaults: `[]`
-  * type: `List[str]`
-  * description: the embedding methods used for the visualization of latent representation. Should be a list of elements `'pca'`, `'umap'` or `'tsne'`.
 * `annotation_colnames`:
   * required: `False`.
   * defaults: `[]`
@@ -110,6 +105,16 @@ The config for clustering.
   * required: `True`
   * type: `str`
   * description: the outputs of which component to used.
+* `use_rep`:
+  * required: `False`
+  * defaults: `'z'`
+  * type: `str`
+  * description: which representation to use for clustering. Must be one of `'z'` or `'z_hat'`.
+* `min_n_obs`:
+  * required: `False`
+  * defaults: `36`
+  * type: `int`
+  * description: minimum number of observations required for a cluster to be kept. Clusters smaller than this are labeled as `Unassigned` (for `z_hat`) or iteratively removed (for `z`).
 
 [back to top](#config-hierarchy)
 &nbsp;
@@ -140,7 +145,7 @@ The config for clustering.
 &nbsp;
 
 ## Differential Analysis
-The config for clustering.
+The config for differential analysis.
 * `modality`:
   * required: `True`
   * type: `str`
@@ -166,6 +171,11 @@ The config for conditional attribution scores
   * required: `True`
   * type: `list(str)`
   * description: compute integrated gradient with respect to the latent representation of which component.
+* `use_cluster`:
+  * required: `False`
+  * defaults: `""`
+  * type: `str`
+  * description: optional cluster column to group cells before computing attribution scores.
 
 [back to top](#config-hierarchy)
 &nbsp;
@@ -191,11 +201,16 @@ The configs for modalities (or data views) are specified under the field `modali
   * required: `False`.
   * type: `str`.
   * description: the `h5ad` file name corresponding to the modality in directory `io/datadir` (see [Inputs and Outputs](#inputs-and-outputs)). Alternatively, the data can be loaded with `mtx`, `features` and `barcodes` files specified in [Samples](#samples). Note that `samples` configs will be ignored for the modality if provided with `h5ad`.
+* `samples`:
+  * required: `False`.
+  * type: `List[str]`
+  * defaults: `List[]`
+  * description: list of sample names that provide data for this modality. Used when loading from `mtx`/`features`/`barcodes` files in [Samples](#samples).
 * `filters`:
   * required: `False`.
   * type: `List[FilterConfig]`
   * defaults: `List[]`
-  * description: see [Filters](#filters) and `cavachon/config/FilterConfig.py` for more details.
+  * description: see [Filters](#filters) and `cavachon/config/models/filter_config.py` for more details.
 * `batch_effect_colnames`:
   * required: `False`
   * type: `List[str]`
@@ -322,15 +337,15 @@ The configs for the model are specified under the field `model`. See also [Compo
 * `components`:
   * required: `True`.
   * type: `List[ComponentConfig]`
-  * description: see [Components](#components) and `cavachon/config/ComponentConfig.py` for more details.
+  * description: see [Components](#components) and `cavachon/config/models/component_config.py` for more details.
 * `training`:
   * required: `False`.
   * type: `TrainingConfig`
-  * description: see [Training](#training) and `cavachon/config/TrainingConfig.py` for more details.
+  * description: see [Training](#training) and `cavachon/config/models/training_config.py` for more details.
 * `dataset`:
   * required: `False`.
-  * type: `DastasetConfig`
-  * description: see [Dataset](#dataset) and `cavachon/config/DatasetConfig.py` for more details.
+  * type: `DatasetConfig`
+  * description: see [Dataset](#dataset) and `cavachon/config/models/dataset_config.py` for more details.
 
 [back to top](#config-hierarchy)
 ## Components
@@ -380,6 +395,11 @@ The configs for the components in the model. See also [Modalities (in Component)
   * defaults: uses `training.max_regular_training_epochs` (default `500`) if not set here.
   * type: `int`.
   * description: maximum number of regular GMM training epochs for this component.
+* `reparameterize_z_hat`:
+  * required: `False`.
+  * defaults: `True`.
+  * type: `bool`.
+  * description: whether `z_hat` is treated as a distribution that can be inferred analytically. When `True`, the hierarchical encoder uses `use_bias=False` and `z_hat` clustering is allowed.
 * `conditioned_on_z`:
   * required: `False`.
   * defaults: `List[]`
@@ -426,11 +446,11 @@ The configs for the training process. See also [Optimizer](#optimizer).
   * defaults: `True`.
   * type: `bool`.
   * description: whether or not to train or finetune the model.
-* `early_stop`:
+* `early_stopping`:
   * required: `False`.
   * defaults: `True`.
-  * type: `bool`.
-  * description: whether or not to use early stopping when training the model. Ignored if `train=False`.
+  * type: `bool | EarlyStoppingConfig`
+  * description: whether or not to use early stopping when training the model. Ignored if `train=False`. Can be a boolean or a dict with `monitor`, `mode`, and `patience` (e.g. `{monitor: loss, mode: min, patience: 25}`).
 * `max_regular_training_epochs`:
   * required: `False`.
   * defaults: `500`.
@@ -481,12 +501,12 @@ The configs for the optimizer.
 The configs for the dataset.
 * `batch_size`:
   * required: `False`.
-  * deafults: `128`.
+  * defaults: `128`.
   * type: `int`
   * description: batch size used to train and evaluate the model. The higher the value, the more efficient the training process will be but more memory will be used.
 * `shuffle`:
   * required: `False`.
-  * deafults: `False`.
+  * defaults: `False`.
   * type: `bool`
   * description: whether or not to shuffle the dataset during training.
 
