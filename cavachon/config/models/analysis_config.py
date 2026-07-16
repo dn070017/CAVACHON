@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from cavachon.config.models.base import BaseConfigModel, TensorflowCompatibleStr
 
@@ -38,11 +38,9 @@ class AnalysisClusteringConfig(AnalysisGenericConfig):
         return v
 
 
-class AnalysisAttributionScoreConfig(BaseConfigModel):
+class AnalysisAttributionScoreConfig(AnalysisGenericConfig):
     """Attribution score analysis configuration."""
 
-    modality: TensorflowCompatibleStr = ""
-    component: TensorflowCompatibleStr = ""
     with_respect_to: List[TensorflowCompatibleStr] = []
     use_cluster: str = ""
 
@@ -66,11 +64,51 @@ class AnalysisVisualizeEmbeddingConfig(BaseConfigModel):
         return v
 
 
+class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
+    """Differential expression analysis configuration.
+
+    Extends ``AnalysisGenericConfig`` with the cluster column and
+    sampling parameters used by ``DifferentialAnalysis.across_clusters_pairwise``.
+
+    """
+
+    use_cluster: str = ""
+    z_sampling_size: int = 5
+    x_sampling_size: int = 1000
+    batch_size: int = 128
+    keep_only_significant: bool = False
+
+    @model_validator(mode="after")
+    def _default_use_cluster(self) -> "AnalysisDifferentialAnalysisConfig":
+        if not self.use_cluster:
+            self.use_cluster = f"cluster_{self.component}"
+        return self
+
+
+class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
+    """Hierarchical differential expression analysis configuration.
+
+    Extends ``AnalysisGenericConfig`` with the parameters used by
+    ``HierarchicalDifferentialAnalysis.between_clusters``.
+
+    """
+
+    use_cluster: str = ""
+    donor_cluster: str = ""
+    recipient_cluster: str = ""
+    donor_components: Optional[List[TensorflowCompatibleStr]] = None
+    n_samples: int = 10
+    seed: Optional[int] = None
+    batch_size: int = 128
+
+
 class AnalysisConfig(BaseConfigModel):
     """Top-level analysis configuration."""
 
     clustering: List[AnalysisClusteringConfig] = []
-    differential_analysis: List[AnalysisGenericConfig] = []
+    differential_analysis: List[AnalysisDifferentialAnalysisConfig] = []
     visualize_embedding: List[AnalysisVisualizeEmbeddingConfig] = []
-    annotation_colnames: List[str] = []
     conditional_attribution_scores: List[AnalysisAttributionScoreConfig] = []
+    hierarchical_differential_analysis: List[
+        AnalysisHierarchicalDifferentialAnalysisConfig
+    ] = []

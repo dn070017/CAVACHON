@@ -32,9 +32,10 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
   * `io`: [Inputs and Outputs](#inputs-and-outputs).
   * `analysis`: [Analysis](#analysis)
     * `clustering`: list of [Clustering](#clustering)
-    * `visualize_embedding`: list of [Visualize Embedding](#visualize_embedding)
+    * `visualize_embedding`: list of [Visualize Embedding](#visualize-embedding)
     * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
     * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
+    * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -83,17 +84,18 @@ The configs for analysis and visualization are specified under the field `analys
   * description: the config for embedding visualization. See [Visualize Embedding](#visualize-embedding) for more details.
 * `differential_analysis`:
   * required: `False`.
-  * type: `List[AnalysisGenericConfig]`
+  * type: `List[AnalysisDifferentialAnalysisConfig]`
   * description: the config for differential analysis. See [Differential Analysis](#differential-analysis) for more details.
-* `annotation_colnames`:
-  * required: `False`.
-  * defaults: `[]`
-  * type: `List[str]`
-  * description: the annotation of cells used to group and color the embeddings and attribution scores.
 * `conditional_attribution_scores`:
   * required: `False`.
   * defaults: `[]`
-  * type: the config for the attribution scores. See [Conditional Attribution Scores](#conditional-attribution-scores) for more details.
+  * type: `List[AnalysisAttributionScoreConfig]`
+  * description: the config for the attribution scores. See [Conditional Attribution Scores](#conditional-attribution-scores) for more details.
+* `hierarchical_differential_analysis`:
+  * required: `False`.
+  * defaults: `[]`
+  * type: `List[AnalysisHierarchicalDifferentialAnalysisConfig]`
+  * description: the config for hierarchical differential analysis. See [Hierarchical Differential Analysis](#hierarchical-differential-analysis) for more details.
 
 ## Clustering
 The config for clustering.
@@ -154,6 +156,77 @@ The config for differential analysis.
   * required: `True`
   * type: `str`
   * description: the outputs of which component to used.
+* `use_cluster`:
+  * required: `False`.
+  * defaults: `"cluster_{component}"`
+  * type: `str`
+  * description: cluster column used to define groups. Defaults to the clustering result of the same component.
+* `z_sampling_size`:
+  * required: `False`.
+  * defaults: `5`
+  * type: `int`
+  * description: number of latent samples to draw per cell for the DEG test.
+* `x_sampling_size`:
+  * required: `False`.
+  * defaults: `1000`
+  * type: `int`
+  * description: number of decoded samples to draw per latent sample.
+* `batch_size`:
+  * required: `False`.
+  * defaults: `128`
+  * type: `int`
+  * description: batch size used during sampling.
+* `keep_only_significant`:
+  * required: `False`.
+  * defaults: `False`
+  * type: `bool`
+  * description: whether to filter the output to significant results only.
+
+[back to top](#config-hierarchy)
+&nbsp;
+## Hierarchical Differential Analysis
+The config for hierarchical differential analysis.
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to used.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to used.
+* `use_cluster`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster column used to define donor and recipient groups.
+* `donor_cluster`:
+  * required: `True`
+  * type: `str`
+  * description: cluster label of the donor group.
+* `recipient_cluster`:
+  * required: `True`
+  * type: `str`
+  * description: cluster label of the recipient group.
+* `donor_components`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `List[str] | None`
+  * description: parent components whose latent values are substituted to control for hierarchy. Defaults to all `conditioned_on_z_hat` parents.
+* `n_samples`:
+  * required: `False`.
+  * defaults: `10`
+  * type: `int`
+  * description: number of substituted samples per cell.
+* `seed`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `int | None`
+  * description: random seed for reproducibility.
+* `batch_size`:
+  * required: `False`.
+  * defaults: `128`
+  * type: `int`
+  * description: batch size used during sampling.
 
 [back to top](#config-hierarchy)
 &nbsp;

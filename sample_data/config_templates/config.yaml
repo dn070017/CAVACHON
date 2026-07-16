@@ -33,3 +33,51 @@ model:
       learning_rate: 5e-4
   dataset:
     batch_size: 512
+
+# Optional downstream analyses (remove any block you do not need)
+analysis:
+  clustering:
+    - modality: RNA
+      component: RNA
+      use_rep: z
+      min_n_obs: 36
+    - modality: RNA
+      component: RNA
+      use_rep: z_hat
+      min_n_obs: 36
+  visualize_embedding:
+    - modality: RNA
+      use_rep: z_RNA
+      embedding_method: tsne
+      color_by: cell_type
+      interactive: true
+    - modality: RNA
+      use_rep: z_hat_RNA
+      embedding_method: tsne
+      color_by: cluster_RNA_integrated
+      interactive: true
+  differential_analysis:
+    - modality: RNA
+      component: RNA
+      use_cluster: cluster_RNA
+      z_sampling_size: 5
+      x_sampling_size: 1000
+      batch_size: 128
+      keep_only_significant: false
+  conditional_attribution_scores:
+    - modality: RNA
+      component: RNA
+      with_respect_to:
+        - ATAC
+      use_cluster: cluster_RNA
+  hierarchical_differential_analysis:
+    - modality: RNA
+      component: RNA
+      use_cluster: cluster_RNA_integrated
+      donor_cluster: "Cluster 001"
+      recipient_cluster: "Cluster 002"
+      donor_components:
+        - ATAC
+      n_samples: 10
+      seed: 42
+      batch_size: 128

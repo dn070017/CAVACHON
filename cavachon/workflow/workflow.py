@@ -1,6 +1,5 @@
 import os
 import warnings
-from copy import deepcopy
 from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
@@ -19,6 +18,9 @@ from cavachon.model.model import Model
 from cavachon.scheduler.sequential_training_scheduler import SequentialTrainingScheduler
 from cavachon.tools.cluster_analysis import ClusterAnalysis
 from cavachon.tools.differential_analysis import DifferentialAnalysis
+from cavachon.tools.hierarchical_differential_analysis import (
+    HierarchicalDifferentialAnalysis,
+)
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
 
@@ -105,6 +107,7 @@ class Workflow:
 
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
+        self.perform_hierarchical_differential_analysis()
 
         return
 
@@ -399,17 +402,8 @@ class Workflow:
 
     def perform_differential_analysis(self) -> None:
         """Perform differential analysis across clusters"""
-        targets = list()
         outdir = os.path.join(self.config.io.outdir, "differential_analysis")
         os.makedirs(outdir, exist_ok=True)
-        for analysis_config in self.config.analysis.differential_analysis:
-            colors = deepcopy(self.config.analysis.annotation_colnames)
-            # colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
-            for color in colors:
-                targets.append(
-                    (analysis_config.modality, analysis_config.component, color)
-                )
-
         analysis = DifferentialAnalysis(
             self.mdata,
             self.model,
@@ -417,20 +411,63 @@ class Workflow:
             self.distribution_names,
             self.dataloader.batch_effect_encoders,
         )
-        for target in targets:
-            modality_name, component, use_cluster = target
+        for analysis_config in self.config.analysis.differential_analysis:
+            modality_name = analysis_config.modality
+            component = analysis_config.component
+            use_cluster = analysis_config.use_cluster
             results = analysis.across_clusters_pairwise(
-                component, modality_name, use_cluster
+                component,
+                modality_name,
+                use_cluster,
+                z_sampling_size=analysis_config.z_sampling_size,
+                x_sampling_size=analysis_config.x_sampling_size,
+                batch_size=analysis_config.batch_size,
+                keep_only_significant=analysis_config.keep_only_significant,
             )
+            target = (modality_name, component, use_cluster)
             self.differential_analysis_results[target] = results
 
-        for target in self.differential_analysis_results.keys():
-            for cluster, degs in self.differential_analysis_results[target].items():
+        for target, result in self.differential_analysis_results.items():
+            for cluster, degs in result.items():
                 cluster = cluster.lower().replace("/", "_")
                 degs.to_csv(
                     f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{cluster}.tsv",
                     sep="\t",
                 )
+
+        return
+
+    def perform_hierarchical_differential_analysis(self) -> None:
+        """Perform hierarchical differential analysis between clusters."""
+        outdir = os.path.join(self.config.io.outdir, "hierarchical_differential_analysis")
+        os.makedirs(outdir, exist_ok=True)
+        analysis = HierarchicalDifferentialAnalysis(
+            self.mdata,
+            self.model,
+            self.batch_effect_colnames,
+            self.distribution_names,
+            self.dataloader.batch_effect_encoders,
+        )
+        for analysis_config in self.config.analysis.hierarchical_differential_analysis:
+            result = analysis.between_clusters(
+                donor_cluster=analysis_config.donor_cluster,
+                recipient_cluster=analysis_config.recipient_cluster,
+                component=analysis_config.component,
+                modality=analysis_config.modality,
+                use_cluster=analysis_config.use_cluster,
+                n_samples=analysis_config.n_samples,
+                seed=analysis_config.seed,
+                batch_size=analysis_config.batch_size,
+                donor_components=analysis_config.donor_components,
+            )
+            target = (
+                analysis_config.modality,
+                analysis_config.component,
+                analysis_config.donor_cluster,
+                analysis_config.recipient_cluster,
+            )
+            filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
+            result.to_csv(filename, sep="\t")
 
         return
 

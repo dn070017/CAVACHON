@@ -68,6 +68,18 @@ components:
 
 Here RNA is modeled conditional on ATAC. You can add more components or change the hierarchy; just make sure the graph stays acyclic.
 
+## Downstream analyses
+
+The template also includes an `analysis:` block with common post-training analyses:
+
+- **Clustering**: cluster cells in `z` or `z_hat` space (set `use_rep: z` or `use_rep: z_hat`).
+- **Visualize embedding**: make t-SNE/UMAP plots colored by annotations or clusters.
+- **Differential analysis**: find marker genes for each cluster.
+- **Conditional attribution scores**: see which parent latent dimensions drive a child's predictions.
+- **Hierarchical differential analysis**: compare gene expression across integrated clusters while controlling for donor components.
+
+Each entry is optional — remove the ones you do not need. The default values are sensible for a first run.
+
 ## Tips
 
 - Start from this template and only change paths and the `training:` block.
