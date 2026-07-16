@@ -71,6 +71,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 1000,
         batch_size: int = 128,
         keep_only_significant: bool = False,
+        sort_output: bool = True,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between every groups of
         samples.
@@ -129,6 +130,7 @@ class DifferentialAnalysis:
                 x_sampling_size=x_sampling_size,
                 batch_size=batch_size,
                 desc=f"Between {cluster_a} and {cluster_b}",
+                sort_output=sort_output,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -148,6 +150,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 1000,
         batch_size: int = 128,
         keep_only_significant: bool = False,
+        sort_output: bool = True,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between one specific group and
         the rest of the samples.
@@ -207,6 +210,7 @@ class DifferentialAnalysis:
                 x_sampling_size=x_sampling_size,
                 batch_size=batch_size,
                 desc=f"Between {cluster} and others",
+                sort_output=sort_output,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -227,6 +231,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 2500,
         batch_size: int = 128,
         desc: str = "",
+        sort_output: bool = True,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -256,6 +261,10 @@ class DifferentialAnalysis:
 
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
+
+        sort_output: bool, optional
+            Sort the result by the maximum of the absolute Bayesian factors
+            K(A>B|Z) and K(B>A|Z) in descending order. Default to True.
 
         Returns
         -------
@@ -341,7 +350,11 @@ class DifferentialAnalysis:
         x_means_b = np.vstack(x_means_b)
         index = self.mdata.mod[modality].var.index
 
-        return self.compute_bayesian_factor(x_means_a, x_means_b, index)
+        result = self.compute_bayesian_factor(x_means_a, x_means_b, index)
+        if sort_output:
+            sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
+            result = result.loc[sort_key.sort_values(ascending=False).index]
+        return result
 
     def sample_mdata_x(
         self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500
