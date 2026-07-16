@@ -386,6 +386,7 @@ class Workflow:
             outdir = os.path.join(self.config.io.outdir, "knn")
             os.makedirs(outdir, exist_ok=True)
             title = f"{latent_representation} of {modality_name} colored with {use_cluster} {n_neighbors} neighbors"
+            file_label = f"{title}.html".lower().replace(" ", "_")
             InteractiveVisualization.neighbors_with_same_annotations(
                 self.mdata,
                 self.model,
@@ -395,7 +396,7 @@ class Workflow:
                 use_rep=latent_representation,
                 group_by_cluster=True,
                 n_neighbors=n_neighbors,
-                filename=f"{outdir}/{title}.html".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
                 width=800,
                 height=760,
             )
@@ -488,11 +489,8 @@ class Workflow:
         # to avoid dictionary changed during iteration
         for target in targets:
             modality_name, component, with_respect_to, use_cluster = target
-            title = "".join(
-                (
-                    f"{component} {modality_name} regulatory score colored with {use_cluster}"
-                )
-            )
+            title = f"{modality_name} {component} attribution wrt {with_respect_to} colored by {use_cluster}"
+            file_label = f"{title}.html".lower().replace(" ", "_")
             InteractiveVisualization.attribution_score(
                 mdata=AnnDataUtils.merge_mdata_on_obs_annotation(
                     self.mdata, use_cluster, self.batch_effect_colnames
@@ -509,5 +507,5 @@ class Workflow:
                 batch_effect_encoders=self.dataloader.batch_effect_encoders,
                 width=800,
                 height=760,
-                filename=f"{outdir}/{title}.html".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
             )
