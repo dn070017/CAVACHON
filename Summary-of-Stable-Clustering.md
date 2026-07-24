@@ -406,3 +406,202 @@ After parent annealing completes, the scaler is pinned at σ² = 1.0 (via `set_p
   Annealing   (if enabled)
               ⚠ warning
 ```
+
+---
+
+## Post-Training Clustering
+
+After training, cluster assignments are computed using the learned GMM priors. Two methods are available:
+
+1. **`compute_cluster_log_probability`** — clusters in `z` space (single component)
+2. **`compute_integrated_cluster_log_probability`** — clusters in `z_hat` space (hierarchical, integrates parent and child information)
+
+### Single-Component Clustering (`compute_cluster_log_probability`)
+
+Clusters samples based on the GMM prior of a single component's latent space `z`.
+
+**Pipeline:**
+```
+Extract GMM parameters from z_prior_parameterizer
+    ↓
+Build TensorFlow GMM distribution
+    ↓
+Forward pass through model → get z (posterior samples)
+    ↓
+Score each sample against all K clusters using Bayes theorem
+    ↓
+Assign to cluster with highest posterior probability
+    ↓
+Remove small clusters (< min_n_obs) and reassign members
+```
+
+**Scoring with Bayes theorem:**
+```
+log P(y=j | z_i) = log P(y=j) + log P(z_i | y=j) - log P(z_i)
+
+where:
+  log P(y=j) = log(π_j)                          [mixing weight]
+  log P(z_i | y=j) = log N(z_i; μ_j, σ_j)       [Gaussian likelihood]
+  log P(z_i) = log Σ_k [π_k · N(z_i; μ_k, σ_k)] [mixture probability]
+```
+
+The subtraction of `log P(z_i)` normalizes to a proper posterior.
+
+**Small cluster removal:**
+Clusters with fewer than `min_n_obs` (default 36) samples are iteratively removed. Members are reassigned to remaining clusters by recomputing `argmax` over the reduced set of clusters.
+
+---
+
+### Hierarchical Integrated Clustering (`compute_integrated_cluster_log_probability`)
+
+Clusters samples in `z_hat` space by integrating information from parent and child components. This is used for hierarchical models where a child component depends on parent components via `conditioned_on_z_hat`.
+
+**Pipeline:**
+```
+Extract GMM parameters from all parent components and child component
+    ↓
+Recombine parameters through hierarchical encoder (W_r, W_b)
+    ↓
+[Optional] Merge similar clusters using Bhattacharyya coefficient
+    ↓
+Build TensorFlow GMM distribution
+    ↓
+Score pre-computed z_hat samples against all clusters
+    ↓
+Assign to cluster with highest posterior probability
+    ↓
+Remove small clusters (< min_n_obs) and reassign members
+```
+
+#### Deriving Integrated GMM Parameters
+
+The hierarchical encoder transforms parent and child latents into `z_hat`:
+```
+z_hat = W_b @ [z_parent1; z_parent2; ...; z_parentN; z_child] + noise
+```
+
+where `W_b` is the bias network weight matrix. For child components, an additional transformation through `W_r` (residual network) is applied:
+```
+W_child_effective = W_r @ W_child_raw
+```
+
+**Mean derivation:**
+```
+μ_zhat = Σ_p (W_p.T @ μ_parent_p) + W_child_effective.T @ μ_child
+
+where:
+  W_p = slice of W_b for parent p
+  μ_parent_p = mean of parent p's cluster
+  μ_child = mean of child's cluster
+```
+
+**Variance derivation:**
+```
+σ²_zhat = Σ_p ((W_p²).T @ σ²_parent_p) + W_child_effective_σ².T @ σ²_child
+
+where:
+  W_child_effective_σ² = (W_r²) @ (W_child_raw²)
+```
+
+This is the variance of a linear combination of independent Gaussians (variances add).
+
+**Mixing weight derivation:**
+```
+π_zhat = π_child × Π_p π_parent_p
+```
+
+The integrated cluster's mixing weight is the product of all component mixing weights.
+
+**Combinatorial explosion:**
+If there are N parents with K_1, K_2, ..., K_N clusters and the child has K_child clusters, the total number of integrated clusters is:
+```
+K_total = K_1 × K_2 × ... × K_N × K_child
+```
+
+For example, with 2 parents (10 clusters each) and a child (10 clusters), K_total = 10 × 10 × 10 = 1000 clusters.
+
+#### Merging Similar Clusters with Bhattacharyya Coefficient
+
+To handle combinatorial explosion, similar integrated clusters are merged using **greedy merging** based on the Bhattacharyya coefficient (BC).
+
+**Bhattacharyya distance (D_B):**
+```
+D_B = 0.125 × Σ_d [(μ₁_d - μ₂_d)² / (σ₁²_d + σ₂²_d)]
+    + 0.5 × Σ_d log[(σ₁²_d + σ₂²_d)² / (4 × σ₁²_d × σ₂²_d)]
+```
+
+**Bhattacharyya coefficient:**
+```
+BC = exp(-D_B)
+```
+
+BC ∈ [0, 1], where:
+- BC = 1 → identical distributions (D_B = 0)
+- BC = 0.5 → moderate overlap (D_B ≈ 0.69)
+- BC → 0 → completely distinct (D_B → ∞)
+
+**Greedy merging algorithm:**
+```
+while K > 1:
+    if max_k is set and K <= max_k:
+        break
+    
+    Compute BC matrix for all pairs
+    Find pair (i, j) with highest BC
+    
+    if BC[i, j] < bc_threshold:
+        break  # No more similar pairs
+    
+    Merge clusters i and j:
+        π_merged = π_i + π_j
+        μ_merged = (π_i × μ_i + π_j × μ_j) / π_merged
+        σ²_merged = (π_i × (σ²_i + (μ_i - μ_merged)²)
+                   + π_j × (σ²_j + (μ_j - μ_merged)²)) / π_merged
+    
+    Replace clusters i, j with merged cluster
+    K = K - 1
+```
+
+**Moment-matching for merged parameters:**
+The merged mean and variance are computed using the law of total variance:
+```
+μ_merged = E[μ] = Σ (π_i × μ_i) / Σ π_i
+σ²_merged = E[σ²] + E[(μ - μ_merged)²]
+          = Σ (π_i × (σ²_i + (μ_i - μ_merged)²)) / Σ π_i
+```
+
+This ensures the merged Gaussian has the same first two moments as the mixture of the original Gaussians.
+
+**Parameters:**
+- `bc_threshold` (default 0.5): Merge clusters with BC > threshold. Higher threshold = more aggressive merging.
+- `max_k` (default None): Safety cap on final number of clusters. Merging stops when K <= max_k, even if BC > threshold.
+
+**Example:**
+```
+Initial: 1000 integrated clusters (combinatorial explosion)
+After merging (bc_threshold=0.5): ~50-100 distinct clusters
+After merging (bc_threshold=0.3): ~20-50 distinct clusters
+```
+
+#### Scoring and Small Cluster Removal
+
+After merging, samples are scored against the reduced set of clusters using the same Bayes theorem approach as single-component clustering:
+```
+log P(y=k | z_hat_i) = log π_k + log N(z_hat_i; μ_k, σ_k) - log P(z_hat_i)
+```
+
+Clusters with fewer than `min_n_obs` samples are iteratively removed, and their members are reassigned to remaining clusters.
+
+---
+
+### Summary Table
+
+| Aspect | `compute_cluster_log_probability` | `compute_integrated_cluster_log_probability` |
+|:--|:--|:--|
+| **Clustering space** | `z` (posterior sample) | `z_hat` (hierarchical encoder output) |
+| **Number of clusters** | K (from component prior) | ∏K_parents × K_child (before merging) |
+| **Parameter derivation** | Direct from `z_prior_parameterizer` | Recombined through encoder weights (W_r, W_b) |
+| **Merging** | None | Greedy merging with Bhattacharyya coefficient |
+| **Scoring** | Bayes theorem | Bayes theorem |
+| **Small cluster handling** | Remove + reassign | Remove + reassign |
+| **Use case** | Single-component analysis | Hierarchical models with parent-child dependencies |
