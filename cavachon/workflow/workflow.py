@@ -1,16 +1,15 @@
 import os
 import warnings
-from copy import deepcopy
 from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 
 from cavachon.config.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
-from cavachon.environment.constants import Constants
 from cavachon.filter.anndata_filter_handler import AnnDataFilterHandler
 from cavachon.io.file_reader import FileReader
 from cavachon.modality.modality import Modality
@@ -19,6 +18,9 @@ from cavachon.model.model import Model
 from cavachon.scheduler.sequential_training_scheduler import SequentialTrainingScheduler
 from cavachon.tools.cluster_analysis import ClusterAnalysis
 from cavachon.tools.differential_analysis import DifferentialAnalysis
+from cavachon.tools.hierarchical_differential_analysis import (
+    HierarchicalDifferentialAnalysis,
+)
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
 
@@ -63,8 +65,8 @@ class Workflow:
             path to the configuration file (config.yaml)
 
         """
-        self.config: ApplicationConfig = ApplicationConfig(filename)
-        self.mdata: Optional[mu.Mudata] = None
+        self.config: ApplicationConfig = ApplicationConfig.from_yaml(filename)
+        self.mdata: Optional[mu.MuData] = None
         self.dataloader: Optional[DataLoader] = None
         self.anndata_filters: AnnDataFilterHandler = AnnDataFilterHandler.from_config(
             self.config
@@ -104,6 +106,7 @@ class Workflow:
 
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
+        self.perform_hierarchical_differential_analysis()
 
         return
 
@@ -130,7 +133,7 @@ class Workflow:
         modalities = dict()
         for modality_name in config.modality_names:
             modality_config = config.modality[modality_name]
-            h5ad = modality_config.get(Constants.CONFIG_FIELD_MODALITY_H5AD)
+            h5ad = modality_config.h5ad
             if h5ad:
                 adata = anndata.read_h5ad(os.path.join(config.io.datadir, h5ad))
             else:
@@ -140,15 +143,9 @@ class Workflow:
                 Modality(
                     adata,
                     name=modality_name,
-                    modality_type=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_TYPE
-                    ),
-                    distribution_name=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_DIST
-                    ),
-                    batch_effect_colnames=modality_config.get(
-                        Constants.CONFIG_FIELD_MODALITY_BATCH_COLNAMES
-                    ),
+                    modality_type=modality_config.type,
+                    distribution_name=modality_config.dist,
+                    batch_effect_colnames=modality_config.batch_effect_colnames,
                 ),
             )
 
@@ -178,37 +175,31 @@ class Workflow:
         processed_component_configs = list()
         for component_config in self.config.components:
             component_vars = dict()
-            for modality_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            ):
+            for modality_name in component_config.modality_names:
                 component_vars.setdefault(
                     modality_name, self.mdata[modality_name].n_vars
                 )
 
-            component_config[Constants.CONFIG_FIELD_COMPONENT_N_VARS] = component_vars
+            component_config.n_vars = component_vars
             processed_component_configs.append(component_config)
 
         self.config.components = processed_component_configs
-        self.config.model[Constants.CONFIG_FIELD_MODEL_COMPONENT] = (
-            processed_component_configs
-        )
+        self.config.model.components = processed_component_configs
 
         return
 
     def setup_dataloader(self) -> None:
         """Setup mdata and update n_vars_batch_effect in the component config."""
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         self.distribution_names = dict()
         self.batch_effect_colnames = dict()
         for modality_name, modality_config in self.config.modality.items():
             self.distribution_names.setdefault(
-                modality_name, modality_config.get(Constants.CONFIG_FIELD_MODALITY_DIST)
+                modality_name, modality_config.dist
             )
             self.batch_effect_colnames.setdefault(
                 modality_name,
-                modality_config.get(Constants.CONFIG_FIELD_MODALITY_BATCH_COLNAMES),
+                modality_config.batch_effect_colnames,
             )
 
         self.dataloader = DataLoader(
@@ -224,36 +215,32 @@ class Workflow:
         nvars = self.dataloader.n_vars_batch_effect
         for component_config in self.config.components:
             component_vars = dict()
-            for modality_name in component_config.get(
-                Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            ):
+            for modality_name in component_config.modality_names:
                 component_vars[modality_name] = nvars.get(modality_name)
-            component_config[Constants.CONFIG_FIELD_COMPONENT_N_VARS_BATCH] = (
-                component_vars
-            )
+            component_config.n_vars_batch_effect = component_vars
             processed_component_configs.append(component_config)
 
         self.config.components = processed_component_configs
-        self.config.model[Constants.CONFIG_FIELD_MODEL_COMPONENT] = (
-            processed_component_configs
-        )
+        self.config.model.components = processed_component_configs
 
         return
 
     def setup_train_scheduler(self) -> None:
         """Setup the training scheduler"""
-        optimizer_config = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_OPTIMIZER
-        )
-        optimizer = optimizer_config.get("name")
-        learning_rate = optimizer_config.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_LEARNING_RATE
-        )
-        early_stopping = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING
-        )
+        optimizer_config = self.config.training.optimizer
+        optimizer = optimizer_config.name
+        learning_rate = optimizer_config.learning_rate
+        early_stopping = self.config.training.early_stopping
         self.train_scheduler = SequentialTrainingScheduler(
-            self.model, optimizer, learning_rate, early_stopping
+            self.model,
+            self.mdata,
+            optimizer,
+            learning_rate,
+            early_stopping,
+            self.dataloader.batch_size,
+            self.config.io.outdir,
+            self.batch_effect_colnames,
+            self.distribution_names,
         )
 
         return
@@ -281,15 +268,11 @@ class Workflow:
         set to True.
 
         """
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
-        max_epochs = self.config.training.get(
-            Constants.CONFIG_FIELD_MODEL_TRAINING_N_EPOCHS
-        )
+        batch_size = self.config.dataset.batch_size
+        max_epochs = self.config.training.max_regular_training_epochs
 
         # shuffle dataset if needed
-        if self.config.dataset.get(Constants.CONFIG_FIELD_MODEL_DATASET_SHUFFLE):
+        if self.config.dataset.shuffle:
             train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(
                 batch_size
             )
@@ -322,29 +305,36 @@ class Workflow:
         """Predict generative process for self.mdata."""
         self.model.trainable = False
         self.model.compile()
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         self.outputs = self.model.predict(self.mdata, batch_size=batch_size)
 
         return
 
     def perform_clustering_analysis(self) -> None:
         """Perform clustering analsis of each modality"""
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
         analysis = ClusterAnalysis(self.mdata, self.model)
         for clustering_config in self.config.analysis.clustering:
             component = clustering_config.component
             modality = clustering_config.modality
-            analysis.compute_cluster_log_probability(
-                modality=modality,
-                component=component,
-                batch_size=batch_size,
-                batch_effect_colnames=self.batch_effect_colnames,
-                distribution_names=self.distribution_names,
-            )
+            use_rep = clustering_config.use_rep
+            min_n_obs = clustering_config.min_n_obs
+            if use_rep == "z_hat":
+                analysis.compute_integrated_cluster_log_probability(
+                    modality=modality,
+                    component=component,
+                    batch_size=batch_size,
+                    min_n_obs=min_n_obs,
+                )
+            else:
+                analysis.compute_cluster_log_probability(
+                    modality=modality,
+                    component=component,
+                    batch_size=batch_size,
+                    min_n_obs=min_n_obs,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
+                )
 
         return
 
@@ -365,6 +355,7 @@ class Workflow:
                 f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
             )
             extension = "html" if interactive else "png"
+            file_label = f"{title}.{extension}".lower().replace(" ", "_")
             InteractiveVisualization.embedding(
                 adata=adata,
                 title=title,
@@ -373,7 +364,7 @@ class Workflow:
                 color=color,
                 width=800,
                 height=760,
-                filename=f"{outdir}/{title}.{extension}".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
             )
 
     def visualize_knn(self, use_cluster, n_neighbors) -> None:
@@ -392,6 +383,7 @@ class Workflow:
             outdir = os.path.join(self.config.io.outdir, "knn")
             os.makedirs(outdir, exist_ok=True)
             title = f"{latent_representation} of {modality_name} colored with {use_cluster} {n_neighbors} neighbors"
+            file_label = f"{title}.html".lower().replace(" ", "_")
             InteractiveVisualization.neighbors_with_same_annotations(
                 self.mdata,
                 self.model,
@@ -401,24 +393,15 @@ class Workflow:
                 use_rep=latent_representation,
                 group_by_cluster=True,
                 n_neighbors=n_neighbors,
-                filename=f"{outdir}/{title}.html".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
                 width=800,
                 height=760,
             )
 
     def perform_differential_analysis(self) -> None:
         """Perform differential analysis across clusters"""
-        targets = list()
         outdir = os.path.join(self.config.io.outdir, "differential_analysis")
         os.makedirs(outdir, exist_ok=True)
-        for analysis_config in self.config.analysis.differential_analysis:
-            colors = deepcopy(self.config.analysis.annotation_colnames)
-            # colors.append(f'cluster_{self.config.analysis.clustering.get(modality_name)}')
-            for color in colors:
-                targets.append(
-                    (analysis_config.modality, analysis_config.component, color)
-                )
-
         analysis = DifferentialAnalysis(
             self.mdata,
             self.model,
@@ -426,15 +409,56 @@ class Workflow:
             self.distribution_names,
             self.dataloader.batch_effect_encoders,
         )
-        for target in targets:
-            modality_name, component, use_cluster = target
-            results = analysis.across_clusters_pairwise(
-                component, modality_name, use_cluster
-            )
-            self.differential_analysis_results[target] = results
+        for analysis_config in self.config.analysis.differential_analysis:
+            modality_name = analysis_config.modality
+            component = analysis_config.component
+            use_cluster = analysis_config.use_cluster
+            if analysis_config.group_a and analysis_config.group_b:
+                # Single-pair mode: explicit group_a vs group_b
+                obs = self.mdata[modality_name].obs
+                index_a = obs[obs[use_cluster] == analysis_config.group_a].index
+                index_b = obs[obs[use_cluster] == analysis_config.group_b].index
+                result = analysis.between_two_groups(
+                    group_a_index=index_a,
+                    group_b_index=index_b,
+                    component=component,
+                    modality=modality_name,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
+                    batch_size=analysis_config.batch_size,
+                    sort_output=analysis_config.sort_output,
+                )
+                if analysis_config.keep_only_significant:
+                    result = result.loc[
+                        (result["K(A>B|Z)"].abs() >= 3.2)
+                        | (result["K(B>A|Z)"].abs() >= 3.2)
+                    ]
+                target = (
+                    modality_name,
+                    component,
+                    analysis_config.group_a,
+                    analysis_config.group_b,
+                )
+                self.differential_analysis_results[target] = {
+                    f"{analysis_config.group_a}/{analysis_config.group_b}": result
+                }
+            else:
+                # Pairwise mode: all cluster combinations
+                results = analysis.across_clusters_pairwise(
+                    component,
+                    modality_name,
+                    use_cluster,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
+                    batch_size=analysis_config.batch_size,
+                    keep_only_significant=analysis_config.keep_only_significant,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (modality_name, component, use_cluster)
+                self.differential_analysis_results[target] = results
 
-        for target in self.differential_analysis_results.keys():
-            for cluster, degs in self.differential_analysis_results[target].items():
+        for target, result in self.differential_analysis_results.items():
+            for cluster, degs in result.items():
                 cluster = cluster.lower().replace("/", "_")
                 degs.to_csv(
                     f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{cluster}.tsv",
@@ -443,13 +467,77 @@ class Workflow:
 
         return
 
+    def perform_hierarchical_differential_analysis(self) -> None:
+        """Perform hierarchical differential analysis between clusters."""
+        outdir = os.path.join(self.config.io.outdir, "hierarchical_differential_analysis")
+        os.makedirs(outdir, exist_ok=True)
+        analysis = HierarchicalDifferentialAnalysis(
+            self.mdata,
+            self.model,
+            self.batch_effect_colnames,
+            self.distribution_names,
+            self.dataloader.batch_effect_encoders,
+        )
+        for analysis_config in self.config.analysis.hierarchical_differential_analysis:
+            donor_components = analysis_config.donor_components
+            donor_components_str = "_".join(donor_components) if donor_components else "all"
+            if analysis_config.donor_cluster and analysis_config.recipient_cluster:
+                # Single-pair mode: explicit donor -> recipient
+                result = analysis.between_clusters(
+                    donor_cluster=analysis_config.donor_cluster,
+                    recipient_cluster=analysis_config.recipient_cluster,
+                    component=analysis_config.component,
+                    modality=analysis_config.modality,
+                    use_cluster=analysis_config.use_cluster,
+                    n_samples=analysis_config.n_samples,
+                    seed=analysis_config.seed,
+                    batch_size=analysis_config.batch_size,
+                    donor_components=analysis_config.donor_components,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (
+                    analysis_config.modality,
+                    "from",
+                    analysis_config.component,
+                    "substitute",
+                    donor_components_str,
+                    analysis_config.donor_cluster,
+                    "to",
+                    analysis_config.recipient_cluster,
+                )
+                filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
+                result.to_csv(filename, sep="\t")
+            else:
+                # Pairwise mode: all cluster combinations (like DEG)
+                results = analysis.across_clusters_pairwise(
+                    component=analysis_config.component,
+                    modality=analysis_config.modality,
+                    use_cluster=analysis_config.use_cluster,
+                    donor_components=analysis_config.donor_components,
+                    n_samples=analysis_config.n_samples,
+                    seed=analysis_config.seed,
+                    batch_size=analysis_config.batch_size,
+                    sort_output=analysis_config.sort_output,
+                )
+                target = (
+                    analysis_config.modality,
+                    "from",
+                    analysis_config.component,
+                    "substitute",
+                    donor_components_str,
+                )
+                for pair_key, result in results.items():
+                    pair = pair_key.replace("->", "_to_").replace("/", "_").replace(" ", "_").lower()
+                    filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
+                    result.to_csv(filename, sep="\t")
+
+        return
+
     def visualize_conditional_attribution_scores(self) -> None:
         """Create visualization of conditional attribution score"""
         outdir = os.path.join(self.config.io.outdir, "attribution")
         os.makedirs(outdir, exist_ok=True)
-        batch_size = self.config.dataset.get(
-            Constants.CONFIG_FIELD_MODEL_DATASET_BATCHSIZE
-        )
+        batch_size = self.config.dataset.batch_size
 
         targets = list()
         for attribution_config in self.config.analysis.conditional_attribution_scores:
@@ -462,11 +550,8 @@ class Workflow:
         # to avoid dictionary changed during iteration
         for target in targets:
             modality_name, component, with_respect_to, use_cluster = target
-            title = "".join(
-                (
-                    f"{component} {modality_name} regulatory score colored with {use_cluster}"
-                )
-            )
+            title = f"{modality_name} {component} attribution wrt {with_respect_to} colored by {use_cluster}"
+            file_label = f"{title}.html".lower().replace(" ", "_")
             InteractiveVisualization.attribution_score(
                 mdata=AnnDataUtils.merge_mdata_on_obs_annotation(
                     self.mdata, use_cluster, self.batch_effect_colnames
@@ -483,5 +568,5 @@ class Workflow:
                 batch_effect_encoders=self.dataloader.batch_effect_encoders,
                 width=800,
                 height=760,
-                filename=f"{outdir}/{title}.html".lower().replace(" ", "_"),
+                filename=f"{outdir}/{file_label}",
             )

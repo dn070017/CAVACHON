@@ -22,20 +22,45 @@ class AnnDataUtils:
     def merge_mdata_on_obs_annotation(mdata, group_col, batch_effect_colnames):
         group_X = defaultdict(list)
         group_obs = defaultdict(list)
-        first_mod = list(mdata.mod.keys())[0]
-        for group in mdata[first_mod].obs[group_col].unique():
+
+        # Use the first modality that actually contains the grouping column
+        # as the reference. Other modalities are filtered by the same obs
+        # indices so cluster labels do not need to be duplicated everywhere.
+        ref_mod = None
+        for mod in mdata.mod.keys():
+            if group_col in mdata[mod].obs.columns:
+                ref_mod = mod
+                break
+        if ref_mod is None:
+            available = {mod: list(mdata[mod].obs.columns) for mod in mdata.mod.keys()}
+            raise KeyError(
+                f"group_col '{group_col}' not found in any modality obs. "
+                f"Available columns per modality: {available}"
+            )
+
+        ref_adata = mdata[ref_mod]
+        for group in ref_adata.obs[group_col].unique():
+            ref_indices = ref_adata.obs[ref_adata.obs[group_col] == group].index
             for mod in mdata.mod.keys():
                 adata = mdata[mod]
-                adata = adata[adata.obs[group_col] == group].copy()
+                if group_col in adata.obs.columns:
+                    group_adata = adata[adata.obs[group_col] == group].copy()
+                else:
+                    group_indices = ref_indices.intersection(adata.obs.index)
+                    group_adata = adata[group_indices].copy()
                 obs = pd.DataFrame({group_col: [group]})
                 for batch_effect_col in batch_effect_colnames[mod]:
-                    if DataFrameUtils.check_is_categorical(adata.obs[batch_effect_col]):
-                        obs[batch_effect_col] = adata.obs[batch_effect_col].mode()
-                    elif is_numeric_dtype(adata.obs[batch_effect_col]):
-                        obs[batch_effect_col] = adata.obs[batch_effect_col].mean()
+                    if batch_effect_col not in group_adata.obs.columns:
+                        continue
+                    if DataFrameUtils.check_is_categorical(
+                        group_adata.obs[batch_effect_col]
+                    ):
+                        obs[batch_effect_col] = group_adata.obs[batch_effect_col].mode()
+                    elif is_numeric_dtype(group_adata.obs[batch_effect_col]):
+                        obs[batch_effect_col] = group_adata.obs[batch_effect_col].mean()
 
                 obs.index = [group]
-                group_X[mod].append(adata.X.mean(axis=0))
+                group_X[mod].append(group_adata.X.mean(axis=0))
                 group_obs[mod].append(obs)
 
         group_adata = dict()

@@ -121,7 +121,8 @@ class Preprocessor(tf.keras.Model):
                 outputs.setdefault(libsize_key, modifiers_outputs.get(libsize_key))
 
             transform_layer = tf.keras.Sequential(
-                [tf.keras.layers.Dense(n_dims)], name=f"{name}_{modality_name}"
+                [tf.keras.layers.Dense(n_dims, name=f"{name}_{modality_name}_dense")],
+                name=f"{name}_{modality_name}",
             )
             processed_matrix.append(
                 transform_layer(modifiers_outputs.get(modality_key))

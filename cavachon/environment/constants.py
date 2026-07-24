@@ -14,7 +14,8 @@ class Constants:
     MODEL_OUTPUTS_Z_PRIOR_PARAMS = "z_prior_parameters"
     MODEL_OUTPUTS_Z_PARAMS = "z_parameters"
     MODEL_OUTPUTS_X_PARAMS = "x_parameters"
-    MODEL_LOSS_KL_POSTFIX = "kl_divergence"
+    MODEL_LOSS_STANDARD_KL_POSTFIX = "standard_kl_divergence"
+    MODEL_LOSS_GMM_KL_POSTFIX = "gmm_kl_divergence"
     MODEL_LOSS_DATA_POSTFIX = "negative_log_data_likelihood"
 
     MODULE_INPUTS_CONDITIONED_Z = "z_conditional"
@@ -74,7 +75,7 @@ class Constants:
     CONFIG_FIELD_MODEL_TRAINING = "training"
     CONFIG_FIELD_MODEL_TRAINING_EARLY_STOPPING = "early_stopping"
     CONFIG_FIELD_MODEL_TRAINING_OPTIMIZER = "optimizer"
-    CONFIG_FIELD_MODEL_TRAINING_N_EPOCHS = "max_n_epochs"
+    CONFIG_FIELD_MODEL_TRAINING_MAX_REGULAR_TRAINING_EPOCHS = "max_regular_training_epochs"
     CONFIG_FIELD_MODEL_TRAINING_LEARNING_RATE = "learning_rate"
     CONFIG_FIELD_MODEL_TRAINING_TRAIN = "train"
     CONFIG_FIELD_MODEL_DATASET = "dataset"
@@ -94,6 +95,9 @@ class Constants:
     CONFIG_FIELD_COMPONENT_N_LATENT_PRIORS = "n_latent_priors"
     CONFIG_FIELD_COMPONENT_N_ENCODER_LAYERS = "n_encoder_layers"
     CONFIG_FIELD_COMPONENT_N_DECODER_LAYERS = "n_decoder_layers"
-    CONFIG_FIELD_COMPONENT_N_PROGRESSIVE_EPOCHS = "n_progressive_epochs"
+    CONFIG_FIELD_COMPONENT_N_PARENT_ANNEALING_EPOCHS = "n_parent_annealing_epochs"
+    CONFIG_FIELD_COMPONENT_N_KL_ANNEALING_EPOCHS = "n_kl_annealing_epochs"
+    CONFIG_FIELD_COMPONENT_ENABLE_KMEANS_INIT = "enable_kmeans_init"
+    CONFIG_FIELD_COMPONENT_KL_ANNEALING_RATIO = "kl_annealing_ratio"
     CONFIG_FIELD_COMPONENT_REQUIRED = ["name", CONFIG_FIELD_MODALITY]
     CONFIG_FIELD_COMPONENT_MODALITIES_REQUIRED = ["name"]

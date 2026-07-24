@@ -1,6 +1,9 @@
 from collections.abc import Callable
 from typing import Any, Dict, List, Mapping
 
+from collections.abc import Callable
+from typing import Dict, List
+
 import anndata
 
 from cavachon.filter.anndata_filter import AnnDataFilter
@@ -36,19 +39,18 @@ class AnnDataFilterHandler(Callable):
         self.steps: Dict[str, List[AnnDataFilter]] = steps
 
     @classmethod
-    def from_config(cls, config: Mapping[str, Any]):
-        """Create AnnDataFilterHandler from the config.modality_filter.
+    def from_config(cls, config):
+        """Create AnnDataFilterHandler from the ApplicationConfig.
 
         Parameters
         ----------
-        config: Mapping[str, Any]
-            config.modality_filter used to create AnnDataFilterHandler.
+        config: ApplicationConfig
+            the application config used to create AnnDataFilterHandler.
 
         Returns
         -------
         AnnDataFilterHandler:
-            AnnDataFilterHandler created from the
-            config.modality_filter.
+            AnnDataFilterHandler created from the config.filter.
 
         """
         steps = dict()
@@ -56,11 +58,11 @@ class AnnDataFilterHandler(Callable):
             step_runners = []
             for filter_step in modality_filter_steps:
                 step_runner_class = ReflectionHandler.get_class_by_name(
-                    filter_step.get("step"),
+                    filter_step.step,
                     "filter",
                 )
                 step_runner = step_runner_class(
-                    name=filter_step.get("step"), **filter_step
+                    name=filter_step.step, **filter_step.model_dump()
                 )
                 step_runners.append(step_runner)
 

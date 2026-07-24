@@ -289,11 +289,9 @@ class AttributionAnalysis:
         z_conditional = dict()
         z_hat_conditional = dict()
         for component_config in self.model.component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             component_network = self.model.components.get(component_name)
-            modality_names = component_config[
-                Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-            ]
+            modality_names = component_config.modality_names
             component_inputs = Model.prepare_component_inputs(
                 batch=batch,
                 component_config=component_config,

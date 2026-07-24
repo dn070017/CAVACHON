@@ -6,17 +6,23 @@ import tensorflow as tf
 
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers.to_dense import ToDense
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameterizer_layer import (
     MixtureMultivariateNormalDiagParameterizerLayer,
 )
 from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler,
 )
-from cavachon.losses.kl_divergence import KLDivergence
-from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
-from cavachon.modules.base.decoder_data_parameterizer import DecoderDataParameterizer
+from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
+from cavachon.losses.negative_log_data_likelihood import (
+    NegativeLogDataLikelihood,
+)
+from cavachon.losses.standard_kl_divergence import StandardKLDivergence
 from cavachon.modules.base.encoder_latent_parameterizer import (
     EncoderLatentParameterizer,
+)
+from cavachon.modules.base.decoder_data_parameterizer import (
+    DecoderDataParameterizer,
 )
 from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 from cavachon.modules.preprocessors import Preprocessor
@@ -51,7 +57,7 @@ class Component(tf.keras.Model):
 
     z_prior_parameterizer: tf.keras.layers.Layer
         parameterizer used for the priors in latent distributions. Used
-        when computing the KLDivergence.
+        when computing the GMMKLDivergence.
 
     hierarchical_encoder: tf.keras.Model
         hierarchical encoder used to encode z_hat hierarchically
@@ -75,6 +81,7 @@ class Component(tf.keras.Model):
         encoder: tf.keras.Model,
         z_prior_parameterizer: tf.keras.layers.Layer,
         hierarchical_encoder: tf.keras.Model,
+        z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model],
         decoders: Mapping[str, tf.keras.Model],
         conditioned_on_z: List[str] = [],
         conditioned_on_z_hat: List[str] = [],
@@ -115,11 +122,14 @@ class Component(tf.keras.Model):
 
         z_prior_parameterizer: tf.keras.layers.Layer
             parameterizer used for the priors in latent distributions.
-            Used when computing the KLDivergence.
+            Used when computing the GMMKLDivergence.
 
         hierarchical_encoder: tf.keras.Model
             hierarchical encoder used to encode z_hat hierarchically
             through the dependency between components.
+
+        z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model]
+            sampler used to transform z_parameters into z.
 
         decoders: Mapping[str, tf.keras.Model]
             decoder neural networks. The keys are the name of the
@@ -154,6 +164,7 @@ class Component(tf.keras.Model):
         self.encoder = encoder
         self.z_prior_parameterizer = z_prior_parameterizer
         self.hierarchical_encoder = hierarchical_encoder
+        self.z_sampler = z_sampler
         self.decoders = decoders
         self.conditioned_on_z = conditioned_on_z
         self.conditioned_on_z_hat = conditioned_on_z_hat
@@ -457,6 +468,7 @@ class Component(tf.keras.Model):
             is_conditioned_on_z=is_conditioned_on_z,
             is_conditioned_on_z_hat=is_conditioned_on_z_hat,
             progressive_step=progressive_iterations,
+            use_bias=kwargs.get("use_bias", False),
             name=name,
         )
 
@@ -742,11 +754,15 @@ class Component(tf.keras.Model):
             **kwargs,
         )
 
+        reparameterize_z_hat = kwargs.get("reparameterize_z_hat", True)
+        use_bias = not reparameterize_z_hat
+
         hierarchical_encoder = cls.setup_hierarchical_encoder(
             n_latent_dims=n_latent_dims,
             is_conditioned_on_z=z_conditional_dims is not None,
             is_conditioned_on_z_hat=z_hat_conditional_dims is not None,
             progressive_iterations=progressive_iterations,
+            use_bias=use_bias,
             name=f"{name}_hierarchical_encoder",
             **kwargs,
         )
@@ -790,6 +806,7 @@ class Component(tf.keras.Model):
             encoder=encoder,
             z_prior_parameterizer=z_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
+            z_sampler=z_sampler,
             decoders=decoders,
             conditioned_on_z=conditioned_on_z,
             conditioned_on_z_hat=conditioned_on_z_hat,
@@ -797,40 +814,281 @@ class Component(tf.keras.Model):
             **kwargs,
         )
 
-    def compile(self, **kwargs) -> None:
-        """Compile the model before training. Note that the 'metrics'
-        will be ignored in Model because of the incompatibility with
-        Tensorflow API. The 'loss' will be setup automatically if not
-        provided.
+    def encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Encode a batch into latent parameters and samples.
 
         Parameters
         ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Each modality must provide
+            ``{modality_name}_matrix``.
+
+        training: bool, optional
+            Whether to run the encoder path in training mode. Defaults
+            to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with keys ``z_parameters`` and ``z``.
+
+        Raises
+        ------
+        ValueError
+            If a required modality matrix key is missing from ``batch``.
+        """
+        for modality_name in self.modality_names:
+            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            if modality_key not in batch:
+                raise ValueError(
+                    f"Missing required input key '{modality_key}' in batch."
+                )
+
+        preprocessor_inputs = Component.prepare_preprocessor_inputs(
+            batch, self.modality_names
+        )
+        preprocessor_outputs = self.preprocessor(
+            preprocessor_inputs, training=training
+        )
+        z_parameters = self.encoder(
+            preprocessor_outputs.get(self.preprocessor.matrix_key),
+            training=training,
+        )
+        z = self.z_sampler(z_parameters, training=training)
+
+        return {
+            Constants.MODEL_OUTPUTS_Z_PARAMS: z_parameters,
+            Constants.MODEL_OUTPUTS_Z: z,
+        }
+
+    def hierarchical_encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z: tf.Tensor,
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Transform z into z_hat using the hierarchical encoder.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Must contain z_conditional and/or
+            z_hat_conditional keys if the component is conditioned.
+
+        z: tf.Tensor
+            Latent sample from encode(). Expected shape
+            (batch_size, n_latent_dims).
+
+        training: bool, optional
+            Whether to run in training mode. Defaults to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with key ``z_hat``.
+
+        Raises
+        ------
+        tf.errors.InvalidArgumentError
+            If ``z`` does not have rank 2.
+        """
+        tf.debugging.assert_rank(z, 2, message="Expected 'z' to have rank 2.")
+        hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
+            batch, z
+        )
+        z_hat = self.hierarchical_encoder(
+            hierarchical_encoder_inputs, training=training
+        )
+        return {Constants.MODEL_OUTPUTS_Z_HAT: z_hat}
+
+    def decode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z_hat: tf.Tensor,
+        training: bool = False,
+    ) -> Mapping[str, tf.Tensor]:
+        """Decode a transformed latent sample into modality parameters.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors. Each modality must provide
+            ``{modality_name}_batch_effect``.
+
+        z_hat: tf.Tensor
+            Hierarchically transformed latent tensor to decode.
+            Expected shape is
+            ``(batch_size, n_latent_dims)``.
+
+        training: bool, optional
+            Whether to run the decoder path in training mode. Defaults
+            to False.
+
+        Returns
+        -------
+        Mapping[str, tf.Tensor]
+            Mapping with keys
+            ``{modality_name}_x_parameters`` for each modality.
+
+        Raises
+        ------
+        ValueError
+            If a required modality batch-effect key is missing from
+            ``batch``.
+
+        ValueError
+            If no decoder is registered for a modality name.
+
+        tf.errors.InvalidArgumentError
+            If ``z_hat`` does not have rank 2.
+        """
+        for modality_name in self.modality_names:
+            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
+            if modality_batch_key not in batch:
+                raise ValueError(
+                    f"Missing required input key '{modality_batch_key}' in batch."
+                )
+
+        tf.debugging.assert_rank(
+            z_hat, 2, message="Expected 'z_hat' to have rank 2."
+        )
+        preprocessor_inputs = Component.prepare_preprocessor_inputs(
+            batch, self.modality_names
+        )
+        preprocessor_outputs = self.preprocessor(
+            preprocessor_inputs, training=training
+        )
+
+        outputs = dict()
+        for modality_name in self.modality_names:
+            decoder = self.decoders.get(modality_name)
+            if decoder is None:
+                raise ValueError(
+                    f"No decoder found for modality '{modality_name}'."
+                )
+            decoder_inputs = Component.prepare_decoder_inputs(
+                batch, modality_name, z_hat, preprocessor_outputs
+            )
+            x_parameters = decoder(decoder_inputs, training=training)
+            outputs[f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"] = (
+                x_parameters
+            )
+
+        return outputs
+
+    def compile(
+        self,
+        standard_kl_weights: Optional[Mapping[str, float]] = None,
+        gmm_kl_weights: Optional[Mapping[str, float]] = None,
+        **kwargs,
+    ) -> None:
+        """Compile the model before training. Note that the 'metrics'
+        will be ignored in Model because of the incompatibility with
+        Tensorflow API. The 'loss' will be setup automatically if not
+        provided. All loss weights are backed by tf.Variable objects
+        so callbacks can adjust them at runtime.
+
+        Parameters
+        ----------
+        standard_kl_weights: Mapping[str, float], optional
+            weight for the standard N(0,1) KL divergence loss.
+            A weight > 0 creates the loss. Defaults to None.
+
+        gmm_kl_weights: Mapping[str, float], optional
+            weight for the GMM KL divergence loss.
+            A weight > 0 creates the loss. When both are absent,
+            defaults to GMM KL with weight 1.0.
+
         kwargs: Mapping[str, Any]
             Additional parameters used to compile the model.
 
         """
-        loss_weights = kwargs.get("loss_weights", dict())
-        kwargs.pop("loss_weights", None)
+        standard_kl_weights = standard_kl_weights or {}
+        gmm_kl_weights = gmm_kl_weights or {}
+
+        if not hasattr(self, "_standard_kl_weights"):
+            self._standard_kl_weights = {}
+        if not hasattr(self, "_gmm_kl_weights"):
+            self._gmm_kl_weights = {}
+
+        loss_weights = kwargs.pop("loss_weights", None) or {}
 
         if "loss" not in kwargs:
             loss = OrderedDict()
-            kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
-            loss.setdefault(
-                kl_divergence_name,
-                KLDivergence(
-                    loss_weights.get(kl_divergence_name, 1.0), name=kl_divergence_name
-                ),
-            )
+
+            # Default component name for weight dicts and Variable storage
+            comp_name = self.name or "component"
+
+            standard_w = standard_kl_weights.get(comp_name, 0.0)
+            gmm_w = gmm_kl_weights.get(comp_name, 0.0)
+            has_standard = comp_name in standard_kl_weights
+            has_gmm = comp_name in gmm_kl_weights
+
+            if not has_standard and not has_gmm:
+                has_gmm = True
+                gmm_w = 1.0
+
+            if has_standard:
+                if comp_name not in self._standard_kl_weights:
+                    self._standard_kl_weights[comp_name] = tf.Variable(
+                        standard_w, trainable=False, dtype=tf.float32,
+                        name=f"{comp_name}_standard_kl_weight",
+                    )
+                else:
+                    self._standard_kl_weights[comp_name].assign(standard_w)
+                loss.setdefault(
+                    Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+                    StandardKLDivergence(
+                        weight_var=self._standard_kl_weights[comp_name],
+                        name=Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+                    ),
+                )
+
+            if has_gmm:
+                if comp_name not in self._gmm_kl_weights:
+                    self._gmm_kl_weights[comp_name] = tf.Variable(
+                        gmm_w, trainable=False, dtype=tf.float32,
+                        name=f"{comp_name}_gmm_kl_weight",
+                    )
+                else:
+                    self._gmm_kl_weights[comp_name].assign(gmm_w)
+                loss.setdefault(
+                    Constants.MODEL_LOSS_GMM_KL_POSTFIX,
+                    GMMKLDivergence(
+                        weight_var=self._gmm_kl_weights[comp_name],
+                        name=Constants.MODEL_LOSS_GMM_KL_POSTFIX,
+                    ),
+                )
+
+            if not hasattr(self, "_data_loss_weights"):
+                self._data_loss_weights = {}
+            if comp_name not in self._data_loss_weights:
+                self._data_loss_weights[comp_name] = {}
+
             for modality_name in self.modality_names:
-                nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                nldl_name = (
+                    f"{modality_name}_"
+                    f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                )
+                var = tf.Variable(
+                    loss_weights.pop(nldl_name, 1.0),
+                    trainable=False, dtype=tf.float32,
+                    name=f"{comp_name}_{modality_name}_data_weight",
+                )
+                self._data_loss_weights[comp_name][modality_name] = var
                 loss.setdefault(
                     nldl_name,
                     NegativeLogDataLikelihood(
                         self.distribution_names.get(modality_name),
-                        loss_weights.get(nldl_name, 1.0),
+                        var,
                         name=nldl_name,
                     ),
                 )
+
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -873,20 +1131,27 @@ class Component(tf.keras.Model):
             results = self(data, training=True)
             y_true = dict()
             y_pred = dict()
-            kl_divergence_name = Constants.MODEL_LOSS_KL_POSTFIX
-            y_true.setdefault(
-                kl_divergence_name, results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
-            )
+            prior_params = results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
 
             z_key = Constants.MODEL_OUTPUTS_Z
             z_params_key = Constants.MODEL_OUTPUTS_Z_PARAMS
+            z_concat = tf.keras.layers.Lambda(
+                lambda x: tf.concat(x, axis=-1)
+            )([results.get(z_key), results.get(z_params_key)])
 
-            y_pred.setdefault(
-                kl_divergence_name,
-                tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                    [results.get(z_key), results.get(z_params_key)]
-                ),
-            )
+            # Support both new (standard_kl + gmm_kl) and legacy formats
+            if (
+                Constants.MODEL_LOSS_STANDARD_KL_POSTFIX in self.loss
+                and Constants.MODEL_LOSS_GMM_KL_POSTFIX in self.loss
+            ):
+                y_true.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, prior_params)
+                y_pred.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, z_concat)
+                y_true.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, prior_params)
+                y_pred.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, z_concat)
+            else:
+                kl_name = Constants.MODEL_LOSS_GMM_KL_POSTFIX
+                y_true.setdefault(kl_name, prior_params)
+                y_pred.setdefault(kl_name, z_concat)
 
             for modality_name in self.modality_names:
                 negative_log_data_likelihood_name = (
@@ -911,8 +1176,19 @@ class Component(tf.keras.Model):
             for key in y_true:
                 loss_fn = self.loss.get(key)
                 if loss_fn:
-                    loss_value = loss_fn(y_true[key], y_pred[key])
-                    loss_metrics[key] = loss_value
+                    if hasattr(loss_fn, "weight"):
+                        if isinstance(loss_fn.weight, ProgressiveScaler):
+                            weighted_loss = loss_fn(y_true[key], y_pred[key])
+                            weight_scalar = loss_fn.weight(tf.ones(()))
+                            loss_metrics[key] = weighted_loss / weight_scalar
+                        else:
+                            orig_w = loss_fn.weight
+                            loss_fn.weight = tf.constant(1.0, dtype=tf.float32)
+                            raw = loss_fn(y_true[key], y_pred[key])
+                            loss_fn.weight = orig_w
+                            loss_metrics[key] = raw
+                    else:
+                        loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 
         return loss_metrics
 

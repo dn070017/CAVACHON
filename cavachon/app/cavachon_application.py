@@ -4,7 +4,7 @@ import warnings
 
 import tensorflow as tf
 
-from cavachon.workflow.Workflow import Workflow
+from cavachon.workflow.workflow import Workflow
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 

@@ -56,10 +56,10 @@ class DecoderDataParameterizer(tf.keras.Model):
         )
 
         self.backbone_network = TensorUtils.create_backbone_layers(
-            n_layers=1,
-            base_n_neurons=512,
-            activation="linear",
-            name=Constants.MODULE_BACKBONE,
+            n_layers=2,
+            base_n_neurons=32,
+            activation="swish",
+            name=f"{self.name}_{Constants.MODULE_BACKBONE}",
         )
 
         input_dims = 0
@@ -71,7 +71,7 @@ class DecoderDataParameterizer(tf.keras.Model):
         self.x_parameterizer = distribution_parameterizer.make(
             input_dims=input_dims,
             event_dims=n_vars,
-            name=Constants.MODULE_X_PARAMETERIZER,
+            name=f"{self.name}_{Constants.MODULE_X_PARAMETERIZER}",
         )
 
     def compute_attribution_target(self, inputs: tf.Tensor):

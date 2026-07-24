@@ -8,7 +8,6 @@ from scipy.io import mmread
 from scipy.sparse import csr_matrix, vstack
 
 from cavachon.config.application_config import ApplicationConfig
-from cavachon.environment.constants import Constants
 
 
 class FileReader:
@@ -40,8 +39,10 @@ class FileReader:
 
         """
         datadir = config.io.datadir
-        config_modality = config.modality.get(modality_name, {})
-        config_sample_list = config_modality.get(Constants.CONFIG_FIELD_SAMPLE, [])
+        config_modality = config.modality.get(modality_name)
+        if config_modality is None:
+            raise KeyError(f"Modality '{modality_name}' not found in config.")
+        config_sample_list = config_modality.samples
 
         obs_df_list = []
         var_df_list = []
@@ -50,32 +51,21 @@ class FileReader:
             config_sample = config.sample.get(sample_name)
             config_sample_modality = list(
                 filter(
-                    lambda x: x.get("name") == modality_name,
-                    config_sample.get(Constants.CONFIG_FIELD_MODALITY),
+                    lambda x: x.name == modality_name,
+                    config_sample.modalities,
                 )
             ).pop()
-            sample_description = config_sample.get(
-                Constants.CONFIG_FIELD_SAMPLE_DESCRIPTION
-            )
+            sample_description = config_sample.description
 
-            config_modality_obs = config_sample_modality.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_OBS
-            )
-            obs_has_headers = config_modality_obs.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_HAS_HEADERS
-            )
-            field_obs_colnames = (
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_HAS_HEADERS_COLNAMES
-            )
+            config_modality_obs = config_sample_modality.barcodes
+            obs_has_headers = config_modality_obs.has_headers
             obs_colnames = (
-                config_modality_obs[field_obs_colnames] if not obs_has_headers else None
+                config_modality_obs.colnames if not obs_has_headers else None
             )
             obs_df = FileReader.read_table(
                 filename=os.path.join(
                     datadir,
-                    config_modality_obs[
-                        Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_FILENAME
-                    ],
+                    config_modality_obs.filename,
                 ),
                 name=modality_name,
                 has_headers=obs_has_headers,
@@ -84,42 +74,27 @@ class FileReader:
             obs_df["Sample"] = sample_name
             obs_df["Description"] = sample_description
 
-            config_modality_var = config_sample_modality.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_VAR
-            )
-            var_has_headers = config_modality_var.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_HAS_HEADERS
-            )
-            field_var_colnames = (
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_HAS_HEADERS_COLNAMES
-            )
+            config_modality_var = config_sample_modality.features
+            var_has_headers = config_modality_var.has_headers
             var_colnames = (
-                config_modality_var[field_var_colnames] if not var_has_headers else None
+                config_modality_var.colnames if not var_has_headers else None
             )
             var_df = FileReader.read_table(
                 filename=os.path.join(
                     datadir,
-                    config_modality_var[
-                        Constants.CONFIG_FIELD_SAMPLE_MODALITY_FEATURE_FILENAME
-                    ],
+                    config_modality_var.filename,
                 ),
                 name=modality_name,
                 has_headers=var_has_headers,
                 colnames=var_colnames,
             )
 
-            config_modality_mtx = config_sample_modality.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_MTX
-            )
-            transpose = config_modality_mtx.get(
-                Constants.CONFIG_FIELD_SAMPLE_MODALITY_MTX_TRANSPOSE
-            )
+            config_modality_mtx = config_sample_modality.matrix
+            transpose = config_modality_mtx.transpose
             matrix = FileReader.read_mtx(
                 filename=os.path.join(
                     datadir,
-                    config_modality_mtx[
-                        Constants.CONFIG_FIELD_SAMPLE_MODALITY_MTX_FILENAME
-                    ],
+                    config_modality_mtx.filename,
                 ),
                 transpose=transpose,
             )

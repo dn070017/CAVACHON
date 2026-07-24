@@ -71,6 +71,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 1000,
         batch_size: int = 128,
         keep_only_significant: bool = False,
+        sort_output: bool = True,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between every groups of
         samples.
@@ -117,7 +118,10 @@ class DifferentialAnalysis:
         results = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
-        for cluster_a, cluster_b in combinations(unique_clusters, r=2):
+        for cluster_a, cluster_b in tqdm(
+            combinations(unique_clusters, r=2),
+            desc="Across clusters pairwise",
+        ):
             index_a = obs[obs[use_cluster] == cluster_a].index
             index_b = obs[obs[use_cluster] == cluster_b].index
             deg = self.between_two_groups(
@@ -129,6 +133,7 @@ class DifferentialAnalysis:
                 x_sampling_size=x_sampling_size,
                 batch_size=batch_size,
                 desc=f"Between {cluster_a} and {cluster_b}",
+                sort_output=sort_output,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -148,6 +153,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 1000,
         batch_size: int = 128,
         keep_only_significant: bool = False,
+        sort_output: bool = True,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between one specific group and
         the rest of the samples.
@@ -194,7 +200,7 @@ class DifferentialAnalysis:
         results = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
-        for cluster in unique_clusters:
+        for cluster in tqdm(unique_clusters, desc="Across clusters"):
             index_a = obs[obs[use_cluster] == cluster].index
             index_b = obs[obs[use_cluster] != cluster].index
 
@@ -207,6 +213,7 @@ class DifferentialAnalysis:
                 x_sampling_size=x_sampling_size,
                 batch_size=batch_size,
                 desc=f"Between {cluster} and others",
+                sort_output=sort_output,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -227,6 +234,7 @@ class DifferentialAnalysis:
         x_sampling_size: int = 2500,
         batch_size: int = 128,
         desc: str = "",
+        sort_output: bool = True,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -256,6 +264,10 @@ class DifferentialAnalysis:
 
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
+
+        sort_output: bool, optional
+            Sort the result by the maximum of the absolute Bayesian factors
+            K(A>B|Z) and K(B>A|Z) in descending order. Default to True.
 
         Returns
         -------
@@ -294,7 +306,7 @@ class DifferentialAnalysis:
         for modality_name in batch_effect.keys():
             batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
 
-        for _ in tqdm(range(z_sampling_size), desc=desc):
+        for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             mdata_group_a = self.sample_mdata_x(
                 index=group_a_index, x_sampling_size=x_sampling_size
             )
@@ -341,7 +353,11 @@ class DifferentialAnalysis:
         x_means_b = np.vstack(x_means_b)
         index = self.mdata.mod[modality].var.index
 
-        return self.compute_bayesian_factor(x_means_a, x_means_b, index)
+        result = self.compute_bayesian_factor(x_means_a, x_means_b, index)
+        if sort_output:
+            sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
+            result = result.loc[sort_key.sort_values(ascending=False).index]
+        return result
 
     def sample_mdata_x(
         self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500
@@ -381,7 +397,7 @@ class DifferentialAnalysis:
         component: str,
         modality: str,
         batch_effect: Mapping[str, tf.Tensor],
-        training: bool = True,
+        training: bool = False,
         batch_size: int = 128,
     ) -> np.ndarray:
         """Compute the means of generative data.
@@ -407,7 +423,7 @@ class DifferentialAnalysis:
         training: bool
             if True, the forward pass will perform sampling with
             reparameterization. Otherwise, the mean value of the latent
-            distribution is used. Defaults to True.
+            distribution is used. Defaults to False.
 
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
@@ -430,6 +446,12 @@ class DifferentialAnalysis:
 
         x_means = []
         for batch in dataset.batch(batch_size):
+            encode_outputs = self.model.encode(batch, training=training)
+            z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
+
+            hier_outputs = self.model.hierarchical_encode(batch, z, training=training)
+            z_hat = hier_outputs[Constants.MODEL_OUTPUTS_Z_HAT]
+
             for modality_name in modality_names:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 n_obs_batch = batch[batch_effect_key].shape[0]
@@ -442,8 +464,10 @@ class DifferentialAnalysis:
                 batch[batch_effect_key] = tf.gather(
                     batch_effect[modality_name], random_batch_index, axis=0
                 )
-            result = self.model(batch, training=training)
-            x_parameters = result.get(
+            decode_outputs = self.model.decode(
+                batch, z_hat, components=[component], training=training
+            )
+            x_parameters = decode_outputs[Constants.MODEL_OUTPUTS_X_PARAMS].get(
                 f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
             )
             dist_x_z = dist_x_z_class.from_parameterizer_output(x_parameters)

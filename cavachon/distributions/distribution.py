@@ -1,4 +1,4 @@
-from abc import ABC, abstractclassmethod
+from abc import ABC, abstractmethod
 from typing import Mapping, Union
 
 import tensorflow as tf
@@ -11,7 +11,8 @@ class Distribution(ABC):
 
     """
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def from_parameterizer_output(
         cls, params: Union[tf.Tensor, Mapping[str, tf.Tensor]], **kwargs
     ) -> tfp.distributions.Distribution:

@@ -1,467 +1,250 @@
 import os
 from collections import OrderedDict
 from itertools import chain
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List
 
 import yaml
+from pydantic import model_validator
 
-from cavachon.config.config_mapping.analysis_config_mapping import AnalysisConfigMapping
-from cavachon.config.config_mapping.component_config_mapping import (
-    ComponentConfigMapping,
-)
-from cavachon.config.config_mapping.dataset_config_mapping import DatasetConfigMapping
-from cavachon.config.config_mapping.filter_config_mapping import FilterConfigMapping
-from cavachon.config.config_mapping.io_config_mapping import IOConfigMapping
-from cavachon.config.config_mapping.modality_config_mapping import ModalityConfigMapping
-from cavachon.config.config_mapping.model_config_mapping import ModelConfigMapping
-from cavachon.config.config_mapping.sample_config_mapping import SampleConfigMapping
-from cavachon.config.config_mapping.training_config_mapping import TrainingConfigMapping
+from cavachon.config.analysis_config import AnalysisConfig
+from cavachon.config.base import BaseConfigModel
+from cavachon.config.component_config import ComponentConfig
+from cavachon.config.dataset_config import DatasetConfig
+from cavachon.config.filter_config import FilterConfig
+from cavachon.config.io_config import IOConfig
+from cavachon.config.modality_config import ModalityConfig
+from cavachon.config.model_config import ModelConfig
+from cavachon.config.sample_config import SampleConfig
+from cavachon.config.training_config import TrainingConfig
 from cavachon.environment.constants import Constants
 from cavachon.utils.general_utils import GeneralUtils
 
 
-class ApplicationConfig:
-    """ApplicationConfig
+class ApplicationConfig(BaseConfigModel):
+    """Root CAVACHON application configuration.
 
-    Data structure for the configuration for CAVACHON application.
-
-    Attributes
-    ----------
-    filename: str
-        filename of the config in YAML format.
-
-    analysis: AnalysisConfigMapping
-        Analysis related config.
-
-    io: IOConfigMapping
-        IO related config.
-
-    sample: OrderedDict[str, SampleConfigMapping]
-        sample related config, where the key is the sample name, the
-        value is the corresponding SampleConfigMapping.
-
-    modality: Dict[str, ModalityConfigMapping]
-        modality related config, where the key is the modality name,
-        the value is the corresponding ModalityConfigMapping.
-
-    modality_names: List[str]
-        all used modality names.
-
-    filter: Dict[str, List[FilterConfigMapping]]
-        modality filter steps related config, where the key is the name
-        of the modality to filter, the value is a list of config for
-        filtering steps.
-
-    model: ModelConfigMapping
-        model related config.
-
-    training: TrainingConfigMapping
-        training related config.
-
-    dataset: DatasetConfigMapping
-        dataset related config.
-
-    components: List[ComponentConfigMapping]
-        the topological sorted (based on dependency graph) list of
-        components related config.
-
-    yaml: Dict[str, Any]
-        the original yaml config in dictionary format.
+    Loaded from a YAML file via ``from_yaml()``.  Performs cross-field
+    validation equivalent to the old ``setup_*`` methods.
 
     """
 
-    def __init__(self, filename: str) -> None:
-        """Constructor for Config instance.
+    # -- direct YAML fields ------------------------------------------------
+    io: IOConfig
+    modality: Dict[str, ModalityConfig]
+    sample: OrderedDict[str, SampleConfig]
+    model: ModelConfig
+    training: TrainingConfig
+    dataset: DatasetConfig
+    analysis: AnalysisConfig
+    # -- computed -----------------------------------------------------------
+    filter: Dict[str, List[FilterConfig]] = {}
+    components: List[ComponentConfig] = []
+    modality_names: List[str] = []
+    # -- metadata -----------------------------------------------------------
+    filename: str
+    yaml_raw: Dict[str, Any]
+
+    @classmethod
+    def from_yaml(cls, filename: str) -> "ApplicationConfig":
+        """Load configuration from a YAML file.
 
         Parameters
         ----------
-        filenames: str
-            filename of the config in YAML format.
-
-        Raises
-        ------
-        KeyError
-            if any of the required key is not in the provided config.
-
-        See Also
-        --------
-        setup_io: setup the io config and datadir.
-        setup_analysis: setup analysis related config.
-        setup_modality: setup modality related config.
-        setup_sample: setup sample related config.
-        setup_training: setup training related config.
-        setup_dataset: setup dataset related config.
-        setup_model: setup model related config.
-
-        """
-        self.filename = os.path.realpath(filename)
-        with open(filename, "r") as f:
-            self.yaml: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
-
-        # initializations
-        self.analysis: AnalysisConfigMapping = None
-        self.io: IOConfigMapping = None
-        self.sample: OrderedDict[str, SampleConfigMapping] = OrderedDict()
-        self.modality: Dict[str, ModalityConfigMapping] = dict()
-        self.modality_names: List[str] = list()
-        self.model: ModelConfigMapping = None
-        self.filter: Dict[str, List[FilterConfigMapping]] = dict()
-        self.training: TrainingConfigMapping = None
-        self.components: List[ComponentConfigMapping] = list()
-        self.dataset: DatasetConfigMapping = None
-
-        # set defaults values, preprocessing the configs
-        self.setup_io()
-        self.setup_modality()
-        self.setup_sample()
-        self.setup_training()
-        self.setup_dataset()
-        self.setup_model()
-        self.setup_analysis()
-
-        return
-
-    def are_all_fields_in_mapping(
-        self, key_list: List[Any], mapping: Mapping, field: str, subfield: str = ""
-    ) -> bool:
-        """Check if all the required keys are in the provided mapping.
-
-        Parameters
-        ----------
-        key_list: List[Any]:
-            the required list of keys.
-
-        mapping: Mapping
-            the mapping to be evaluated.
-
-        field: str
-            the field of config (only used for error message)
-
-        subfield: str, optional
-            the subfield of config (only used for error message).
-            Defaults to ''.
+        filename : str
+            Absolute or relative path to the YAML config file.
 
         Returns
         -------
-        bool
-            whether all the required keys are in the provided mapping.
-
-        Raises
-        ------
-        KeyError
-            if any of the required key is not in the provided config.
+        ApplicationConfig
 
         """
-        keys_not_exist = []
-        for key in key_list:
-            if key not in mapping:
-                keys_not_exist.append(key)
+        filename = os.path.realpath(filename)
+        with open(filename, "r") as f:
+            yaml_raw: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
 
-        all_required_keys_are_there = len(keys_not_exist) == 0
-        if not all_required_keys_are_there:
-            message = ""
-            for key in keys_not_exist:
-                if subfield != "":
-                    subfield = f" in the {subfield}"
-                message += "".join(
-                    (
-                        f"{key} is required{subfield} for ",
-                        f"{field} in the config file {self.filename}.\n",
-                    )
-                )
-            raise KeyError(message)
+        # --- io ---
+        io_data = yaml_raw.get(Constants.CONFIG_FIELD_IO, {})
 
-        return all_required_keys_are_there
+        # --- modality: list → dict keyed by sanitized name ---
+        modality_raw = yaml_raw.get(Constants.CONFIG_FIELD_MODALITY, [])
+        modality_dict: Dict[str, Any] = {}
+        for m in modality_raw:
+            m_copy = dict(m)
+            mname = GeneralUtils.tensorflow_compatible_str(m_copy.get("name", ""))
+            modality_dict[mname] = m_copy
 
-    def setup_io(self) -> None:
-        """Setup IO related config."""
-        self.io = IOConfigMapping(**self.yaml.get(Constants.CONFIG_FIELD_IO))
+        # --- sample: list → OrderedDict ---
+        sample_raw = yaml_raw.get(Constants.CONFIG_FIELD_SAMPLE, [])
+        sample_dict: OrderedDict[str, Any] = OrderedDict()
+        for s in sample_raw:
+            sample_dict[s.get("name", "")] = s
 
-    def setup_modality(self) -> None:
-        """Setup modality related config and modality names. This
-        function does the following:
-        1.  Setup config for modality, transform the list of modality
-            config to a dictionary where the keys are the modality
-            names, and the values are the configuration for the
-            modalities.
-        2.  Check all the relevant fields are in the config. Set
-            defaults if the optional fields are not provided.
+        # --- model (training / dataset extracted for top-level too) ---
+        model_raw = yaml_raw.get(Constants.CONFIG_FIELD_MODEL, {})
+        training_data = model_raw.get(Constants.CONFIG_FIELD_MODEL_TRAINING, {})
+        dataset_data = model_raw.get(Constants.CONFIG_FIELD_MODEL_DATASET, {})
 
-        Raises
-        ------
-        KeyError
-            if any of the required key is not in the provided config.
+        # --- analysis ---
+        analysis_data = yaml_raw.get(Constants.CONFIG_FIELD_ANALYSIS, {})
 
-        """
-        # Clear self.modality and self.filter
-        self.modality = dict()
-        self.filter = dict()
+        return cls(
+            filename=filename,
+            yaml_raw=yaml_raw,
+            io=io_data,
+            modality=modality_dict,
+            sample=sample_dict,
+            model=model_raw,
+            training=training_data,
+            dataset=dataset_data,
+            analysis=analysis_data,
+        )
 
-        # Get the list of modality config
-        modality_config_list = self.yaml.get(Constants.CONFIG_FIELD_MODALITY, [])
-        if len(modality_config_list) == 0:
-            raise KeyError(f"No modality found in the config file {self.filename}.")
+    # ------------------------------------------------------------------
+    # Cross-field validation (replaces old ApplicationConfig.setup_*)
+    # ------------------------------------------------------------------
 
-        for i, modality_config in enumerate(modality_config_list):
-            # Check if all required keys are in the modality config.
-            self.are_all_fields_in_mapping(
-                Constants.CONFIG_FIELD_MODALITY_REQUIRED,
-                modality_config,
-                Constants.CONFIG_FIELD_MODALITY,
-            )
-
-            # Create the ModalityConfigMapping instance
-            modality_config = ModalityConfigMapping(**modality_config)
-
-            # Save the processed result to self.modality and self.filter
-            modality_name = modality_config.name
-            filters_config = modality_config.filters
-            self.modality.setdefault(modality_name, modality_config)
-            self.filter.setdefault(modality_name, filters_config)
-
-        # Save the modality names
+    @model_validator(mode="after")
+    def _cross_validate(self) -> "ApplicationConfig":
+        # 1. Populate modality_names
         self.modality_names = list(self.modality.keys())
 
-        return
+        # 2. Modality list non-empty
+        if not self.modality_names:
+            raise KeyError(f"No modality found in config file {self.filename}.")
 
-    def setup_sample(self) -> None:
-        """Setup sample related config. This function does the
-        following:
-        1.  Setup config for sample, transform the list of sample
-            config to a OrderedDict where the keys are the sample names,
-            and the values are the configuration for the sample. The
-            order of the insertion depends on the order the samples
-            appear.
-        2.  Save the sample modality config to each modality in the
-            config_modality.
-        3.  Check all the relevant fields are in the config. Set
-            defaults if the optional fields are not provided.
+        # 3. Populate filter from modalities
+        self.filter = {name: m_cfg.filters for name, m_cfg in self.modality.items()}
 
-        Raises
-        ------
-        KeyError
-            if any of the required key is not in the provided config.
-
-        """
-        # Clear the OrderedDict of config sample
-        self.sample = OrderedDict()
-        # Get the list of sample config
-        sample_config_list = self.yaml.get(Constants.CONFIG_FIELD_SAMPLE, [])
-        for i, sample_config in enumerate(sample_config_list):
-            # Check if all required keys are in the sample config.
-            sample_name = sample_config.get("name")
-            self.are_all_fields_in_mapping(
-                Constants.CONFIG_FIELD_SAMPLE_REQUIRED,
-                sample_config,
-                Constants.CONFIG_FIELD_SAMPLE,
-            )
-
-            # Check each modality config in the sample
-            for i, sample_modality_config in enumerate(
-                sample_config.get(Constants.CONFIG_FIELD_MODALITY)
-            ):
-                # Check if all required keys are in the modality of the sample.
-                self.are_all_fields_in_mapping(
-                    Constants.CONFIG_FIELD_SAMPLE_MODALITY_REQUIRED,
-                    sample_modality_config,
-                    sample_name,
-                    Constants.CONFIG_FIELD_MODALITY,
-                )
-
-                # Check if the modality name is in the self.modality
-                modality_name = sample_modality_config.get("name")
-                modality_name = GeneralUtils.tensorflow_compatible_str(modality_name)
-                if modality_name in self.modality:
-                    # Put the sample names into self.modality[`modality_name`][`sample`]
-                    self.modality.get(modality_name).get(
-                        Constants.CONFIG_FIELD_SAMPLE
-                    ).append(sample_name)
-                else:
-                    message = "".join(
-                        (
-                            f"No configuration for modality {modality_name} of sample {sample_name} ",
-                            f"in the config file {self.filename}.",
-                        )
+        # 4. Cross-validate samples ↔ modalities
+        for sname, s_cfg in self.sample.items():
+            for mod_file in s_cfg.modalities:
+                mname = mod_file.name
+                if mname not in self.modality:
+                    raise KeyError(
+                        f"No configuration for modality {mname} "
+                        f"of sample {sname} in the config file {self.filename}."
                     )
-                    raise KeyError(message)
+                self.modality[mname].samples.append(sname)
 
-        for i, sample_config in enumerate(sample_config_list):
-            self.sample.setdefault(sample_name, SampleConfigMapping(**sample_config))
+        # 5. Cross-validate model components ↔ modalities, inject dist
+        component_by_name: Dict[str, ComponentConfig] = {}
+        for comp in self.model.components:
+            for mname in comp.modality_names:
+                if mname not in self.modality:
+                    raise KeyError(
+                        f"'{mname}' is not in the config of modality."
+                    )
+                modality_dist = self.modality[mname].dist
+                comp.distribution_names[mname] = modality_dist
+            component_by_name[comp.name] = comp
 
-        return
+        # 6. Topological sort components
+        comp_configs_as_dicts = {
+            name: {
+                "name": c.name,
+                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: c.conditioned_on_z,
+                Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: c.conditioned_on_z_hat,
+            }
+            for name, c in component_by_name.items()
+        }
+        ordered = GeneralUtils.order_components(comp_configs_as_dicts)
+        self.components = [component_by_name[c["name"]] for c in ordered]
 
-    def setup_training(self) -> None:
-        """Setup training related config."""
-        model_config = self.yaml.get(Constants.CONFIG_FIELD_MODEL, {})
-        training_config = model_config.get(Constants.CONFIG_FIELD_MODEL_TRAINING, {})
-        self.training = TrainingConfigMapping(**training_config)
+        # Build a fast component lookup
+        comp_map: Dict[str, ComponentConfig] = {
+            c.name: c for c in self.components
+        }
 
-    def setup_dataset(self) -> None:
-        """Setup dataset related config."""
-        model_config = self.yaml.get(Constants.CONFIG_FIELD_MODEL, {})
-        dataset_config = model_config.get(Constants.CONFIG_FIELD_MODEL_DATASET, {})
-        self.dataset = DatasetConfigMapping(**dataset_config)
-
-    def setup_model(self) -> None:
-        """Setup model and component related config.
-
-        Raises
-        ------
-        KeyError
-            if any of the required key is not in the provided config.
-
-        AttributeError
-            if the dependencies between components is not a directed
-            acyclic graph.
-        """
-        self.model = None
-        self.components = list()
-
-        model_config = self.yaml.get(Constants.CONFIG_FIELD_MODEL, {})
-        self.are_all_fields_in_mapping(
-            Constants.CONFIG_FIELD_MODEL_REQUIRED, model_config, "model config"
-        )
-
-        # Check required field and default values if not specified in the component config
-        component_config_list = model_config.get(Constants.CONFIG_FIELD_MODEL_COMPONENT)
-        component_config_mapping = dict()
-        for i, component_config in enumerate(component_config_list):
-            # Check required field
-            self.are_all_fields_in_mapping(
-                Constants.CONFIG_FIELD_COMPONENT_REQUIRED, component_config, "component"
-            )
-            component_name = component_config.get("name")
-
-            # Setup modality names and decoder for the component
-            for j, modality_config in enumerate(
-                component_config.get(Constants.CONFIG_FIELD_MODALITY)
-            ):
-                self.are_all_fields_in_mapping(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITIES_REQUIRED,
-                    modality_config,
-                    component_name,
-                    "modalities config",
+        # 7. Propagate training-level defaults to components when not set
+        for comp in self.components:
+            if comp.n_parent_annealing_epochs is None:
+                comp.n_parent_annealing_epochs = (
+                    self.training.n_parent_annealing_epochs
                 )
-                modality_name = modality_config.get("name")
-                modality_name = GeneralUtils.tensorflow_compatible_str(modality_name)
-                component_config[Constants.CONFIG_FIELD_MODALITY][j]["name"] = (
-                    modality_name
+            if comp.n_kl_annealing_epochs is None:
+                comp.n_kl_annealing_epochs = self.training.n_kl_annealing_epochs
+            if comp.enable_kmeans_init is None:
+                comp.enable_kmeans_init = self.training.enable_kmeans_init
+            if comp.kl_annealing_ratio is None:
+                comp.kl_annealing_ratio = self.training.kl_annealing_ratio
+            if comp.max_regular_training_epochs is None:
+                comp.max_regular_training_epochs = (
+                    self.training.max_regular_training_epochs
                 )
-                if modality_name not in self.modality:
-                    message = f"'{modality_name}' is not in the config of modality."
-                    raise KeyError(message)
-                modality_dist = self.modality.get(modality_name).get(
-                    Constants.CONFIG_FIELD_MODALITY_DIST
-                )
-                modality_config[
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
-                ] = modality_dist
 
-            component_config = ComponentConfigMapping(**component_config)
-            component_config_mapping.setdefault(component_name, component_config)
-
-        # Sort the components based on the BFS order
-        self.components = GeneralUtils.order_components(component_config_mapping)
-
-        model_fields = [
-            "name",
-            Constants.CONFIG_FIELD_MODEL_LOAD_WEIGHTS,
-            Constants.CONFIG_FIELD_MODEL_SAVE_WEIGHTS,
-            Constants.CONFIG_FIELD_MODEL_COMPONENT,
-            Constants.CONFIG_FIELD_MODEL_TRAINING,
-            Constants.CONFIG_FIELD_MODEL_DATASET,
-        ]
-
-        self.model = ModelConfigMapping(
-            **{field: model_config.get(field) for field in model_fields}
-        )
-
-    def setup_analysis(self) -> None:
-        """Setup analysis related config.
-
-        Raises
-        ------
-        KeyError
-            if
-            1. `modality` is not in the config of component `component`.
-            2. `component` is not in the config of components.
-            3. `with_respect_to` is not in the config of components.
-        """
-        self.analysis = AnalysisConfigMapping(
-            **self.yaml.get(Constants.CONFIG_FIELD_ANALYSIS)
-        )
-
-        for specific_analysis_config in chain(
+        # 8. Validate analysis entries
+        # 7a. clustering, differential_analysis, conditional_attribution_scores
+        for entry in chain(
             self.analysis.clustering,
             self.analysis.differential_analysis,
             self.analysis.conditional_attribution_scores,
         ):
-            modality = specific_analysis_config.modality
-            component = specific_analysis_config.component
-            has_component = False
-            has_modality = False
-            for component_config in self.components:
-                if component == component_config.name:
-                    has_component = True
-                    for modality_in_component in component_config.modality_names:
-                        if modality == modality_in_component:
-                            has_modality = True
-                            break
-                if has_modality and has_component:
-                    break
-            if not has_modality:
-                message = (
-                    f"'{modality}' is not in the config of component '{component}'."
-                )
-                raise KeyError(message)
-            if not has_component:
-                message = f"'{component}' is not in the config of components."
-                raise KeyError(message)
-
-        for visualize_embedding_config in self.analysis.visualize_embedding:
-            modality = visualize_embedding_config.modality
-            has_modality = False
-            for component_config in self.components:
-                for modality_in_component in component_config.modality_names:
-                    if modality == modality_in_component:
-                        has_modality = True
+            modality = entry.modality
+            component_name = entry.component
+            found_component = False
+            found_modality = False
+            for comp_cfg in self.components:
+                if component_name == comp_cfg.name:
+                    found_component = True
+                    if modality in comp_cfg.modality_names:
+                        found_modality = True
                         break
-            if not has_modality:
-                message = (
-                    f"'{modality}' is not in the config of component '{component}'."
-                )
-                raise KeyError(message)
-
-        for attribution_config in self.analysis.conditional_attribution_scores:
-            modality = attribution_config.modality
-            component = attribution_config.component
-            with_respect_to = attribution_config.with_respect_to
-            is_modality_in_component = False
-            is_wrt_in_component = False
-            has_modality = False
-            for component_config in self.components:
-                for wrt in with_respect_to:
-                    if wrt == component_config.name:
-                        is_wrt_in_component = True
-                if component == component_config.name:
-                    is_modality_in_component = True
-                    for modality_in_component in component_config.modality_names:
-                        if modality == modality_in_component:
-                            has_modality = True
-                            break
-                if has_modality and is_modality_in_component and is_wrt_in_component:
+                if found_modality and found_component:
                     break
+            if not found_modality:
+                raise KeyError(
+                    f"'{modality}' is not in the config of component "
+                    f"'{component_name}'."
+                )
+            if not found_component:
+                raise KeyError(
+                    f"'{component_name}' is not in the config of components."
+                )
 
-            if not has_modality:
-                message = (
-                    f"'{modality}' is not in the config of component '{component}'."
+        # 7b. visualize_embedding (modality only)
+        for viz in self.analysis.visualize_embedding:
+            found = any(
+                viz.modality in cfg.modality_names for cfg in self.components
+            )
+            if not found:
+                raise KeyError(
+                    f"'{viz.modality}' is not in the config of any component."
                 )
-                raise KeyError(message)
-            if not is_modality_in_component:
-                message = (
-                    f"'{component}' (modality) is not in the config of components."
+
+        # 7c. conditional_attribution_scores with_respect_to check
+        for attr in self.analysis.conditional_attribution_scores:
+            if attr.component not in comp_map:
+                raise KeyError(
+                    f"'{attr.component}' (modality) is not in the config "
+                    f"of components."
                 )
-                raise KeyError(message)
-            if not is_wrt_in_component:
-                message = f"'{with_respect_to}' (with_respect_to) is not in the config of components."
-                raise KeyError(message)
+            for wrt in attr.with_respect_to:
+                if wrt not in comp_map:
+                    raise KeyError(
+                        f"'{wrt}' (with_respect_to) is not in the config "
+                        f"of components."
+                    )
+
+        # 7d. z_hat clustering gate
+        for cluster_cfg in self.analysis.clustering:
+            if cluster_cfg.use_rep == "z_hat":
+                comp_name = cluster_cfg.component
+                if comp_name not in comp_map:
+                    raise KeyError(
+                        f"'{comp_name}' is not in the config of components."
+                    )
+                target = comp_map[comp_name]
+                if not target.reparameterize_z_hat:
+                    raise KeyError(
+                        f"'{comp_name}' in the config file {self.filename} "
+                        f"does not have reparameterize_z_hat set to True, "
+                        f"so z_hat clustering is not allowed."
+                    )
+                if len(target.conditioned_on_z_hat) == 0:
+                    raise KeyError(
+                        f"'{comp_name}' in the config file {self.filename} "
+                        f"has no parents in conditioned_on_z_hat, so z_hat "
+                        f"clustering is not allowed."
+                    )
+
+        return self

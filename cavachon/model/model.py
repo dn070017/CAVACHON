@@ -1,19 +1,19 @@
 import warnings
-from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import muon as mu
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from cavachon.config.config_mapping.component_config_mapping import (
-    ComponentConfigMapping,
-)
+from cavachon.config.component_config import ComponentConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
-from cavachon.losses.kl_divergence import KLDivergence
+from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
+from cavachon.losses.standard_kl_divergence import StandardKLDivergence
+from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.modules.components.component import Component
 from cavachon.utils.general_utils import GeneralUtils
 from cavachon.utils.tensor_utils import TensorUtils
@@ -30,7 +30,7 @@ class Model(tf.keras.Model):
     components: Mapping[str, Component]
         the components which makes up the model.
 
-    component_configs: List[ComponentConfigMapping]
+    component_configs: List[ComponentConfig]
         the config used to create the components in the model.
 
     """
@@ -40,7 +40,7 @@ class Model(tf.keras.Model):
         inputs: Mapping[Any, tf.keras.Input],
         outputs: Mapping[Any, tf.Tensor],
         components: Mapping[str, Component],
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         name: str = "model",
         **kwargs,
     ):
@@ -66,7 +66,7 @@ class Model(tf.keras.Model):
         components: Mapping[str, Component]
             the components which makes up the model.
 
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         name: str, optional:
@@ -78,7 +78,7 @@ class Model(tf.keras.Model):
         """
         super().__init__(inputs=inputs, outputs=outputs, name=name)
         self.components: List[Component] = components
-        self.component_configs: List[ComponentConfigMapping] = component_configs
+        self.component_configs: List[ComponentConfig] = component_configs
 
     @classmethod
     def setup_inputs(
@@ -142,14 +142,14 @@ class Model(tf.keras.Model):
 
     @classmethod
     def setup_components(
-        cls, component_configs: List[ComponentConfigMapping], **kwargs
+        cls, component_configs: List[ComponentConfig], **kwargs
     ) -> Tuple:
         """Builder function for setting up components. Developers can
         overwrite this function to create custom Model.
 
         Parameters
         ----------
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         kwargs: Mapping[str, Any]
@@ -179,27 +179,26 @@ class Model(tf.keras.Model):
         n_vars_batch_effect = dict()
         for component_config in component_configs:
             modality_names = modality_names.union(
-                set(
-                    component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-                    )
-                )
+                set(component_config.modality_names)
             )
-            distributions.update(
-                component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
-                )
-            )
-            n_vars.update(component_config.get(Constants.CONFIG_FIELD_COMPONENT_N_VARS))
-            n_vars_batch_effect.update(component_config.get("n_vars_batch_effect"))
+            distributions.update(component_config.distribution_names)
+            n_vars.update(component_config.n_vars)
+            n_vars_batch_effect.update(component_config.n_vars_batch_effect)
 
-            component_name = component_config.get("name")
+            component_name = component_config.name
             conditional_dims_config = Model.prepare_conditional_dims_config(
                 component_config, components
             )
-            component_config.update(conditional_dims_config)
+            component_config.z_conditional_dims = conditional_dims_config.get(
+                "z_conditional_dims"
+            )
+            component_config.z_hat_conditional_dims = conditional_dims_config.get(
+                "z_hat_conditional_dims"
+            )
 
-            components.setdefault(component_name, Component.make(**component_config))
+            components.setdefault(
+                component_name, Component.make(**component_config.model_dump())
+            )
 
         return (
             components,
@@ -214,7 +213,7 @@ class Model(tf.keras.Model):
         cls,
         inputs: Mapping[Any, tf.keras.Input],
         components: List[Component],
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         **kwargs,
     ) -> Mapping[Any, tf.Tensor]:
         """Builder function for setting up outputs. Developers can
@@ -228,7 +227,7 @@ class Model(tf.keras.Model):
         components: Mapping[str, Component]
             components created by setup_components().
 
-        component_configs: List[ComponentConfigMapping]
+        component_configs: List[ComponentConfig]
             the config used to create the components in the model.
 
         kwargs: Mapping[str, Any]
@@ -245,7 +244,7 @@ class Model(tf.keras.Model):
         z_hat_conditional = dict()
         outputs = dict()
         for component_config in component_configs:
-            component_name = component_config.get("name")
+            component_name = component_config.name
             component = components.get(component_name)
             component_inputs = Model.prepare_component_inputs(
                 inputs,
@@ -272,7 +271,7 @@ class Model(tf.keras.Model):
     @classmethod
     def make(
         cls,
-        component_configs: List[ComponentConfigMapping],
+        component_configs: List[ComponentConfig],
         name: str = "cavachon",
         **kwargs,
     ) -> tf.keras.Model:
@@ -351,8 +350,6 @@ class Model(tf.keras.Model):
         if issubclass(type(x), mu.MuData):
             outputs = dict()
             use_which_component = dict()
-            field_save_x = Constants.CONFIG_FIELD_COMPONENT_MODALITY_SAVE_X
-            field_save_z = Constants.CONFIG_FIELD_COMPONENT_MODALITY_SAVE_Z
             save_x = dict()
             save_z = dict()
             save_z_hat = dict()
@@ -360,28 +357,26 @@ class Model(tf.keras.Model):
                 component_name = component_config.name
                 outputs.setdefault(f"{component_name}_z", list())
                 outputs.setdefault(f"{component_name}_z_hat", list())
-                modality_names = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_N_VARS
-                ).keys()
+                modality_names = component_config.n_vars.keys()
                 predict_x = False
 
                 for modality_name in modality_names:
-                    if component_config.get(field_save_x).get(modality_name):
+                    if component_config.save_x.get(modality_name):
                         predict_x = True
 
                     use_which_component.setdefault(modality_name, [])
                     use_which_component.get(modality_name).append(component_name)
                     save_x.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_x).get(modality_name),
+                        component_config.save_x.get(modality_name),
                     )
                     save_z.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_z).get(modality_name),
+                        component_config.save_z.get(modality_name),
                     )
                     save_z_hat.setdefault(
                         f"{component_name}_{modality_name}",
-                        component_config.get(field_save_z).get(modality_name),
+                        component_config.save_z.get(modality_name),
                     )
                     if predict_x:
                         outputs.setdefault(
@@ -417,7 +412,12 @@ class Model(tf.keras.Model):
         else:
             return super.__predict__(x=x, batch_size=batch_size, **kwargs)
 
-    def compile(self, **kwargs) -> None:
+    def compile(
+        self,
+        standard_kl_weights: Optional[Mapping[str, float]] = None,
+        gmm_kl_weights: Optional[Mapping[str, float]] = None,
+        **kwargs,
+    ) -> None:
         """Compile the model before training. Note that the 'metrics'
         will be ignored in Model because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
@@ -425,41 +425,108 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
+        standard_kl_weights: Mapping[str, float], optional
+            per-component weights for standard N(0,1) KL divergence.
+            Components with weight > 0 get a standard KL loss. A weight
+            of 0 means the loss is not created for that component.
+            Defaults to None (no standard KL for any component).
+
+        gmm_kl_weights: Mapping[str, float], optional
+            per-component weights for GMM KL divergence. Components
+            with weight > 0 get a GMM KL loss. A weight of 0 means the
+            loss is not created for that component. When both
+            standard_kl_weights and gmm_kl_weights are absent for a
+            component, defaults to GMM KL with weight 1.0.
+
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
 
         """
+        standard_kl_weights = standard_kl_weights or {}
+        gmm_kl_weights = gmm_kl_weights or {}
+
+        # Scheduler-facing index: maps component name → ProgressiveScaler
+        # so the scheduler can call pin_to / activate / increment directly.
+        # Populated below from the loss's .weight attribute; NOT used for
+        # determining which losses to create or what scale to initialize.
+        if not hasattr(self, "_standard_kl_weights"):
+            self._standard_kl_weights = {}
+        if not hasattr(self, "_gmm_kl_weights"):
+            self._gmm_kl_weights = {}
+
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
 
         if "loss" not in kwargs:
-            loss = dict()
+            loss = getattr(self, "loss", None)
+            loss = loss if isinstance(loss, dict) else {}
             for component_config in self.component_configs:
-                component_name = component_config.get("name")
-                kl_divergence_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
-                )
-                loss.setdefault(
-                    kl_divergence_name,
-                    KLDivergence(
-                        loss_weights.get(kl_divergence_name, 1.0),
-                        name=kl_divergence_name,
-                    ),
-                )
+                component_name = component_config.name
 
-                for modality_name in component_config.get("modality_names"):
-                    nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                    distribution_names = component_config.get(
-                        Constants.CONFIG_FIELD_COMPONENT_MODALITY_DIST_NAMES
+                standard_w = standard_kl_weights.get(component_name, 0.0)
+                gmm_w = gmm_kl_weights.get(component_name, 0.0)
+
+                has_standard = component_name in standard_kl_weights
+                has_gmm = component_name in gmm_kl_weights
+
+                # Default: if neither dict specifies this component,
+                # use GMM KL at 1.0 (backwards compatible with develop)
+                if not has_standard and not has_gmm:
+                    has_gmm = True
+                    gmm_w = 1.0
+
+                if has_standard:
+                    loss.setdefault(
+                        f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
+                        StandardKLDivergence(
+                            weight=standard_w,
+                            name=f"{component_name}_"
+                            f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
+                        ),
                     )
+                    # scheduler index
+                    self._standard_kl_weights[component_name] = loss[
+                        f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
+                    ].weight
+
+                if has_gmm:
+                    loss.setdefault(
+                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
+                        GMMKLDivergence(
+                            weight=gmm_w,
+                            name=f"{component_name}_"
+                            f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
+                        ),
+                    )
+                    # scheduler index
+                    self._gmm_kl_weights[component_name] = loss[
+                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
+                    ].weight
+
+                # scheduler index (per-component, per-modality ProgressiveScaler)
+                if not hasattr(self, "_data_loss_weights"):
+                    self._data_loss_weights = {}
+                if component_name not in self._data_loss_weights:
+                    self._data_loss_weights[component_name] = {}
+                distribution_names = component_config.distribution_names
+                for modality_name in component_config.modality_names:
+                    nldl_name = (
+                        f"{component_name}_{modality_name}_"
+                        f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
+                    )
+                    weight = loss_weights.pop(nldl_name, 1.0)
                     loss.setdefault(
                         nldl_name,
                         NegativeLogDataLikelihood(
                             distribution_names.get(modality_name),
-                            loss_weights.get(nldl_name, 1.0),
+                            weight,
                             name=nldl_name,
                         ),
                     )
+                    # scheduler index
+                    self._data_loss_weights[component_name][modality_name] = loss[
+                        nldl_name
+                    ].weight
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -504,31 +571,40 @@ class Model(tf.keras.Model):
             y_pred = dict()
 
             for component_config in self.component_configs:
-                component_name = component_config.get("name")
+                component_name = component_config.name
+
                 kl_divergence_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_KL_POSTFIX}"
-                )
-                component = self.components.get(component_name)
-
-                modality_names = component_config.get(
-                    Constants.CONFIG_FIELD_COMPONENT_MODALITY_NAMES
-                )
-                y_true.setdefault(
-                    kl_divergence_name,
-                    results.get(
-                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
-                    ),
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
                 )
 
+                modality_names = component_config.modality_names
+
+                # Get the prior parameters and z data (same for all phases)
+                prior_params = results.get(
+                    f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS}"
+                )
                 z_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z}"
                 z_params_key = f"{component_name}_{Constants.MODEL_OUTPUTS_Z_PARAMS}"
-
-                y_pred.setdefault(
-                    kl_divergence_name,
-                    tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                        [results.get(z_key), results.get(z_params_key)]
-                    ),
+                z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                    [results.get(z_key), results.get(z_params_key)]
                 )
+                # Check which KL losses are compiled
+                standard_kl_name = (
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
+                )
+                gmm_kl_name = f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
+
+                if standard_kl_name in self.loss and gmm_kl_name in self.loss:
+                    # PHASE 2: Both losses active
+                    y_true.setdefault(standard_kl_name, prior_params)
+                    y_pred.setdefault(standard_kl_name, z_concat)
+                    y_true.setdefault(gmm_kl_name, prior_params)
+                    y_pred.setdefault(gmm_kl_name, z_concat)
+                else:
+                    # PHASE 1 or 3: Single loss (standard name)
+                    y_true.setdefault(kl_divergence_name, prior_params)
+                    y_pred.setdefault(kl_divergence_name, z_concat)
+
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
@@ -541,20 +617,35 @@ class Model(tf.keras.Model):
                         ),
                     )
 
-            loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            t = self.components["ATAC"].z_prior_parameterizer(tf.ones((1, 1)))[:, 1:]
-            print(tf.split(t, 2, 1)[0])
-            gradients = tape.gradient(loss, self.trainable_variables)
-            # print(gradients)
+            #loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
+            loss_values = []
+            for key in y_true:
+                loss_fn = self.loss.get(key)
+                if loss_fn is not None:
+                    loss_values.append(loss_fn(y_true[key], y_pred[key]))
+
+            loss = tf.add_n(loss_values)
+
+            if self.losses:
+                loss += tf.add_n(self.losses)
+            
+            trainable = self.trainable_variables
+            gradients = tape.gradient(loss, trainable)
             gradients = TensorUtils.remove_nan_gradients(gradients)
-            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+            self.optimizer.apply_gradients(zip(gradients, trainable))
 
             loss_metrics = {"loss": loss}
             for key in y_true:
                 loss_fn = self.loss.get(key)
                 if loss_fn:
-                    loss_value = loss_fn(y_true[key], y_pred[key])
-                    loss_metrics[key] = loss_value
+                    if hasattr(loss_fn, "weight") and isinstance(
+                        loss_fn.weight, ProgressiveScaler
+                    ):
+                        weighted_loss = loss_fn(y_true[key], y_pred[key])
+                        weight_scalar = loss_fn.weight(tf.ones(()))
+                        loss_metrics[key] = weighted_loss / weight_scalar
+                    else:
+                        loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 
         return loss_metrics
 
@@ -649,7 +740,7 @@ class Model(tf.keras.Model):
 
     @staticmethod
     def prepare_conditional_dims_config(
-        component_config: ComponentConfigMapping, components: Mapping[str, Component]
+        component_config: ComponentConfig, components: Mapping[str, Component]
     ) -> Dict[str, int]:
         """Prepare the config for conditional dimensions used in
         `setup_components`. This function should not be used directly
@@ -657,7 +748,7 @@ class Model(tf.keras.Model):
 
         Parameters
         ----------
-        component_config: List[ComponentConfigMapping]
+        component_config: List[ComponentConfig]
             the config used to create the current component.
 
         components: Mapping[str, Component]
@@ -675,7 +766,9 @@ class Model(tf.keras.Model):
 
         conditionals = Model.prepare_conditionals()
         for config_key, dims_key in conditionals:
-            conditional_component_names = component_config.get(config_key, [])
+            conditional_component_names = (
+                getattr(component_config, config_key, None) or []
+            )
             if len(conditional_component_names) == 0:
                 conditional_dims_config.setdefault(dims_key, None)
             else:
@@ -690,7 +783,7 @@ class Model(tf.keras.Model):
     @staticmethod
     def prepare_component_inputs(
         batch: Mapping[str, tf.Tensor],
-        component_config: ComponentConfigMapping,
+        component_config: ComponentConfig,
         target_component: str,
         components: Mapping[str, Component],
         z_conditional: Mapping[str, tf.Tensor] = dict(),
@@ -703,7 +796,7 @@ class Model(tf.keras.Model):
         batch: Mapping[str, tf.Tensor]
             batch inputs.
 
-        component_config: List[ComponentConfigMapping]
+        component_config: List[ComponentConfig]
             the config used to create the current component.
 
         target_component: str
@@ -746,7 +839,9 @@ class Model(tf.keras.Model):
 
         for input_key, config_key, tensor_dict in conditionals:
             conditional_tensors = []
-            conditional_component_names = component_config.get(config_key, [])
+            conditional_component_names = (
+                getattr(component_config, config_key, None) or []
+            )
             if len(conditional_component_names) != 0:
                 for conditional_component_name in conditional_component_names:
                     conditional_tensors.append(
@@ -758,3 +853,262 @@ class Model(tf.keras.Model):
                 component_inputs.setdefault(input_key, conditional_tensors)
 
         return component_inputs
+
+    def encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        components: Optional[List[str]] = None,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Encode requested components into latent outputs.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch.
+
+        components: List[str], optional
+            Component names to encode. Defaults to all components.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``z_parameters`` and ``z`` outputs keyed by
+            component name.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown component names are requested.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
+
+        outputs = {
+            Constants.MODEL_OUTPUTS_Z_PARAMS: dict(),
+            Constants.MODEL_OUTPUTS_Z: dict(),
+        }
+        for component_config in self.component_configs:
+            component_name = component_config.name
+            if component_name not in requested_components:
+                continue
+
+            component_input_config = component_config.model_dump()
+            component_input_config.update(
+                {
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: [],
+                }
+            )
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_input_config,
+                component_name,
+                self.components,
+                {},
+                {},
+            )
+            component = self.components.get(component_name)
+            component_outputs = component.encode(
+                component_batch, training=training and component.trainable
+            )
+            outputs[Constants.MODEL_OUTPUTS_Z_PARAMS][component_name] = (
+                component_outputs.get(Constants.MODEL_OUTPUTS_Z_PARAMS)
+            )
+            outputs[Constants.MODEL_OUTPUTS_Z][component_name] = component_outputs.get(
+                Constants.MODEL_OUTPUTS_Z
+            )
+
+        return outputs
+
+    def hierarchical_encode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z: Mapping[str, tf.Tensor],
+        z_hat_seed: Optional[Mapping[str, tf.Tensor]] = None,
+        components: Optional[List[str]] = None,
+        strict: bool = True,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Hierarchically encode requested latents into z_hat.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch used for conditional inputs.
+
+        z: Mapping[str, tf.Tensor]
+            Component-keyed latent samples from ``encode``.
+
+        z_hat_seed: Mapping[str, tf.Tensor], optional
+            Pre-seeded ``z_hat`` values. Defaults to ``{}``.
+
+        components: List[str], optional
+            Component names to process. Defaults to all components.
+
+        strict: bool
+            If ``True``, missing parent ``z`` or ``z_hat`` raises
+            ``ValueError``. If ``False``, missing parents are skipped.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``z_hat`` outputs keyed by component name.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown components, missing ``z``, or missing
+            required parent values are requested in strict mode.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
+
+        accumulated_z_hat = dict(z_hat_seed or {})
+        outputs = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
+        for component_config in self.component_configs:
+            component_name = component_config.name
+            if component_name not in requested_components:
+                continue
+
+            if component_name not in z:
+                raise ValueError(f"Missing z for component '{component_name}'.")
+
+            z_conditional = dict()
+            for parent_name in component_config.conditioned_on_z:
+                if parent_name in z:
+                    z_conditional[parent_name] = z.get(parent_name)
+                elif strict:
+                    raise ValueError(
+                        "Missing required parent z for component "
+                        f"'{component_name}': '{parent_name}'."
+                    )
+
+            z_hat_conditional = dict()
+            for parent_name in component_config.conditioned_on_z_hat:
+                if parent_name in accumulated_z_hat:
+                    z_hat_conditional[parent_name] = accumulated_z_hat.get(parent_name)
+                elif strict:
+                    raise ValueError(
+                        "Missing required parent z_hat for component "
+                        f"'{component_name}': '{parent_name}'."
+                    )
+
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_config,
+                component_name,
+                self.components,
+                z_conditional,
+                z_hat_conditional,
+            )
+            component = self.components.get(component_name)
+            component_outputs = component.hierarchical_encode(
+                component_batch,
+                z=z.get(component_name),
+                training=training and component.trainable,
+            )
+            component_z_hat = component_outputs.get(Constants.MODEL_OUTPUTS_Z_HAT)
+            accumulated_z_hat[component_name] = component_z_hat
+            outputs[Constants.MODEL_OUTPUTS_Z_HAT][component_name] = component_z_hat
+
+        return outputs
+
+    def decode(
+        self,
+        batch: Mapping[str, tf.Tensor],
+        z_hat: Mapping[str, tf.Tensor],
+        components: Optional[List[str]] = None,
+        strict: bool = True,
+        training: bool = False,
+    ) -> Mapping[str, Mapping[str, tf.Tensor]]:
+        """Decode requested component ``z_hat`` tensors into ``x`` params.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Raw input batch used for conditional inputs.
+
+        z_hat: Mapping[str, tf.Tensor]
+            Component-keyed hierarchical latents. Pass ``z_hat`` here,
+            not raw ``z``.
+
+        components: List[str], optional
+            Component names to decode. Defaults to all components.
+
+        strict: bool
+            If ``True``, missing ``z_hat`` raises ``ValueError``. If
+            ``False``, missing components are skipped.
+
+        training: bool
+            Whether to run the sublayers in training mode.
+
+        Returns
+        -------
+        Mapping[str, Mapping[str, tf.Tensor]]
+            Mapping with ``x_parameters`` outputs keyed by component and
+            modality.
+
+        Raises
+        ------
+        ValueError
+            Raised when unknown components or required ``z_hat`` values
+            are missing.
+
+        """
+        requested_components = set(components or self.components.keys())
+        unknown_components = requested_components.difference(self.components.keys())
+        if unknown_components:
+            raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
+
+        outputs = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
+        for component_config in self.component_configs:
+            component_name = component_config.name
+            if component_name not in requested_components:
+                continue
+
+            component_z_hat = z_hat.get(component_name)
+            if component_z_hat is None:
+                if strict:
+                    raise ValueError(f"Missing z_hat for component '{component_name}'.")
+                continue
+
+            component_input_config = component_config.model_dump()
+            component_input_config.update(
+                {
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z: [],
+                    Constants.CONFIG_FIELD_COMPONENT_CONDITION_Z_HAT: [],
+                }
+            )
+            component_batch = Model.prepare_component_inputs(
+                batch,
+                component_input_config,
+                component_name,
+                self.components,
+                {},
+                {},
+            )
+            component = self.components.get(component_name)
+            component_outputs = component.decode(
+                component_batch,
+                component_z_hat,
+                training=training and component.trainable,
+            )
+            for key, value in component_outputs.items():
+                outputs[Constants.MODEL_OUTPUTS_X_PARAMS][f"{component_name}_{key}"] = (
+                    value
+                )
+
+        return outputs
