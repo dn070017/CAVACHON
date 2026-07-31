@@ -104,6 +104,15 @@ class ClusterAnalysis:
             outputs = self.model(batch_data, training=False)
             z_all.append(outputs[f"{component}_z"].numpy())
         z_all = np.vstack(z_all)
+        
+        # --- prior vs data check ---
+        print(f"[Prior vs Data] {component}")
+        print(f"  data     mean: {np.round(z_all.mean(axis=0), 3)}")
+        print(f"  data      var: {np.round(z_all.var(axis=0), 3)}")
+        print(f"  prior mu range: {np.round(params['mu'].min(axis=0), 2)} .. "
+              f"{np.round(params['mu'].max(axis=0), 2)}")
+        print(f"  prior mean sigma2: {np.round(params['sigma2'].mean(axis=0), 3)}")
+        #-----
 
         logpy_z = self._score_and_cluster(
             z_all,
@@ -115,6 +124,7 @@ class ClusterAnalysis:
             f"logpy_z_{component}",
             min_n_obs,
             batch_size,
+            component = component, #added
         )
 
         return logpy_z
@@ -150,6 +160,28 @@ class ClusterAnalysis:
             "sigma2": scale**2,
             "K": n_clusters,
             "D": n_dims,
+        }
+    
+    def _filter_priors(self, params, component):      # ← no @staticmethod
+        """Keep only priors that survived z-space clustering."""
+        survivors = getattr(self, "surviving_priors", {}).get(component)
+        if survivors is None:
+            warnings.warn(
+                f"No surviving-prior record for '{component}'. Using all "
+                f"{params['K']} priors. Ensure z-space clustering for "
+                f"'{component}' is configured BEFORE the z_hat entry.",
+                RuntimeWarning,
+            )
+            return params
+        pi = params["pi"][survivors]
+        pi = pi / pi.sum()
+        print(f"[Prior Filter] {component}: {params['K']} -> {len(survivors)} priors")
+        return {
+            "pi": pi,
+            "mu": params["mu"][survivors],
+            "sigma2": params["sigma2"][survivors],
+            "K": len(survivors),
+            "D": params["D"],
         }
 
     @staticmethod
@@ -217,8 +249,8 @@ class ClusterAnalysis:
         """
         n_clusters = len(pi)
 
-        if max_k is not None and n_clusters <= max_k:
-            return mu, sigma2, pi
+        #if max_k is not None and n_clusters <= max_k:
+        #    return mu, sigma2, pi
 
         diff = mu[:, np.newaxis, :] - mu[np.newaxis, :, :]
         diff_sq = diff ** 2
@@ -329,6 +361,7 @@ class ClusterAnalysis:
         logpy_key: str,
         min_n_obs: int,
         batch_size: int = 128,
+        component = None, # NEW
     ):
         """Score data against GMM, apply Bayes theorem, remove small clusters.
 
@@ -369,9 +402,29 @@ class ClusterAnalysis:
             logpy_z[start:end] = (logpy + logpz_y - logpz).numpy()
 
         cluster = tf.argmax(logpy_z, axis=-1).numpy()
-        logpy_z, cluster_final, final_labels = self._remove_small_clusters(
+        logpy_z, cluster_final, final_labels, surviving_ids = self._remove_small_clusters(
             logpy_z, cluster, min_n_obs
         )
+        
+        # --- weight vs size diagnostic ---
+        pi = np.exp(logpy)
+        counts = np.bincount(cluster_final, minlength=len(surviving_ids))
+        print(f"[Weight vs Size] {cluster_key}  (min_n_obs={min_n_obs})")
+        for k, orig in enumerate(surviving_ids):
+            print(f"    Cluster {k:03d}  <- idx {orig:3d}   weight={pi[orig]:.5f}   n={counts[k]}")
+        removed = sorted(set(range(len(pi))) - set(surviving_ids.tolist()))
+        if removed:
+            print("    removed by min_n_obs:")
+            for idx in removed:
+                print(f"      idx {idx:3d}   weight={pi[idx]:.5f}")
+                
+        if component is not None:                        # NEW
+            if not hasattr(self, "surviving_priors"):
+                self.surviving_priors = {}
+            self.surviving_priors[component] = surviving_ids
+            self.mdata.mod[modality].uns[f"surviving_priors_{component}"] = surviving_ids
+            print(f"[Prior Survival] {component}: kept {len(surviving_ids)} priors, "
+                  f"original indices {surviving_ids.tolist()}")
 
         self.mdata.mod[modality].obs[cluster_key] = final_labels
         self.mdata.mod[modality].obsm[logpy_key] = logpy_z
@@ -411,7 +464,11 @@ class ClusterAnalysis:
             offset += dim
         W_child_raw = W_b[offset:, :]
         W_child_effective = W_r @ W_child_raw
-        W_child_effective_sigma2 = (W_r**2) @ (W_child_raw**2)
+        W_child_effective_sigma2 = (W_r @ W_child_raw) ** 2 # before:(W_r**2) @ (W_child_raw**2)
+        
+        #correct_sigma2 = (W_r @ W_child_raw) ** 2 #diagnostic
+        #ratio = W_child_effective_sigma2.sum() / correct_sigma2.sum() #diagnostic
+        #print(f"[Variance Check] child variance matrix, current/correct = {ratio:.3f}") #diagnostic
 
         cluster_ranges = [range(p["K"]) for p in parent_params] + [
             range(child_params["K"])
@@ -465,6 +522,8 @@ class ClusterAnalysis:
             ``cluster_final`` contains contiguous integer labels and
             ``final_labels`` are formatted ``"Cluster NNN"`` strings.
         """
+        original_ids = np.arange(logpy_z.shape[1]) # added
+        
         cluster_labels = [f"Cluster {x:03d}" for x in cluster]
         temp_series = pd.Series(cluster_labels)
         _keep = temp_series.value_counts()
@@ -476,6 +535,7 @@ class ClusterAnalysis:
             if len(keep) == 0:
                 break
             logpy_z = logpy_z[:, keep]
+            original_ids = original_ids[keep]           # NEW - same permutation
             cluster = tf.argmax(logpy_z, axis=-1).numpy()
             cluster_labels = [f"Cluster {x:03d}" for x in cluster]
             temp_series = pd.Series(cluster_labels)
@@ -485,7 +545,8 @@ class ClusterAnalysis:
         remap = {old: new for new, old in enumerate(unique_clusters)}
         cluster_final = np.array([remap[c] for c in cluster])
         final_labels = [f"Cluster {x:03d}" for x in cluster_final]
-        return logpy_z, cluster_final, final_labels
+        surviving_ids = original_ids[unique_clusters]   # NEW
+        return logpy_z, cluster_final, final_labels, surviving_ids # added surv ids
 
     @staticmethod
     def _label_small_clusters(
@@ -608,10 +669,15 @@ class ClusterAnalysis:
             parent_parameterizer = self.model.components[
                 parent_name
             ].z_prior_parameterizer
-            parent_params.append(self._extract_gmm_parameters(parent_parameterizer))
+            p = self._extract_gmm_parameters(parent_parameterizer) # new
+            parent_params.append(self._filter_priors(p, parent_name)) # new
+            #parent_params.append(self._extract_gmm_parameters(parent_parameterizer))
 
         child_parameterizer = comp.z_prior_parameterizer
-        child_params = self._extract_gmm_parameters(child_parameterizer)
+        child_params = self._filter_priors(
+            self._extract_gmm_parameters(child_parameterizer), component
+        )  #new
+        #child_params = self._extract_gmm_parameters(child_parameterizer)
 
         mu_zhat, sigma2_zhat, pi_zhat = self._recombine_gmm_parameters(
             child_params, parent_params, comp.hierarchical_encoder
@@ -623,6 +689,9 @@ class ClusterAnalysis:
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
         print(f"  Max weight: {np.max(pi_zhat):.4f}")
+        print(f"  Bottom 10 weights: {np.round(np.sort(pi_zhat)[:10], 5)}")
+        print(f"  All weights sorted (post-merge): {np.round(np.sort(pi_zhat)[::-1], 5)}")
+        print(f"  All weights UNSORTED (post-merge): {np.round(pi_zhat, 5)}")
 
         mu_zhat, sigma2_zhat, pi_zhat = self._merge_similar_gmm_components(
             mu_zhat, sigma2_zhat, pi_zhat, bc_threshold, max_k
@@ -636,6 +705,23 @@ class ClusterAnalysis:
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
         print(f"  Max weight: {np.max(pi_zhat):.4f}")
+        
+        # -- diagnostic---
+        mix_mean = np.sum(pi_zhat[:, None] * mu_zhat, axis=0)
+        mix_var = (np.sum(pi_zhat[:, None] * (sigma2_zhat + mu_zhat**2), axis=0)
+                   - mix_mean**2)
+
+        z_hat_emp = self.mdata.mod[modality].obsm[f"z_hat_{component}"]
+        print(f"  data     mean/dim: {np.round(z_hat_emp.mean(axis=0), 3)}")
+        print(f"  mixture  mean/dim: {np.round(mix_mean, 3)}")
+        print(f"  data      var/dim: {np.round(z_hat_emp.var(axis=0), 3)}")
+        print(f"  mixture   var/dim: {np.round(mix_var, 3)}")
+
+        # how far is each cluster mean from the nearest real sample?
+        d = np.linalg.norm(mu_zhat[:, None, :] - z_hat_emp[None, :, :], axis=2)
+        print(f"  cluster-mean -> nearest-sample distance: "
+              f"{np.round(d.min(axis=1), 3)}")
+        # --end---
 
         dist_z, dist_z_y, logpy = self._build_gmm_distribution(
             mu_zhat, sigma2_zhat, pi_zhat
