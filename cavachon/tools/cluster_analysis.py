@@ -706,28 +706,60 @@ class ClusterAnalysis:
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
         print(f"  Max weight: {np.max(pi_zhat):.4f}")
         
-        # -- diagnostic---
+        z_hat_all = self.mdata.mod[modality].obsm[f"z_hat_{component}"]
+        
+        # -- geometry diagnostics---
         mix_mean = np.sum(pi_zhat[:, None] * mu_zhat, axis=0)
         mix_var = (np.sum(pi_zhat[:, None] * (sigma2_zhat + mu_zhat**2), axis=0)
                    - mix_mean**2)
-
-        z_hat_emp = self.mdata.mod[modality].obsm[f"z_hat_{component}"]
-        print(f"  data     mean/dim: {np.round(z_hat_emp.mean(axis=0), 3)}")
+        print(f"  data     mean/dim: {np.round(z_hat_all.mean(axis=0), 3)}")
         print(f"  mixture  mean/dim: {np.round(mix_mean, 3)}")
-        print(f"  data      var/dim: {np.round(z_hat_emp.var(axis=0), 3)}")
+        print(f"  data      var/dim: {np.round(z_hat_all.var(axis=0), 3)}")
         print(f"  mixture   var/dim: {np.round(mix_var, 3)}")
 
         # how far is each cluster mean from the nearest real sample?
-        d = np.linalg.norm(mu_zhat[:, None, :] - z_hat_emp[None, :, :], axis=2)
+        d = np.linalg.norm(mu_zhat[:, None, :] - z_hat_all[None, :, :], axis=2)
         print(f"  cluster-mean -> nearest-sample distance: "
               f"{np.round(d.min(axis=1), 3)}")
-        # --end---
-
+              
+        # --- build mixture with product weights (needed for EM densities)
         dist_z, dist_z_y, logpy = self._build_gmm_distribution(
             mu_zhat, sigma2_zhat, pi_zhat
         )
+        
+        # --- estimate mixture weights by EM ---------------------------
+        # Component means and variances stay analytic (derived through the
+        # hierarchical transformation).  Only the mixing proportions are
+        # re-estimated, because the product pi_parent * pi_child assumes an
+        # independence that the conditional architecture does not satisfy.
+        z_tf = tf.convert_to_tensor(z_hat_all, dtype=tf.float32)
+        log_dens = dist_z_y.log_prob(tf.expand_dims(z_tf, -2)).numpy()
 
-        z_hat_all = self.mdata.mod[modality].obsm[f"z_hat_{component}"]
+        pi_est = pi_zhat.copy()
+        n_em_iter = 0
+        for n_em_iter in range(1, 501):
+            logr = np.log(pi_est + 1e-12) + log_dens
+            logr -= logr.max(axis=1, keepdims=True)
+            r = np.exp(logr)
+            r /= r.sum(axis=1, keepdims=True)
+            pi_new = r.sum(axis=0) / r.shape[0]
+            converged = np.max(np.abs(pi_new - pi_est)) < 1e-6
+            pi_est = pi_new
+            if converged:
+                break
+
+        n_alive = int(np.sum(pi_est > 1e-4))
+        print(f"[Integrated Clustering] EM weight estimation: "
+              f"{n_em_iter} iterations"
+              f"{'' if converged else ' (hit iteration cap)'}")
+        print(f"  product weights:   {np.round(pi_zhat, 4)}")
+        print(f"  estimated weights: {np.round(pi_est, 4)}")
+        print(f"  clusters with non-negligible weight: {n_alive} / {n_merged}")
+
+        # --- rebuild mixture with the estimated weights ---------------
+        dist_z, dist_z_y, logpy = self._build_gmm_distribution(
+            mu_zhat, sigma2_zhat, pi_est
+        )
 
         logpy_zhat = self._score_and_cluster(
             z_hat_all,
@@ -742,7 +774,7 @@ class ClusterAnalysis:
         )
 
         return logpy_zhat
-
+        
     def compute_neighbors_with_same_annotations(
         self,
         modality: str,
