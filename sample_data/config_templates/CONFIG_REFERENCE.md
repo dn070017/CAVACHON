@@ -543,6 +543,11 @@ The configs for the components in the model. See also [Modalities (in Component)
   * defaults: uses `training.enable_kmeans_init` (default `True`) if not set here.
   * type: `bool`.
   * description: whether to run k-means initialization for the GMM priors of this component before GMM training.
+* `learn_z_hat_priors`:
+  * required: `False`.
+  * defaults: uses `training.learn_z_hat_priors` (default `False`) if not set here.
+  * type: `bool`.
+  * description: whether to learn a direct diagonal GMM density over this component's deterministic `z_hat`. When enabled, a GMM with `n_latent_priors` components is trained on `z_hat`. The loss is a direct density (`-log p_GMM(z_hat)`); there is no sampler, posterior, or KL term. Overrides the training-level default. The loss weight is 0.0 during parent annealing, ramps with the GMM KL crossfade during KL annealing, and stays at 1.0 during regular GMM training. When disabled (default), `z_hat` clustering falls back to the post-hoc analytical `compute_integrated_cluster_log_probability` method.
 * `kl_annealing_ratio`:
   * required: `False`.
   * defaults: uses `training.kl_annealing_ratio` (default `[0.5, 0.2, 0.3]`) if not set here.
@@ -629,6 +634,11 @@ The configs for the training process. See also [Optimizer](#optimizer).
   * defaults: `True`.
   * type: `bool`.
   * description: default flag for k-means initialization. Can be overridden per component with `components[].enable_kmeans_init`.
+* `learn_z_hat_priors`:
+  * required: `False`.
+  * defaults: `False`.
+  * type: `bool`.
+  * description: default flag for learning a direct GMM density over the deterministic `z_hat` representation. When enabled, a diagonal GMM with `n_latent_priors` components is trained on the observed `z_hat` values. The density loss weight is 0.0 during parent annealing, ramps with the GMM KL crossfade during KL annealing, and stays at 1.0 during regular GMM training. This is a direct density loss (`-log p_GMM(z_hat)`), not a z_hat sampler or KL term. The learned prior is used for scoring during `z_hat` analysis when enabled; otherwise the legacy post-hoc analytical `compute_integrated_cluster_log_probability` method is used. Can be overridden per component with `components[].learn_z_hat_priors`.
 * `kl_annealing_ratio`:
   * required: `False`.
   * defaults: `[0.5, 0.2, 0.3]`.

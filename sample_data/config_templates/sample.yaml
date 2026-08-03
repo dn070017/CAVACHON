@@ -1,0 +1,89 @@
+# Sample configuration demonstrating learn_z_hat_priors opt-in
+#
+# The RNA component below sets learn_z_hat_priors: True explicitly.
+# The ATAC component omits it, so it resolves to the training default (False).
+# See CONFIG_REFERENCE.md for the full field specification.
+
+io:
+  checkpointdir: ${CHECKPOINT DIRECTORY}
+  datadir: ${DATASET DIRECTORY}
+  outdir: ${OUTPUT DIRECTORY}
+
+modalities:
+  - name: RNA
+    type: RNA
+    h5ad: ${RNA H5AD File}
+  - name: ATAC
+    type: ATAC
+    h5ad: ${ATAC H5AD File}
+
+model:
+  name: CAVACHON
+  load_weights: False
+  save_weights: True
+  components:
+    - name: ATAC
+      modalities:
+        - name: ATAC
+    - name: RNA
+      conditioned_on_z_hat:
+        - ATAC
+      modalities:
+        - name: RNA
+      learn_z_hat_priors: True
+  training:
+    max_regular_training_epochs: 1000
+    n_parent_annealing_epochs: 1
+    n_kl_annealing_epochs: 25
+    enable_kmeans_init: true
+    kl_annealing_ratio: [0.5, 0.2, 0.3]
+    optimizer:
+      name: adam
+      learning_rate: 5e-4
+  dataset:
+    batch_size: 512
+
+analysis:
+  clustering:
+    - modality: RNA
+      component: RNA
+      use_rep: z
+      min_n_obs: 36
+    - modality: RNA
+      component: RNA
+      use_rep: z_hat
+      min_n_obs: 36
+  visualize_embedding:
+    - modality: RNA
+      use_rep: z_RNA
+      embedding_method: tsne
+      color_by: cell_type
+      interactive: true
+    - modality: RNA
+      use_rep: z_hat_RNA
+      embedding_method: tsne
+      color_by: cluster_RNA_integrated
+      interactive: true
+  differential_analysis:
+    - modality: RNA
+      component: RNA
+      use_cluster: cluster_RNA
+      z_sampling_size: 5
+      x_sampling_size: 1000
+      batch_size: 128
+      keep_only_significant: false
+  conditional_attribution_scores:
+    - modality: RNA
+      component: RNA
+      with_respect_to:
+        - ATAC
+      use_cluster: cluster_RNA
+  hierarchical_differential_analysis:
+    - modality: RNA
+      component: RNA
+      use_cluster: cluster_RNA_integrated
+      donor_components:
+        - ATAC
+      n_samples: 10
+      seed: 42
+      batch_size: 128

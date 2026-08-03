@@ -165,6 +165,8 @@ class ApplicationConfig(BaseConfigModel):
                 comp.n_kl_annealing_epochs = self.training.n_kl_annealing_epochs
             if comp.enable_kmeans_init is None:
                 comp.enable_kmeans_init = self.training.enable_kmeans_init
+            if comp.learn_z_hat_priors is None:
+                comp.learn_z_hat_priors = self.training.learn_z_hat_priors
             if comp.kl_annealing_ratio is None:
                 comp.kl_annealing_ratio = self.training.kl_annealing_ratio
             if comp.max_regular_training_epochs is None:

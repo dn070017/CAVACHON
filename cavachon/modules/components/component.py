@@ -13,6 +13,7 @@ from cavachon.layers.parameterizers.mixture_multivariate_normal_diag_parameteriz
 from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler,
 )
+from cavachon.losses.gmm_density_loss import GMMDensityLoss
 from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import (
     NegativeLogDataLikelihood,
@@ -83,8 +84,10 @@ class Component(tf.keras.Model):
         hierarchical_encoder: tf.keras.Model,
         z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model],
         decoders: Mapping[str, tf.keras.Model],
+        z_hat_prior_parameterizer: Optional[tf.keras.layers.Layer] = None,
         conditioned_on_z: List[str] = [],
         conditioned_on_z_hat: List[str] = [],
+        learn_z_hat_priors: bool = False,
         name: str = "component",
         **kwargs,
     ):
@@ -163,6 +166,8 @@ class Component(tf.keras.Model):
         self.distribution_names = distribution_names
         self.encoder = encoder
         self.z_prior_parameterizer = z_prior_parameterizer
+        self.z_hat_prior_parameterizer = z_hat_prior_parameterizer
+        self.learn_z_hat_priors = learn_z_hat_priors
         self.hierarchical_encoder = hierarchical_encoder
         self.z_sampler = z_sampler
         self.decoders = decoders
@@ -514,6 +519,46 @@ class Component(tf.keras.Model):
         )
 
     @classmethod
+    def setup_z_hat_prior_parameterizer(
+        cls,
+        n_latent_dims: int = 5,
+        n_latent_priors: int = 11,
+        name: str = "z_hat_prior_parameterizer",
+        **kwargs,
+    ) -> tf.keras.Model:
+        """Builder function for setting up the parameterizer of the
+        priors for z_hat (deterministic latent). Developers can
+        overwrite this function to create custom Component.
+
+        Parameters
+        ----------
+        n_latent_dims: int
+            number of latent dimensions. Defaults to 5.
+
+        n_latent_priors: int
+            number of priors for the z_hat distributions. Defaults to
+            11.
+
+        name: str, optional:
+            Name for the tensorflow model. Defaults to
+            'z_hat_prior_parameterizer'.
+
+        kwargs: Mapping[str, Any]
+            additional parameters used for custom
+            setup_z_hat_prior_parameterizer()
+
+        Returns
+        -------
+        tf.keras.Model:
+            created parameterizer of the priors for z_hat
+            distributions.
+
+        """
+        return MixtureMultivariateNormalDiagParameterizerLayer(
+            event_dims=n_latent_dims, n_components=n_latent_priors, name=name
+        )
+
+    @classmethod
     def setup_z_sampler(
         cls, name: str = "z_sampler", **kwargs
     ) -> tf.keras.layers.Layer:
@@ -550,6 +595,7 @@ class Component(tf.keras.Model):
         z_prior_parameterizer: tf.keras.layers.Layer,
         z_sampler: Union[tf.keras.Model, tf.keras.layers.Layer],
         decoders: Mapping[str, tf.keras.Model],
+        z_hat_prior_parameterizer: Optional[tf.keras.layers.Layer] = None,
         **kwargs,
     ) -> Mapping[Any, tf.Tensor]:
         """Builder function for setting up outputs. Developers can
@@ -617,6 +663,15 @@ class Component(tf.keras.Model):
             Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS,
             z_prior_parameterizer(dummy_input),
         )
+
+        if z_hat_prior_parameterizer is not None:
+            dummy_input_z_hat = tf.keras.layers.Lambda(
+                lambda x: tf.ones((1, 1)), name="z_hat_prior_dummy_input"
+            )(z)
+            outputs.setdefault(
+                Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS,
+                z_hat_prior_parameterizer(dummy_input_z_hat),
+            )
 
         for modality_name in modality_names:
             decoder_inputs = Component.prepare_decoder_inputs(
@@ -774,6 +829,16 @@ class Component(tf.keras.Model):
             **kwargs,
         )
 
+        learn_z_hat_priors = kwargs.pop("learn_z_hat_priors", False) or False
+        z_hat_prior_parameterizer = None
+        if learn_z_hat_priors:
+            z_hat_prior_parameterizer = cls.setup_z_hat_prior_parameterizer(
+                n_latent_dims=n_latent_dims,
+                n_latent_priors=n_latent_priors,
+                name=f"{name}_z_hat_prior_parameterizer",
+                **kwargs,
+            )
+
         z_sampler = cls.setup_z_sampler(name=f"{name}_z_sampler", **kwargs)
 
         decoders = cls.setup_decoders(
@@ -792,6 +857,7 @@ class Component(tf.keras.Model):
             encoder=encoder,
             hierarchical_encoder=hierarchical_encoder,
             z_prior_parameterizer=z_prior_parameterizer,
+            z_hat_prior_parameterizer=z_hat_prior_parameterizer,
             z_sampler=z_sampler,
             decoders=decoders,
             **kwargs,
@@ -805,11 +871,13 @@ class Component(tf.keras.Model):
             preprocessor=preprocessor,
             encoder=encoder,
             z_prior_parameterizer=z_prior_parameterizer,
+            z_hat_prior_parameterizer=z_hat_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
             z_sampler=z_sampler,
             decoders=decoders,
             conditioned_on_z=conditioned_on_z,
             conditioned_on_z_hat=conditioned_on_z_hat,
+            learn_z_hat_priors=learn_z_hat_priors,
             name=name,
             **kwargs,
         )
@@ -1014,6 +1082,8 @@ class Component(tf.keras.Model):
             self._standard_kl_weights = {}
         if not hasattr(self, "_gmm_kl_weights"):
             self._gmm_kl_weights = {}
+        if not hasattr(self, "_z_hat_density_weights"):
+            self._z_hat_density_weights = {}
 
         loss_weights = kwargs.pop("loss_weights", None) or {}
 
@@ -1043,7 +1113,7 @@ class Component(tf.keras.Model):
                 loss.setdefault(
                     Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
                     StandardKLDivergence(
-                        weight_var=self._standard_kl_weights[comp_name],
+                        weight=standard_w,
                         name=Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
                     ),
                 )
@@ -1059,9 +1129,27 @@ class Component(tf.keras.Model):
                 loss.setdefault(
                     Constants.MODEL_LOSS_GMM_KL_POSTFIX,
                     GMMKLDivergence(
-                        weight_var=self._gmm_kl_weights[comp_name],
+                        weight=gmm_w,
                         name=Constants.MODEL_LOSS_GMM_KL_POSTFIX,
                     ),
+                )
+
+            if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
+                loss_name = (
+                    f"{self.name}_"
+                    f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                )
+                if comp_name not in self._z_hat_density_weights:
+                    self._z_hat_density_weights[comp_name] = tf.Variable(
+                        1.0, trainable=False, dtype=tf.float32,
+                        name=f"{comp_name}_z_hat_density_weight",
+                    )
+                else:
+                    self._z_hat_density_weights[comp_name].assign(1.0)
+                weight_var = self._z_hat_density_weights[comp_name]
+                loss.setdefault(
+                    loss_name,
+                    GMMDensityLoss(weight=weight_var, name=loss_name),
                 )
 
             if not hasattr(self, "_data_loss_weights"):
@@ -1152,6 +1240,19 @@ class Component(tf.keras.Model):
                 kl_name = Constants.MODEL_LOSS_GMM_KL_POSTFIX
                 y_true.setdefault(kl_name, prior_params)
                 y_pred.setdefault(kl_name, z_concat)
+
+            if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
+                z_hat_prior_params = results.get(
+                    Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS
+                )
+                z_hat = results.get(Constants.MODEL_OUTPUTS_Z_HAT)
+                if z_hat_prior_params is not None and z_hat is not None:
+                    loss_name = (
+                        f"{self.name}_"
+                        f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                    )
+                    y_true.setdefault(loss_name, z_hat_prior_params)
+                    y_pred.setdefault(loss_name, z_hat)
 
             for modality_name in self.modality_names:
                 negative_log_data_likelihood_name = (

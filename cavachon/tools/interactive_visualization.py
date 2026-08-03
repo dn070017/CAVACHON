@@ -216,18 +216,29 @@ class InteractiveVisualization:
                 color = adata.obs[color]
             else:
                 color_obsm_key = "/".join(color.split("/")[0:-1])
-                color_obsm_column = int(color.split("/")[-1])
-                if color_obsm_key in adata.obsm:
-                    color = adata.obsm[color_obsm_key][:, color_obsm_column]
-                else:
+                try:
+                    color_obsm_column = int(color.split("/")[-1])
+                except ValueError:
                     message = "".join(
                         (
-                            f"{color} is not in adata.obs, and {color_obsm_key} is not in "
-                            "adata.obsm ignore color argument."
+                            f"{color} is not in adata.obs and is not a valid "
+                            "obsm key/index. Ignoring color argument."
                         )
                     )
                     warnings.warn(message, RuntimeWarning)
                     color = None
+                else:
+                    if color_obsm_key in adata.obsm:
+                        color = adata.obsm[color_obsm_key][:, color_obsm_column]
+                    else:
+                        message = "".join(
+                            (
+                                f"{color} is not in adata.obs, and {color_obsm_key} is not in "
+                                "adata.obsm. Ignoring color argument."
+                            )
+                        )
+                        warnings.warn(message, RuntimeWarning)
+                        color = None
 
         if color is None:
             if color_discrete_sequence is None:

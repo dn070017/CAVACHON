@@ -21,12 +21,14 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
         kmeans_epoch=None,
         scheduler=None,
         component_name=None,
+        kmeans_kwargs=None,
     ):
         super().__init__()
         self.schedule = schedule
         self.kmeans_epoch = kmeans_epoch
         self.scheduler = scheduler
         self.component_name = component_name
+        self.kmeans_kwargs = kmeans_kwargs or {}
         self._kmeans_done = False
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -60,6 +62,7 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
                 seed=42,
                 add_noise=True,
                 noise_std=0.1,
+                **self.kmeans_kwargs,
             )
             for name, was_trainable in saved_trainable.items():
                 self.model.components[name].trainable = was_trainable
