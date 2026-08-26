@@ -117,12 +117,16 @@ Gm13688                  0.442711  0.557289 -0.230168  0.230168
 ```
 ### Gene Set Enrichment Analysis (GSEA)
 ```python
-import gseapy
+from cavachon.tools import EnrichmentAnalysis
 
-gene_sets = gseapy.get_library(name='KEGG_2019_Mouse', organism='Mouse')
-prerank = degs['K(A>B|Z)']
-prerank.index = prerank.index.str.upper()
-gseapy.prerank(rnk=prerank, gene_sets=gene_sets, outdir='enrichment_analysis')
+analysis = EnrichmentAnalysis(
+    gene_sets='KEGG_2019_Mouse', organism='Mouse'
+)
+result = analysis.run(
+    deg_table=degs,
+    column='K(A>B|Z)',
+    outdir='enrichment_analysis',
+)
 ```
 
 
