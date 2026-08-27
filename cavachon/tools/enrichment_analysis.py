@@ -159,12 +159,22 @@ class EnrichmentAnalysis:
         result_table = prerank_result.res2d
         if result_table is None:
             raise ValueError("The enrichment result does not contain a result table")
+        raw_results = prerank_result.results
+        if raw_results is None:
+            raise ValueError("The enrichment result does not contain term results")
+        results = cast(Dict[str, object], raw_results)
 
         if terms is None:
-            terms = list(result_table.loc[result_table[metric] <= threshold].index)
+            selected_results = result_table.loc[result_table[metric] <= threshold]
+            if "Term" in selected_results.columns:
+                selected_terms = selected_results["Term"].astype(str).tolist()
+            else:
+                selected_terms = [str(term) for term in selected_results.index]
+        else:
+            selected_terms = terms
 
-        for term in terms:
-            if term not in prerank_result.results:
+        for term in selected_terms:
+            if term not in results:
                 raise ValueError(f"Term is not present in enrichment results: {term}")
             figures[f"enrichment_score:{term}"] = (
                 InteractiveVisualization.prerank_enrichment_score(

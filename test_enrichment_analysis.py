@@ -47,7 +47,7 @@ def test_run_uses_deg_column_and_visualizes_result(tmp_path, monkeypatch):
 def test_visualize_writes_ringplot_and_requested_term(tmp_path, monkeypatch):
     result = SimpleNamespace(
         res2d=pd.DataFrame(
-            {"FDR q-val": [0.01]}, index=pd.Index(["Pathway / A"])
+            {"Term": ["Pathway / A"], "FDR q-val": [0.01]}, index=pd.Index([0])
         ),
         results={"Pathway / A": object()},
     )
@@ -81,9 +81,40 @@ def test_visualize_writes_ringplot_and_requested_term(tmp_path, monkeypatch):
     assert calls[1][2]["filename"].endswith("enrichment_score_Pathway_A.html")
 
 
+def test_visualize_uses_term_column_for_automatic_selection(tmp_path, monkeypatch):
+    result = SimpleNamespace(
+        res2d=pd.DataFrame(
+            {
+                "Term": ["Pathway / A", "Pathway B"],
+                "FDR q-val": [0.01, 0.2],
+            },
+            index=pd.Index([0, 1]),
+        ),
+        results={"Pathway / A": object(), "Pathway B": object()},
+    )
+    terms = []
+
+    monkeypatch.setattr(
+        "cavachon.tools.enrichment_analysis.InteractiveVisualization.prerank_ringplot",
+        lambda *args, **kwargs: "ringplot",
+    )
+    monkeypatch.setattr(
+        "cavachon.tools.enrichment_analysis.InteractiveVisualization.prerank_enrichment_score",
+        lambda prerank_result, **kwargs: terms.append(kwargs["term"]) or "score",
+    )
+
+    EnrichmentAnalysis(gene_sets={}).visualize(
+        cast(Prerank, cast(object, result)), tmp_path
+    )
+
+    assert terms == ["Pathway / A"]
+
+
 def test_visualize_rejects_unknown_term(tmp_path, monkeypatch):
     result = SimpleNamespace(
-        res2d=pd.DataFrame({"FDR q-val": [0.01]}, index=pd.Index(["Pathway"])),
+        res2d=pd.DataFrame(
+            {"Term": ["Pathway"], "FDR q-val": [0.01]}, index=pd.Index([0])
+        ),
         results={"Pathway": object()},
     )
     monkeypatch.setattr(
