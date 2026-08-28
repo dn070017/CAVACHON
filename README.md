@@ -129,6 +129,17 @@ result = analysis.run(
 )
 ```
 
+For multiple DEG or hierarchical DEG tables, use `run_directory`. It
+recursively discovers tables containing the selected ranking column, skips
+unrelated reports, and creates a separate output directory for each table.
+```python
+results = analysis.run_directory(
+    input_dir='differential_analysis',
+    outdir='enrichment_analysis',
+    column='K(A>B|Z)',
+)
+```
+
 
 ### Interactive Visualization
 ```python
