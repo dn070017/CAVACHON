@@ -35,7 +35,8 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
     * `visualize_embedding`: list of [Visualize Embedding](#visualize-embedding)
     * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
     * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
-    * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
+     * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
+     * `enrichment_analysis`: list of [Enrichment Analysis](#enrichment-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -95,7 +96,65 @@ The configs for analysis and visualization are specified under the field `analys
   * required: `False`.
   * defaults: `[]`
   * type: `List[AnalysisHierarchicalDifferentialAnalysisConfig]`
-  * description: the config for hierarchical differential analysis. See [Hierarchical Differential Analysis](#hierarchical-differential-analysis) for more details.
+   * description: the config for hierarchical differential analysis. See [Hierarchical Differential Analysis](#hierarchical-differential-analysis) for more details.
+ * `enrichment_analysis`:
+   * required: `False`.
+   * defaults: `[]`.
+   * type: `List[AnalysisEnrichmentConfig]`
+   * description: the config for gene-set enrichment analysis on generated DEG or HDEG tables.
+
+## Enrichment Analysis
+The config for gene-set enrichment analysis is specified under `analysis.enrichment_analysis`.
+
+* `analysis_type`:
+  * required: `True`.
+  * type: `str`
+  * description: generated table source. Must be either `deg` or `hdeg`.
+* `gene_sets`:
+  * required: `False`.
+  * defaults: `KEGG_2019_Mouse`
+  * type: `str`
+  * description: Enrichr gene-set library passed to `gseapy`.
+* `organism`:
+  * required: `False`.
+  * defaults: `Mouse`
+  * type: `str | None`
+  * description: organism used when retrieving the gene-set library.
+* `column`:
+  * required: `False`.
+  * defaults: `K(A>B|Z)`
+  * type: `str`
+  * description: ranking column in the generated DEG/HDEG tables.
+* `recursive`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: whether to search nested result directories.
+* `terms`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `List[str] | None`
+  * description: terms for which enrichment-score plots are created.
+* `metric`:
+  * required: `False`.
+  * defaults: `FDR q-val`
+  * type: `str`
+  * description: result metric used for selecting terms to visualize.
+* `threshold`:
+  * required: `False`.
+  * defaults: `0.05`
+  * type: `float`
+  * description: maximum metric value for selected terms.
+* `permutation_num`:
+  * required: `False`.
+  * defaults: `1000`
+  * type: `int`
+  * description: number of permutations used by preranked GSEA.
+* `min_size` / `max_size`:
+  * required: `False`.
+  * defaults: `15` / `500`
+  * type: `int`
+  * description: minimum and maximum gene-set sizes used by preranked GSEA.
 
 ## Clustering
 The config for clustering.
