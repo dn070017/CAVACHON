@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Union, cast
+import shutil
+import tempfile
+from typing import Dict, Iterator, List, Mapping, Optional, Union, cast
 
 import gseapy
 import pandas as pd
@@ -7,6 +9,9 @@ from gseapy.gsea import Prerank
 from plotly.graph_objs._figure import Figure
 
 from cavachon.tools.interactive_visualization import InteractiveVisualization
+
+
+PathLike = Union[str, Path]
 
 
 class EnrichmentAnalysis:
@@ -257,20 +262,153 @@ class EnrichmentAnalysis:
         if isinstance(gene_sets, str):
             gene_sets = self.get_library(name=gene_sets, organism=self.organism)
 
-        result = self._run_prerank(
-            prerank=prerank,
-            gene_sets=gene_sets,
-            outdir=outdir,
-            **kwargs,
-        )
+        output_path = Path(outdir)
+        with tempfile.TemporaryDirectory(prefix="enrichment-analysis-") as staging_dir:
+            result = self._run_prerank(
+                prerank=prerank,
+                gene_sets=gene_sets,
+                outdir=staging_dir,
+                **kwargs,
+            )
+            result_table = result.res2d
+            if result_table is None:
+                raise ValueError(
+                    "The enrichment result does not contain a result table"
+                )
+            if metric not in result_table.columns:
+                raise ValueError(f"Result table does not contain metric: {metric}")
+
+            significant_results = result_table.loc[
+                result_table[metric] <= threshold
+            ]
+            if significant_results.empty:
+                print(
+                    f"No enrichment pathways passed {metric} <= {threshold}; "
+                    f"skipping output directory: {output_path}"
+                )
+                return result
+
+            output_path.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(staging_dir, output_path, dirs_exist_ok=True)
+
         self._visualize(
             prerank_result=result,
-            outdir=outdir,
+            outdir=output_path,
             terms=terms,
             metric=metric,
             threshold=threshold,
         )
         return result
+
+    @staticmethod
+    def _read_table(filename: PathLike, column: str) -> Optional[pd.DataFrame]:
+        """Read a candidate table if it contains usable ranking data."""
+        table = pd.read_csv(filename, sep=None, engine="python", index_col=0)
+        if column not in table.columns:
+            return None
+
+        ranking = cast(pd.Series, pd.to_numeric(table[column], errors="coerce"))
+        if ranking.dropna().empty:
+            return None
+
+        table[column] = ranking
+        return table
+
+    @classmethod
+    def find_deg_tables(
+        cls,
+        input_dir: PathLike,
+        column: str = "K(A>B|Z)",
+        recursive: bool = True,
+    ) -> Iterator[tuple[Path, pd.DataFrame]]:
+        """Yield DEG/HDEG tables containing usable ranking statistics.
+
+        Parameters
+        ----------
+        input_dir: str or Path
+            Directory containing DEG or HDEG output tables.
+
+        column: str, optional
+            Ranking column required for a table to be selected. Defaults to
+            ``"K(A>B|Z)"``.
+
+        recursive: bool, optional
+            Search nested directories when True. Defaults to True.
+        """
+        input_path = Path(input_dir)
+        if not input_path.is_dir():
+            raise ValueError(f"Input directory does not exist: {input_path}")
+
+        patterns = ("*.tsv", "*.csv", "*.txt")
+        if recursive:
+            files = sorted(
+                path for pattern in patterns for path in input_path.rglob(pattern)
+            )
+        else:
+            files = sorted(
+                path for pattern in patterns for path in input_path.glob(pattern)
+            )
+
+        for filename in files:
+            table = cls._read_table(filename, column)
+            if table is not None:
+                yield filename, table
+
+    @staticmethod
+    def _output_name(input_dir: Path, filename: Path) -> str:
+        """Build a stable, filesystem-safe output name from a relative path."""
+        relative = filename.relative_to(input_dir).with_suffix("")
+        name = "__".join(relative.parts)
+        return "".join(
+            character if character.isalnum() or character in "-_" else "_"
+            for character in name
+        )
+
+    def run_directory(
+        self,
+        input_dir: PathLike,
+        outdir: Optional[PathLike] = None,
+        column: str = "K(A>B|Z)",
+        recursive: bool = True,
+        terms: Optional[List[str]] = None,
+        metric: str = "FDR q-val",
+        threshold: float = 0.05,
+        **kwargs,
+    ) -> Dict[Path, Prerank]:
+        """Run enrichment for every usable DEG/HDEG table in a directory.
+
+        Each source table is passed to :meth:`run` and receives its own
+        output subdirectory. Files without usable ranking statistics are
+        skipped, allowing unrelated reports to share the input directory.
+        """
+        input_path = Path(input_dir)
+        output_path = (
+            Path(outdir) if outdir is not None else input_path / "enrichment_analysis"
+        )
+
+        tables = list(self.find_deg_tables(input_path, column, recursive))
+        if not tables:
+            message = (
+                f"No DEG/HDEG tables with ranking column '{column}' found "
+                f"in {input_path}"
+            )
+            raise ValueError(message)
+
+        output_path.mkdir(parents=True, exist_ok=True)
+        results: Dict[Path, Prerank] = {}
+        for filename, table in tables:
+            table_output = output_path / self._output_name(input_path, filename)
+            results[filename] = self.run(
+                deg_table=table,
+                column=column,
+                outdir=table_output,
+                terms=terms,
+                metric=metric,
+                threshold=threshold,
+                **kwargs,
+            )
+
+        return results
 
 def _safe_filename(value: str) -> str:
     """Convert an enrichment term into a filesystem-safe filename part."""
