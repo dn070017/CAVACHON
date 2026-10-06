@@ -13,7 +13,6 @@ from cavachon.layers.parameterizers.multivariate_normal_diag_sampler import (
 )
 from cavachon.model.model import Model
 from cavachon.modules.components.component import Component
-from cavachon.utils.tensor_utils import TensorUtils
 
 
 class AttributionAnalysis:
@@ -74,64 +73,6 @@ class AttributionAnalysis:
             batch_effect_encoders,
         )
 
-    def compute_delta_x(
-        self,
-        component: str,
-        modality: str,
-        exclude_component: str,
-        batch_size: int = 128,
-    ) -> np.ndarray:
-        """Compute the x - x_baseline in the integrated gradients. The
-        baseline is the mean of the outputs modality from the component
-        without using the latent representation z of the exclude
-        component.
-
-        Parameters
-        ----------
-        component : str
-            the outputs of which component to used.
-
-        modality : str
-            which modality of the outputs of the component to used.
-
-        exclude_component: str
-            which component to exclude (the latent representation z
-            will not be used in the forward pass)
-
-        batch_size : int, optional
-            batch size used for the forward pass. Defaults to 128
-
-        Returns
-        -------
-        np.ndarray
-            x - x_baseline in the integrated gradients.
-
-        """
-        delta_x = []
-        progress_message = "Computing delta x"
-        for batch in tqdm(
-            self.dataloader.dataset.batch(batch_size), desc=progress_message
-        ):
-            x_means_null_batch = self.compute_attribution_target_batch(
-                batch=batch,
-                component=component,
-                modality=modality,
-                with_respect_to=exclude_component,
-                alpha=0.0,
-            )
-
-            x_means_full_batch = self.compute_attribution_target_batch(
-                batch=batch,
-                component=component,
-                modality=modality,
-                with_respect_to=exclude_component,
-                alpha=1.0,
-            )
-
-            delta_x.append(x_means_full_batch - x_means_null_batch)
-
-        return np.vstack(delta_x)
-
     def compute_integrated_gradient(
         self,
         component: str,
@@ -180,20 +121,10 @@ class AttributionAnalysis:
         else:
             selected_indices = range(self.mdata[modality].var.shape[0])
 
-        delta_x = self.compute_delta_x(
-            component=component,
-            modality=modality,
-            exclude_component=with_respect_to,
-            batch_size=batch_size,
-        )
-        delta_x = tf.gather(delta_x, selected_indices, axis=1)
-
-        delta_x_split = TensorUtils.split(delta_x, batch_size=batch_size)
-
         progress_message = "Computing integrated gradient"
         integrated_gradients = []
-        for batch, batch_delta_x in tqdm(
-            zip(self.dataloader.dataset.batch(batch_size), delta_x_split),
+        for batch in tqdm(
+            self.dataloader.dataset.batch(batch_size),
             desc=progress_message,
         ):
             outputs = self.model(batch, training=False)
@@ -229,7 +160,7 @@ class AttributionAnalysis:
 
                     gradients = tf.stack(gradients_tmp, axis=-1)
                     scaled_gradients = (
-                        1 / steps * tf.expand_dims(batch_delta_x, 1) * gradients
+                        1 / steps * tf.expand_dims(z_variable, -1) * gradients
                     )
 
                     if unintegrated_gradients_batch is None:
