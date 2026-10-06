@@ -547,6 +547,146 @@ class InteractiveVisualization:
         return figs, attribution_scores
 
     @staticmethod
+    def differential_attribution_radviz(
+        data: pd.DataFrame,
+        with_respect_to: List[str],
+        logfc_column: str = "LogFC(A/B)",
+        abs_contrib_prefix: str = "abs_contrib_",
+        filename: Optional[str] = None,
+        title: str = "Differential Attribution RadViz",
+        **kwargs,
+    ) -> plotly.graph_objs._figure.Figure:
+        """Create a RadViz projection of per-component DEG attributions.
+
+        Each component in ``with_respect_to`` is placed on a circle. A DEG
+        is positioned at the weighted average of those vertices, using the
+        absolute contributions (``abs_contrib_<component>``) as weights.
+        Points are colored by the sign of the log fold-change and sized by
+        its absolute value.
+
+        Parameters
+        ----------
+        data: pd.DataFrame
+            Attributed DEG table. Must contain a log-fold-change column
+            and ``{abs_contrib_prefix}{component}`` for every component in
+            ``with_respect_to``.
+
+        with_respect_to: List[str]
+            Component names to use as RadViz axes.
+
+        logfc_column: str, optional
+            Column with log fold-change values. Defaults to
+            ``LogFC(A/B)``.
+
+        abs_contrib_prefix: str, optional
+            Prefix for absolute-contribution columns. Defaults to
+            ``abs_contrib_``.
+
+        filename: Optional[str], optional
+            Filename to save the figure. None disables saving. Defaults to
+            None.
+
+        title: str, optional
+            Title for the figure. Defaults to 'Differential Attribution
+            RadViz'.
+
+        **kwargs: Optional[Mapping[str, Any]], optional
+            Additional arguments for ``fig.update_layout``.
+
+        Returns
+        -------
+        plotly.graph_objs._figure.Figure
+            Interactive figure object.
+
+        """
+        if data.empty:
+            raise ValueError("Cannot create RadViz visualization from empty data.")
+
+        contrib_columns = [f"{abs_contrib_prefix}{comp}" for comp in with_respect_to]
+        missing = [col for col in contrib_columns if col not in data.columns]
+        if missing:
+            raise ValueError(f"Missing contribution columns: {missing}")
+
+        n_dims = len(with_respect_to)
+        angles = np.linspace(0, 2 * np.pi, n_dims, endpoint=False)
+        vertex_x = np.cos(angles)
+        vertex_y = np.sin(angles)
+
+        weights = data[contrib_columns].to_numpy(dtype=float)
+        weights = np.maximum(weights, 0.0)
+        row_sums = weights.sum(axis=1, keepdims=True)
+        row_sums = np.where(row_sums == 0, 1.0, row_sums)
+        weights = weights / row_sums
+
+        data = data.copy()
+        data["radviz_x"] = weights @ vertex_x
+        data["radviz_y"] = weights @ vertex_y
+
+        if logfc_column in data.columns:
+            data["Direction"] = np.where(
+                data[logfc_column] >= 0, "Up in A", "Down in A"
+            )
+            size_values = data[logfc_column].abs()
+            size_values = np.clip(size_values, a_min=0.01, a_max=None)
+        else:
+            data["Direction"] = "N/A"
+            size_values = np.ones(len(data))
+
+        fig = px.scatter(
+            data,
+            x="radviz_x",
+            y="radviz_y",
+            color="Direction",
+            size=size_values,
+            hover_name=data.index,
+            hover_data=contrib_columns + ([logfc_column] if logfc_column in data.columns else []),
+            title=title,
+        )
+
+        for i, comp in enumerate(with_respect_to):
+            fig.add_annotation(
+                x=vertex_x[i],
+                y=vertex_y[i],
+                text=comp,
+                showarrow=False,
+                font=dict(size=14),
+            )
+
+        theta = np.linspace(0, 2 * np.pi, 200)
+        fig.add_trace(
+            go.Scatter(
+                x=np.cos(theta),
+                y=np.sin(theta),
+                mode="lines",
+                line=dict(color="lightgray", width=1),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+        fig.update_layout(
+            xaxis=dict(
+                scaleanchor="y",
+                scaleratio=1,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            **kwargs,
+        )
+
+        fig.show()
+
+        if filename:
+            if filename.endswith("html"):
+                fig.write_html(filename)
+            else:
+                fig.write_image(filename)
+
+        return fig
+
+    @staticmethod
     def differential_volcano_plot(
         differential_results: pd.DataFrame = None,
         mdata: mu.MuData = None,
