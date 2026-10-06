@@ -230,22 +230,23 @@ class DataLoader:
 
         return
 
-    def __iter__(self) -> Iterator[tf.data.Dataset]:
+    def __iter__(self) -> Iterator[Mapping[str, tf.Tensor]]:
         """Iterator of DataLoader. Can be used for custom eager training.
 
         Returns:
-        Iterator[tf.data.Dataset]:
-            iterator of self.dataset.
+        Iterator[Mapping[str, tf.Tensor]]:
+            iterator of batched dictionaries from self.dataset.
 
         Yields
         ------
-        Dict[Any, tf.Tensor]:
+        Mapping[str, tf.Tensor]:
             batch of data, where the field of the batched dataset
             includes:
             1. (`modality`, 'matrix') (tf.SparseTensor) and
             2. (`modality`, 'batch_effect') (tf.Tensor)
         """
-        return iter(self.dataset.batch(self.batch_size))
+        for batch in self.dataset.batch(self.batch_size):
+            yield batch
 
     @classmethod
     def from_h5mu(cls, h5mu_path: str, batch_size: int = 128) -> DataLoader:
