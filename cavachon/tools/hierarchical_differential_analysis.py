@@ -318,8 +318,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             x_means_substituted, x_means_original, var_index
         )
         result["InterventionType"] = "donor_pool_z_substitution"
-        result["DonorCluster"] = donor_cluster
-        result["RecipientCluster"] = recipient_cluster
+        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN] = donor_cluster
+        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN] = recipient_cluster
         result["SamplingStrategy"] = "donor_pool"
         result["RandomSeed"] = seed
         result["MeanDelta(Substituted-Original)"] = (
