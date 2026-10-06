@@ -596,23 +596,24 @@ class Workflow:
         # to avoid dictionary changed during iteration
         for target in targets:
             modality_name, component, with_respect_to, use_cluster = target
-            title = f"{modality_name} {component} attribution wrt {with_respect_to} colored by {use_cluster}"
-            file_label = f"{title}.html".lower().replace(" ", "_")
-            InteractiveVisualization.attribution_score(
-                mdata=AnnDataUtils.merge_mdata_on_obs_annotation(
-                    self.mdata, use_cluster, self.batch_effect_colnames
-                ),
-                model=self.model,
-                component=component,
-                modality=modality_name,
-                with_respect_to=with_respect_to,
-                use_cluster=use_cluster,
-                batch_size=batch_size,
-                title=title,
-                batch_effect_colnames=self.batch_effect_colnames,
-                distribution_names=self.distribution_names,
-                batch_effect_encoders=self.dataloader.batch_effect_encoders,
-                width=800,
-                height=760,
-                filename=f"{outdir}/{file_label}",
-            )
+            for wrt in with_respect_to:
+                title = f"{modality_name} {component} attribution wrt {wrt} colored by {use_cluster}"
+                file_label = f"{title}.html".lower().replace(" ", "_")
+                InteractiveVisualization.attribution_score(
+                    mdata=AnnDataUtils.merge_mdata_on_obs_annotation(
+                        self.mdata, use_cluster, self.batch_effect_colnames
+                    ),
+                    model=self.model,
+                    component=component,
+                    modality=modality_name,
+                    with_respect_to=[wrt],
+                    use_cluster=use_cluster,
+                    batch_size=batch_size,
+                    title=title,
+                    batch_effect_colnames=self.batch_effect_colnames,
+                    distribution_names=self.distribution_names,
+                    batch_effect_encoders=self.dataloader.batch_effect_encoders,
+                    width=800,
+                    height=760,
+                    filename=f"{outdir}/{file_label}",
+                )
