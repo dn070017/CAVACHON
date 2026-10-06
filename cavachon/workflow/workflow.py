@@ -1,6 +1,7 @@
 import os
 import warnings
-from typing import Dict, List, MutableMapping, Optional, Tuple
+from pathlib import Path
+from typing import List, Mapping, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
@@ -9,6 +10,7 @@ import tensorflow as tf
 
 from cavachon.config.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
+from cavachon.environment.constants import Constants
 from cavachon.filter.anndata_filter_handler import AnnDataFilterHandler
 from cavachon.io.file_reader import FileReader
 from cavachon.modality.modality import Modality
@@ -17,6 +19,9 @@ from cavachon.model.model import Model
 from cavachon.scheduler.sequential_training_scheduler import SequentialTrainingScheduler
 from cavachon.tools.cluster_analysis import ClusterAnalysis
 from cavachon.tools.differential_analysis import DifferentialAnalysis
+from cavachon.tools.differential_attribution_analysis import (
+    DifferentialAttributionAnalysis,
+)
 from cavachon.tools.hierarchical_differential_analysis import (
     HierarchicalDifferentialAnalysis,
 )
@@ -76,7 +81,7 @@ class Workflow:
         self.train_history: List[tf.keras.callbacks.History] = list()
         self.outputs: MutableMapping[str, tf.Tensor] = dict()
         self.differential_analysis_results: MutableMapping[
-            Tuple[str], Dict[str, pd.DataFrame]
+            Tuple[str, ...], Mapping[str, pd.DataFrame]
         ] = dict()
 
         return
@@ -107,6 +112,7 @@ class Workflow:
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
         self.perform_hierarchical_differential_analysis()
+        self.perform_differential_attribution_analysis()
         self.perform_enrichment_analysis()
 
         return
@@ -449,6 +455,12 @@ class Workflow:
                         (result["K(A>B|Z)"].abs() >= 3.2)
                         | (result["K(B>A|Z)"].abs() >= 3.2)
                     ]
+                result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = (
+                    analysis_config.group_a
+                )
+                result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = (
+                    analysis_config.group_b
+                )
                 target = (
                     modality_name,
                     component,
@@ -470,6 +482,10 @@ class Workflow:
                     keep_only_significant=analysis_config.keep_only_significant,
                     sort_output=analysis_config.sort_output,
                 )
+                for cluster_pair, deg_table in results.items():
+                    group_a, group_b = cluster_pair.split("/")
+                    deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a
+                    deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = group_b
                 target = (modality_name, component, use_cluster)
                 self.differential_analysis_results[target] = results
 
@@ -546,6 +562,104 @@ class Workflow:
                     pair = pair_key.replace("->", "_to_").replace("/", "_").replace(" ", "_").lower()
                     filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
                     result.to_csv(filename, sep="\t")
+
+        return
+
+    def perform_differential_attribution_analysis(self) -> None:
+        """Perform differential attribution analysis on DEG/HDEG outputs."""
+        output_root = os.path.join(self.config.io.outdir, "differential_attribution_analysis")
+        for analysis_config in self.config.analysis.differential_attribution_analysis:
+            source_directory = (
+                "differential_analysis"
+                if analysis_config.analysis_type == "deg"
+                else "hierarchical_differential_analysis"
+            )
+            source_path = os.path.join(self.config.io.outdir, source_directory)
+            modality_name = analysis_config.modality
+            component = analysis_config.component
+            use_cluster = analysis_config.use_cluster
+
+            analysis = DifferentialAttributionAnalysis(
+                self.mdata,
+                self.model,
+                self.batch_effect_colnames,
+                self.distribution_names,
+                self.dataloader.batch_effect_encoders,
+            )
+
+            deg_files = list(
+                EnrichmentAnalysis.find_deg_tables(
+                    source_path,
+                    column=analysis_config.column,
+                    recursive=analysis_config.recursive,
+                )
+            )
+            if not deg_files:
+                print(
+                    f"No DEG/HDEG tables found in {source_path}; skipping differential attribution analysis."
+                )
+                continue
+
+            for filename, deg_table in deg_files:
+                if analysis_config.analysis_type == "deg":
+                    group_a = str(
+                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN].iloc[0]
+                    )
+                    group_b = str(
+                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN].iloc[0]
+                    )
+                else:
+                    group_a = str(
+                        deg_table[
+                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN
+                        ].iloc[0]
+                    )
+                    group_b = str(
+                        deg_table[
+                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
+                        ].iloc[0]
+                    )
+
+                obs = self.mdata[modality_name].obs
+                group_a_index = obs[obs[use_cluster] == group_a].index
+                group_b_index = obs[obs[use_cluster] == group_b].index
+
+                attributed = analysis.from_deg_file(
+                    deg_file=str(filename),
+                    component=component,
+                    modality=modality_name,
+                    group_a_index=group_a_index,
+                    group_b_index=group_b_index,
+                    with_respect_to=analysis_config.with_respect_to,
+                    column=analysis_config.column,
+                    threshold=analysis_config.threshold,
+                    batch_size=self.config.dataset.batch_size,
+                    n_steps=analysis_config.n_steps,
+                )
+
+                outdir = os.path.join(
+                    output_root,
+                    _safe_filename(component).lower(),
+                    _safe_filename(modality_name).lower(),
+                )
+                os.makedirs(outdir, exist_ok=True)
+                output_name = EnrichmentAnalysis._output_name(
+                    Path(source_path), filename
+                )
+                attributed.to_csv(
+                    os.path.join(outdir, f"{output_name}.tsv"),
+                    sep="\t",
+                )
+
+                radviz_filename = os.path.join(
+                    outdir, f"{output_name}_radviz.html"
+                )
+                InteractiveVisualization.differential_attribution_radviz(
+                    data=attributed,
+                    with_respect_to=analysis_config.with_respect_to,
+                    filename=radviz_filename,
+                    title=f"Differential attribution: {component} ({modality_name})",
+                )
 
         return
 
