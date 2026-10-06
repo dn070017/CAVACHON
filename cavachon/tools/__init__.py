@@ -4,6 +4,7 @@ from .differential_analysis import DifferentialAnalysis as DifferentialAnalysis
 from .hierarchical_differential_analysis import (
     HierarchicalDifferentialAnalysis as HierarchicalDifferentialAnalysis,
 )
+from .enrichment_analysis import EnrichmentAnalysis as EnrichmentAnalysis
 from .interactive_visualization import (
     InteractiveVisualization as InteractiveVisualization,
 )

@@ -4,7 +4,6 @@ from typing import Dict, List, MutableMapping, Optional, Tuple
 
 import anndata
 import muon as mu
-import numpy as np
 import pandas as pd
 import tensorflow as tf
 
@@ -21,6 +20,7 @@ from cavachon.tools.differential_analysis import DifferentialAnalysis
 from cavachon.tools.hierarchical_differential_analysis import (
     HierarchicalDifferentialAnalysis,
 )
+from cavachon.tools.enrichment_analysis import EnrichmentAnalysis, _safe_filename
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.anndata_utils import AnnDataUtils
 
@@ -107,6 +107,7 @@ class Workflow:
         self.visualize_conditional_attribution_scores()
         self.perform_differential_analysis()
         self.perform_hierarchical_differential_analysis()
+        self.perform_enrichment_analysis()
 
         return
 
@@ -530,6 +531,36 @@ class Workflow:
                     pair = pair_key.replace("->", "_to_").replace("/", "_").replace(" ", "_").lower()
                     filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
                     result.to_csv(filename, sep="\t")
+
+        return
+
+    def perform_enrichment_analysis(self) -> None:
+        """Perform configured enrichment analysis on DEG or HDEG outputs."""
+        output_root = os.path.join(self.config.io.outdir, "enrichment_analysis")
+        for enrichment_config in self.config.analysis.enrichment_analysis:
+            source_directory = (
+                "differential_analysis"
+                if enrichment_config.analysis_type == "deg"
+                else "hierarchical_differential_analysis"
+            )
+            gene_set_name = _safe_filename(enrichment_config.gene_sets).lower()
+            outdir = os.path.join(output_root, gene_set_name)
+            analysis = EnrichmentAnalysis(
+                gene_sets=enrichment_config.gene_sets,
+                organism=enrichment_config.organism,
+            )
+            analysis.run_directory(
+                input_dir=os.path.join(self.config.io.outdir, source_directory),
+                outdir=outdir,
+                column=enrichment_config.column,
+                recursive=enrichment_config.recursive,
+                terms=enrichment_config.terms,
+                metric=enrichment_config.metric,
+                threshold=enrichment_config.threshold,
+                permutation_num=enrichment_config.permutation_num,
+                min_size=enrichment_config.min_size,
+                max_size=enrichment_config.max_size,
+            )
 
         return
 

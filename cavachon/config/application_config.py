@@ -247,4 +247,35 @@ class ApplicationConfig(BaseConfigModel):
                         f"clustering is not allowed."
                     )
 
+        # 7e. Enrichment source analysis gate
+        self._validate_enrichment_sources(self.analysis, self.io.outdir)
+
         return self
+
+    @staticmethod
+    def _validate_enrichment_sources(
+        analysis: AnalysisConfig, outdir: str
+    ) -> None:
+        """Validate configured or previously generated enrichment inputs."""
+        for enrichment in analysis.enrichment_analysis:
+            source_configs = (
+                analysis.differential_analysis
+                if enrichment.analysis_type == "deg"
+                else analysis.hierarchical_differential_analysis
+            )
+            if source_configs:
+                continue
+
+            source_name = (
+                "differential_analysis"
+                if enrichment.analysis_type == "deg"
+                else "hierarchical_differential_analysis"
+            )
+            source_directory = os.path.join(outdir, source_name)
+            if not os.path.isdir(source_directory):
+                raise ValueError(
+                    f"enrichment_analysis with analysis_type "
+                    f"'{enrichment.analysis_type}' requires either a "
+                    f"{source_name} configuration or an existing directory "
+                    f"at {source_directory}."
+                )

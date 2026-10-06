@@ -54,4 +54,5 @@ numpy = ">=1.23.5,<2.0.0"
 setup = "poetry install"
 setup-dev = "poetry install --with dev"
 check-gpu = "python -c 'import tensorflow as tf; print(\"Devices:\", tf.config.list_physical_devices(\"GPU\"))'"
+opencode = { cmd = "./scripts/opencode-sandbox.sh" }
 
