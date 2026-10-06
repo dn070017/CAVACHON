@@ -227,7 +227,56 @@ class ApplicationConfig(BaseConfigModel):
                         f"of components."
                     )
 
-        # 7d. z_hat clustering gate
+        # 7d. differential_attribution_analysis gate
+        for diff_attr in self.analysis.differential_attribution_analysis:
+            modality = diff_attr.modality
+            component_name = diff_attr.component
+            found_component = False
+            found_modality = False
+            for comp_cfg in self.components:
+                if component_name == comp_cfg.name:
+                    found_component = True
+                    if modality in comp_cfg.modality_names:
+                        found_modality = True
+                        break
+                if found_modality and found_component:
+                    break
+            if not found_modality:
+                raise KeyError(
+                    f"'{modality}' is not in the config of component "
+                    f"'{component_name}'."
+                )
+            if not found_component:
+                raise KeyError(
+                    f"'{component_name}' is not in the config of components."
+                )
+            for wrt in diff_attr.with_respect_to:
+                if wrt not in comp_map:
+                    raise KeyError(
+                        f"'{wrt}' (with_respect_to) is not in the config "
+                        f"of components."
+                    )
+            source_name = (
+                "differential_analysis"
+                if diff_attr.analysis_type == "deg"
+                else "hierarchical_differential_analysis"
+            )
+            source_configs = (
+                self.analysis.differential_analysis
+                if diff_attr.analysis_type == "deg"
+                else self.analysis.hierarchical_differential_analysis
+            )
+            if not source_configs:
+                source_directory = os.path.join(self.io.outdir, source_name)
+                if not os.path.isdir(source_directory):
+                    raise ValueError(
+                        f"differential_attribution_analysis with "
+                        f"analysis_type '{diff_attr.analysis_type}' requires "
+                        f"either a {source_name} configuration or an existing "
+                        f"directory at {source_directory}."
+                    )
+
+        # 7e. z_hat clustering gate
         for cluster_cfg in self.analysis.clustering:
             if cluster_cfg.use_rep == "z_hat":
                 comp_name = cluster_cfg.component

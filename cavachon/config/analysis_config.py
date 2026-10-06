@@ -45,6 +45,31 @@ class AnalysisAttributionScoreConfig(AnalysisGenericConfig):
     use_cluster: str = ""
 
 
+class AnalysisDifferentialAttributionConfig(AnalysisGenericConfig):
+    """Differential attribution analysis configuration.
+
+    Computes per-component Integrated-Gradients attributions for DEGs
+    produced by ``differential_analysis`` or
+    ``hierarchical_differential_analysis``.
+
+    """
+
+    analysis_type: Literal["deg", "hdeg"] = "deg"
+    with_respect_to: List[TensorflowCompatibleStr] = []
+    use_cluster: str = ""
+    column: str = "K(A>B|Z)"
+    threshold: float = 3.2
+    n_steps: int = 32
+    recursive: bool = True
+
+    @field_validator("n_steps")
+    @classmethod
+    def _validate_n_steps(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"n_steps should be a positive integer, got {v}")
+        return v
+
+
 class AnalysisVisualizeEmbeddingConfig(BaseConfigModel):
     """Embedding visualization configuration."""
 
@@ -166,6 +191,9 @@ class AnalysisConfig(BaseConfigModel):
     differential_analysis: List[AnalysisDifferentialAnalysisConfig] = []
     visualize_embedding: List[AnalysisVisualizeEmbeddingConfig] = []
     conditional_attribution_scores: List[AnalysisAttributionScoreConfig] = []
+    differential_attribution_analysis: List[
+        AnalysisDifferentialAttributionConfig
+    ] = []
     hierarchical_differential_analysis: List[
         AnalysisHierarchicalDifferentialAnalysisConfig
     ] = []
