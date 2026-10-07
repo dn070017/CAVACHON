@@ -420,7 +420,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             Filtered and attributed DEG table.
 
         """
-        deg = pd.read_csv(deg_file, index_col=0)
+        deg = pd.read_csv(deg_file, sep=None, engine="python", index_col=0)
         deg = deg.loc[deg[column].abs() >= threshold]
         return self.compute_differential_attribution(
             deg=deg,
