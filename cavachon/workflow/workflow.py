@@ -632,6 +632,8 @@ class Workflow:
                     batch_size=self.config.dataset.batch_size,
                     n_steps=analysis_config.n_steps,
                 )
+                if attributed is None or len(attributed) == 0:
+                    continue
 
                 outdir = os.path.join(
                     output_root,
@@ -646,6 +648,9 @@ class Workflow:
                     os.path.join(outdir, f"{output_name}.tsv"),
                     sep="\t",
                 )
+
+                if len(analysis_config.with_respect_to) < 2:
+                    continue
 
                 radviz_filename = os.path.join(
                     outdir, f"{output_name}_radviz.html"
