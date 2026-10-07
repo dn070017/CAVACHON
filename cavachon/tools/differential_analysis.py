@@ -134,6 +134,8 @@ class DifferentialAnalysis:
                 batch_size=batch_size,
                 desc=f"Between {cluster_a} and {cluster_b}",
                 sort_output=sort_output,
+                group_a_label=str(cluster_a),
+                group_b_label=str(cluster_b),
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -214,6 +216,8 @@ class DifferentialAnalysis:
                 batch_size=batch_size,
                 desc=f"Between {cluster} and others",
                 sort_output=sort_output,
+                group_a_label=str(cluster),
+                group_b_label="others",
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -235,6 +239,8 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         desc: str = "",
         sort_output: bool = True,
+        group_a_label: Optional[str] = None,
+        group_b_label: Optional[str] = None,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -265,21 +271,27 @@ class DifferentialAnalysis:
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
 
+        desc: str, optional
+            description for the progress bar.
+
         sort_output: bool, optional
             Sort the result by the maximum of the absolute Bayesian factors
             K(A>B|Z) and K(B>A|Z) in descending order. Default to True.
+
+        group_a_label: Optional[str], optional
+            Human-readable label for group A. If provided, a ``GroupA``
+            column is added to the result.
+
+        group_b_label: Optional[str], optional
+            Human-readable label for group B. If provided, a ``GroupB``
+            column is added to the result.
 
         Returns
         -------
         pd.DataFrame
             analysis result for differential analysis. The DataFrame
-            contains 6 columns:
-            1.  expected values of groups A
-            2.  expected values of groups B
-            3.  the probability P(A>B|Z)
-            4.  the probability P(B>A|Z)
-            5.  the Bayesian factor of K(A>B|Z)
-            6.  the Bayesian factor of K(B>A|Z)
+            contains the original 6 columns plus ``GroupA`` and ``GroupB``
+            when labels are provided.
 
         """
         x_means_a = []
@@ -357,6 +369,12 @@ class DifferentialAnalysis:
         if sort_output:
             sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
             result = result.loc[sort_key.sort_values(ascending=False).index]
+
+        if group_a_label is not None:
+            result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a_label
+        if group_b_label is not None:
+            result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = group_b_label
+
         return result
 
     def sample_mdata_x(

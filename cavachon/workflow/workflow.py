@@ -449,18 +449,14 @@ class Workflow:
                     x_sampling_size=analysis_config.x_sampling_size,
                     batch_size=analysis_config.batch_size,
                     sort_output=analysis_config.sort_output,
+                    group_a_label=analysis_config.group_a,
+                    group_b_label=analysis_config.group_b,
                 )
                 if analysis_config.keep_only_significant:
                     result = result.loc[
                         (result["K(A>B|Z)"].abs() >= 3.2)
                         | (result["K(B>A|Z)"].abs() >= 3.2)
                     ]
-                result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = (
-                    analysis_config.group_a
-                )
-                result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = (
-                    analysis_config.group_b
-                )
                 target = (
                     modality_name,
                     component,
