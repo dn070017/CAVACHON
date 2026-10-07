@@ -214,16 +214,20 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             if "Mean(A)" in deg.columns and "Mean(B)" in deg.columns:
                 deg["LogFC"] = np.log1p(deg["Mean(A)"]) - np.log1p(deg["Mean(B)"])
 
-        # Work on a feature subset so the decoder only produces DEGs.
+        # The decoder expects the full modality feature dimension, so we keep
+        # all features and select the DEG subset from the decoder output.
+        feature_indices = modality_obj.var_names.get_indexer(valid_features)
+        if np.any(feature_indices < 0):
+            missing = valid_features[feature_indices < 0].tolist()
+            raise ValueError(f"DEG features not found in modality: {missing}")
+        feature_indices = tf.constant(feature_indices, dtype=tf.int32)
+
         adata_dict = dict()
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
             warnings.simplefilter(action="ignore", category=UserWarning)
             for mod, adata in self.mdata.mod.items():
-                if mod == modality:
-                    adata_dict[mod] = adata[:, valid_features].copy()
-                else:
-                    adata_dict[mod] = adata.copy()
+                adata_dict[mod] = adata.copy()
 
         mdata_subset = mu.MuData(adata_dict)
 
@@ -269,11 +273,19 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             for name in z_baseline.keys()
         }
 
-        f_baseline = self.compute_differential_attribution_target_batch(
-            representative_batch, component, modality, z_dict_baseline
+        f_baseline = tf.gather(
+            self.compute_differential_attribution_target_batch(
+                representative_batch, component, modality, z_dict_baseline
+            ),
+            feature_indices,
+            axis=-1,
         )
-        f_target = self.compute_differential_attribution_target_batch(
-            representative_batch, component, modality, z_dict_target
+        f_target = tf.gather(
+            self.compute_differential_attribution_target_batch(
+                representative_batch, component, modality, z_dict_target
+            ),
+            feature_indices,
+            axis=-1,
         )
 
         n_features = int(tf.shape(f_baseline)[-1].numpy().item())
@@ -301,8 +313,12 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
                     else:
                         z_dict_step[comp_name] = z_baseline[comp_name]
 
-                target = self.compute_differential_attribution_target_batch(
-                    representative_batch, component, modality, z_dict_step
+                target = tf.gather(
+                    self.compute_differential_attribution_target_batch(
+                        representative_batch, component, modality, z_dict_step
+                    ),
+                    feature_indices,
+                    axis=-1,
                 )
 
             for feature_index in range(n_features):
