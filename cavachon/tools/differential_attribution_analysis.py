@@ -1,5 +1,5 @@
 import warnings
-from typing import List, Mapping, Sequence, Union
+from typing import List, Mapping, Optional, Sequence, Union
 
 import muon as mu
 import numpy as np
@@ -21,7 +21,8 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
     (``z_baseline`` for the reference group and ``z_target`` for the case
     group). The attributions are grouped by component, summed over latent
     dimensions, and normalized so that the signed contributions sum to one
-    (within the user-selected ``with_respect_to`` components).
+    when multiple components are selected in ``with_respect_to``. With a
+    single component, raw attributions are reported instead.
 
     """
 
@@ -149,7 +150,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         with_respect_to: List[str],
         batch_size: int = 128,
         n_steps: int = 32,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """Compute per-component attributions for a DEG table.
 
         Parameters
@@ -182,10 +183,12 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         Returns
         -------
-        pd.DataFrame
+        Optional[pd.DataFrame]
             Augmented DEG table with per-component attribution columns:
             ``Delta``, ``attr_<comp>``, ``abs_attr_<comp>``,
-            ``contrib_<comp>`` and ``abs_contrib_<comp>``.
+            ``contrib_<comp>`` and ``abs_contrib_<comp>`` (the latter two are
+            omitted when ``with_respect_to`` contains a single component).
+            Returns ``None`` when no DEG features overlap with the modality.
 
         """
         if not with_respect_to:
@@ -203,9 +206,11 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         valid_features = modality_obj.var_names.intersection(deg.index)
         if len(valid_features) == 0:
-            raise ValueError(
-                "No DEG features overlap with the modality var names."
+            warnings.warn(
+                f"No DEG features overlap with {modality} var names for component {component}; skipping.",
+                UserWarning,
             )
+            return None
 
         deg = deg.loc[valid_features].copy()
 
@@ -353,22 +358,6 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             start = end
 
         delta = (f_target - f_baseline)[0].numpy()
-        signed_sum = np.sum(list(attr_columns.values()), axis=0)
-        abs_sum = np.sum(list(abs_attr_columns.values()), axis=0)
-
-        # Guard against division by zero on a per-gene basis.
-        signed_sum = np.where(np.abs(signed_sum) < 1e-12, np.nan, signed_sum)
-        abs_sum = np.where(abs_sum < 1e-12, np.nan, abs_sum)
-
-        contrib_columns = dict()
-        abs_contrib_columns = dict()
-        for comp_name in with_respect_to:
-            contrib_columns[f"contrib_{comp_name}"] = (
-                attr_columns[f"attr_{comp_name}"] / signed_sum
-            )
-            abs_contrib_columns[f"abs_contrib_{comp_name}"] = (
-                abs_attr_columns[f"abs_attr_{comp_name}"] / abs_sum
-            )
 
         result = deg.copy()
         result["Delta"] = delta
@@ -377,8 +366,36 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         for comp_name in with_respect_to:
             result[f"attr_{comp_name}"] = attr_columns[f"attr_{comp_name}"]
             result[f"abs_attr_{comp_name}"] = abs_attr_columns[f"abs_attr_{comp_name}"]
-            result[f"contrib_{comp_name}"] = contrib_columns[f"contrib_{comp_name}"]
-            result[f"abs_contrib_{comp_name}"] = abs_contrib_columns[f"abs_contrib_{comp_name}"]
+
+        if len(with_respect_to) == 1:
+            # With a single attributed component the normalized contributions
+            # would be trivially +/-1, so report only raw attributions.
+            return result
+
+        signed_sum = np.sum(list(attr_columns.values()), axis=0)
+        abs_sum = np.sum(list(abs_attr_columns.values()), axis=0)
+
+        # Guard against division by zero on a per-gene basis. When the total
+        # signed or absolute attribution is essentially zero, the normalized
+        # contribution is reported as zero rather than NaN.
+        signed_sum = np.where(np.abs(signed_sum) < 1e-12, 0.0, signed_sum)
+        abs_sum = np.where(abs_sum < 1e-12, 0.0, abs_sum)
+
+        for comp_name in with_respect_to:
+            signed_denom = np.where(
+                np.abs(signed_sum) < 1e-12, 1.0, signed_sum
+            )
+            abs_denom = np.where(abs_sum < 1e-12, 1.0, abs_sum)
+            result[f"contrib_{comp_name}"] = np.where(
+                np.abs(signed_sum) < 1e-12,
+                0.0,
+                attr_columns[f"attr_{comp_name}"] / signed_denom,
+            )
+            result[f"abs_contrib_{comp_name}"] = np.where(
+                abs_sum < 1e-12,
+                0.0,
+                abs_attr_columns[f"abs_attr_{comp_name}"] / abs_denom,
+            )
 
         return result
 
@@ -394,7 +411,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         threshold: float = 3.2,
         batch_size: int = 128,
         n_steps: int = 32,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """Load a DEG file, filter it, and compute attributions.
 
         Parameters
@@ -432,8 +449,9 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         Returns
         -------
-        pd.DataFrame
-            Filtered and attributed DEG table.
+        Optional[pd.DataFrame]
+            Filtered and attributed DEG table, or ``None`` if no DEG
+            features overlap with the modality.
 
         """
         deg = pd.read_csv(deg_file, sep=None, engine="python", index_col=0)
