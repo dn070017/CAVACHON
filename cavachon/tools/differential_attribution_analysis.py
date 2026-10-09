@@ -323,17 +323,21 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
                     axis=-1,
                 )
 
-            for feature_index in range(n_features):
-                for comp_name in with_respect_to:
-                    gradient = tape.gradient(
-                        target[0, feature_index], z_step[comp_name]
-                    )
-                    if gradient is not None:
-                        accumulated_gradients[comp_name] = tf.tensor_scatter_nd_add(
-                            accumulated_gradients[comp_name],
-                            indices=[[0, feature_index]],
-                            updates=tf.expand_dims(gradient[0], axis=0),
+                # Gradient calls must stay inside the GradientTape context;
+                # slicing/indexing the target outside the tape creates new
+                # tensors that are no longer connected to the watched source.
+                for feature_index in range(n_features):
+                    for comp_name in with_respect_to:
+                        gradient = tape.gradient(
+                            target[0, feature_index], z_step[comp_name]
                         )
+                        if gradient is not None:
+                            gradient_tensor = tf.convert_to_tensor(gradient)
+                            accumulated_gradients[comp_name] = tf.tensor_scatter_nd_add(
+                                accumulated_gradients[comp_name],
+                                indices=[[0, feature_index]],
+                                updates=tf.expand_dims(gradient_tensor[0], axis=0),
+                            )
             del tape
 
         # Scale by delta_z and divide by number of steps (Riemann sum).
