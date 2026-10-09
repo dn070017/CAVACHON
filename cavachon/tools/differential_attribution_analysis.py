@@ -253,25 +253,14 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             break
         assert representative_batch is not None
 
-        # Build concatenated selected z slices and their baseline/target values.
-        selected_dims = []
-        for comp_name in with_respect_to:
-            selected_dims.append(
-                tf.shape(z_baseline[comp_name])[-1].numpy().item()
-            )
-
-        z_baseline_selected = tf.concat(
-            [z_baseline[comp] for comp in with_respect_to], axis=-1
-        )
-        z_target_selected = tf.concat(
-            [z_target[comp] for comp in with_respect_to], axis=-1
-        )
-        delta_z_selected = z_target_selected - z_baseline_selected
+        delta_z = {
+            comp_name: z_target[comp_name] - z_baseline[comp_name]
+            for comp_name in with_respect_to
+        }
 
         # Compute full prediction at baseline and target (deterministic).
         z_dict_baseline = {
-            name: (z_baseline[name] if name in with_respect_to else z_baseline[name])
-            for name in z_baseline.keys()
+            name: z_baseline[name] for name in z_baseline.keys()
         }
         z_dict_target = {
             name: (z_target[name] if name in with_respect_to else z_baseline[name])
@@ -295,28 +284,36 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         n_features = int(tf.shape(f_baseline)[-1].numpy().item())
 
-        # Accumulate gradients along the IG path.
-        accumulated_gradients = tf.zeros(
-            (1, n_features, tf.shape(z_baseline_selected)[-1]), dtype=tf.float32
-        )
+        # Accumulate gradients along the IG path. We keep per-component
+        # watched tensors because slicing a concatenated watched tensor and
+        # passing the slices through Keras models drops the gradient path.
+        accumulated_gradients = {
+            comp_name: tf.zeros(
+                (1, n_features, tf.shape(z_baseline[comp_name])[-1]),
+                dtype=tf.float32,
+            )
+            for comp_name in with_respect_to
+        }
 
         for step in range(n_steps):
             alpha = float(step) / float(n_steps)
             with tf.GradientTape(persistent=True) as tape:
-                z_step = z_baseline_selected + alpha * delta_z_selected
-                z_step = tf.identity(z_step)
-                tape.watch(z_step)
+                z_step = {
+                    comp_name: z_baseline[comp_name] + alpha * delta_z[comp_name]
+                    for comp_name in with_respect_to
+                }
+                for comp_name in with_respect_to:
+                    z_step[comp_name] = tf.identity(z_step[comp_name])
+                    tape.watch(z_step[comp_name])
 
-                # Reconstruct per-component z dict.
-                z_dict_step = dict()
-                start = 0
-                for comp_name in self.model.components.keys():
-                    if comp_name in with_respect_to:
-                        end = start + selected_dims[with_respect_to.index(comp_name)]
-                        z_dict_step[comp_name] = z_step[:, start:end]
-                        start = end
-                    else:
-                        z_dict_step[comp_name] = z_baseline[comp_name]
+                z_dict_step = {
+                    comp_name: (
+                        z_step[comp_name]
+                        if comp_name in with_respect_to
+                        else z_baseline[comp_name]
+                    )
+                    for comp_name in self.model.components.keys()
+                }
 
                 target = tf.gather(
                     self.compute_differential_attribution_target_batch(
@@ -327,35 +324,34 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
                 )
 
             for feature_index in range(n_features):
-                gradient = tape.gradient(
-                    target[0, feature_index], z_step
-                )
-                if gradient is not None:
-                    accumulated_gradients = tf.tensor_scatter_nd_add(
-                        accumulated_gradients,
-                        indices=[[0, feature_index]],
-                        updates=tf.expand_dims(gradient[0], axis=0),
+                for comp_name in with_respect_to:
+                    gradient = tape.gradient(
+                        target[0, feature_index], z_step[comp_name]
                     )
+                    if gradient is not None:
+                        accumulated_gradients[comp_name] = tf.tensor_scatter_nd_add(
+                            accumulated_gradients[comp_name],
+                            indices=[[0, feature_index]],
+                            updates=tf.expand_dims(gradient[0], axis=0),
+                        )
             del tape
 
         # Scale by delta_z and divide by number of steps (Riemann sum).
-        attributions = (
-            accumulated_gradients
-            * tf.expand_dims(delta_z_selected, axis=1)
-            / float(n_steps)
-        )
-        attributions = attributions[0].numpy()
+        attributions = dict()
+        for comp_name in with_respect_to:
+            attributions[comp_name] = (
+                accumulated_gradients[comp_name]
+                * tf.expand_dims(delta_z[comp_name], axis=1)
+                / float(n_steps)
+            )[0].numpy()
 
         # Sum attributions per component.
         attr_columns = dict()
         abs_attr_columns = dict()
-        start = 0
-        for i, comp_name in enumerate(with_respect_to):
-            end = start + selected_dims[i]
-            comp_attr = attributions[:, start:end].sum(axis=1)
+        for comp_name in with_respect_to:
+            comp_attr = attributions[comp_name].sum(axis=1)
             attr_columns[f"attr_{comp_name}"] = comp_attr
             abs_attr_columns[f"abs_attr_{comp_name}"] = np.abs(comp_attr)
-            start = end
 
         delta = (f_target - f_baseline)[0].numpy()
 
