@@ -666,13 +666,19 @@ class InteractiveVisualization:
 
         fig.update_layout(
             xaxis=dict(
+                title="",
                 scaleanchor="y",
                 scaleratio=1,
                 showgrid=False,
                 zeroline=False,
                 showticklabels=False,
             ),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(
+                title="",
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
             **kwargs,
         )
 
