@@ -261,7 +261,7 @@ class AttributionAnalysis:
                     batch=batch,
                     modality_name=modality,
                     z_hat=z_hat,
-                    preprocessor_outputs=dict(),
+                    preprocessor_outputs=preprocessor_outputs,
                 )
                 decoder = component_network.decoders.get(modality)
                 attribution_target = decoder.compute_attribution_target(decoder_inputs)
