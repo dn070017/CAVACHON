@@ -80,6 +80,10 @@ class DecoderDataParameterizer(tf.keras.Model):
         )
         x_parameterizer_inputs = dict()
         x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
+        if self.x_parameterizer.libsize_scaling:
+            x_parameterizer_inputs.setdefault(
+                Constants.TENSOR_NAME_LIBSIZE, inputs.get(Constants.TENSOR_NAME_LIBSIZE)
+            )
 
         return self.x_parameterizer.compute_attribution_target(x_parameterizer_inputs)
 

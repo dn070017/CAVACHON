@@ -88,8 +88,14 @@ class Parameterizer(tf.keras.Model):
         self.libsize_scaling = libsize_scaling
         self.exp_transform = exp_transform
 
-    def compute_attribution_target(self, inputs: tf.Tensor):
+    def compute_attribution_target(self, inputs: Mapping[str, tf.Tensor]):
         outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
+        outputs = self.modify_outputs(
+            inputs=inputs,
+            outputs=outputs,
+            libsize_scaling=self.libsize_scaling,
+            exp_transform=self.exp_transform,
+        )
         return outputs
 
     @classmethod

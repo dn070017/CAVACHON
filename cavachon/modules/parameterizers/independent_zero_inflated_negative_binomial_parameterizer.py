@@ -67,12 +67,17 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
         """
         super().__init__(*args, **kwargs)
 
-    def compute_attribution_target(self, inputs: tf.Tensor):
+    def compute_attribution_target(self, inputs: Mapping[str, tf.Tensor]):
         outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
-        probs, means, dispersion = tf.keras.layers.Lambda(
+        logits, means, dispersion = tf.keras.layers.Lambda(
             lambda x: tf.split(x, num_or_size_splits=3, axis=-1)
         )(outputs)
-        probs = tf.keras.activations.sigmoid(probs)
+        if self.libsize_scaling:
+            means *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
+        if self.exp_transform:
+            means = tf.where(means > 7.0, 7 * tf.ones_like(means), means)
+            means = tf.math.exp(means) - 1
+        means = tf.where(means <= 0, 1e-7 * tf.ones_like(means), means)
         return means
 
     @classmethod
