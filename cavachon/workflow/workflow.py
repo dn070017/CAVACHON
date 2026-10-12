@@ -7,6 +7,7 @@ import anndata
 import muon as mu
 import pandas as pd
 import tensorflow as tf
+from tqdm import tqdm
 
 from cavachon.config.application_config import ApplicationConfig
 from cavachon.dataloader.dataloader import DataLoader
@@ -564,7 +565,10 @@ class Workflow:
     def perform_differential_attribution_analysis(self) -> None:
         """Perform differential attribution analysis on DEG/HDEG outputs."""
         output_root = os.path.join(self.config.io.outdir, "differential_attribution_analysis")
-        for analysis_config in self.config.analysis.differential_attribution_analysis:
+        for analysis_config in tqdm(
+            self.config.analysis.differential_attribution_analysis,
+            desc="Differential attribution analyses",
+        ):
             source_directory = (
                 "differential_analysis"
                 if analysis_config.analysis_type == "deg"
@@ -596,7 +600,11 @@ class Workflow:
                 )
                 continue
 
-            for filename, deg_table in deg_files:
+            for filename, deg_table in tqdm(
+                deg_files,
+                desc=f"Attributing {component}/{modality_name}",
+                leave=False,
+            ):
                 if analysis_config.analysis_type == "deg":
                     group_a = str(
                         deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN].iloc[0]
