@@ -550,7 +550,7 @@ class InteractiveVisualization:
     def differential_attribution_radviz(
         data: pd.DataFrame,
         with_respect_to: List[str],
-        logfc_column: str = "LogFC(A/B)",
+        logfc_column: str = "LogFC",
         abs_contrib_prefix: str = "abs_contrib_",
         filename: Optional[str] = None,
         title: str = "Differential Attribution RadViz",
