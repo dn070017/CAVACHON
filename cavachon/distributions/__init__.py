@@ -8,6 +8,9 @@ from .independent_zero_inflated_negative_binomial_distribution import (
 from .multivariate_normal_diag_distribution import (
     MultivariateNormalDiagDistribution as MultivariateNormalDiagDistribution,
 )
+from .ordered_logistic_distribution import (
+    OrderedLogisticDistribution as OrderedLogisticDistribution,
+)
 from .studentt_distribution import (
     StudenttDistribution as StudenttDistribution,
 )

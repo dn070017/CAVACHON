@@ -13,6 +13,12 @@ from .multivariate_normal_diag_parameterizer_layer import (
 from .multivariate_normal_diag_sampler import (
     MultivariateNormalDiagSampler as MultivariateNormalDiagSampler,
 )
+from .ordered_logistic_parameterizer_layer import (
+    OrderedLogisticParameterizerLayer as OrderedLogisticParameterizerLayer,
+)
+from .ordered_logistic_sampler import (
+    OrderedLogisticSampler as OrderedLogisticSampler,
+)
 from .studentt_parameterizer_layer import (
     StudenttParameterizerLayer as StudenttParameterizerLayer,
 )

@@ -7,6 +7,9 @@ from .independent_zero_inflated_negative_binomial_modifier import (
 from .multivariate_normal_diag_modifier import (
     MultivariateNormalDiagModifier as MultivariateNormalDiagModifier,
 )
+from .ordered_logistic_modifier import (
+    OrderedLogisticModifier as OrderedLogisticModifier,
+)
 from .studentt_modifier import (
     StudenttModifier as StudenttModifier,
 )

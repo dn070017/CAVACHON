@@ -11,16 +11,15 @@ class StudenttParameterizerLayer(tf.keras.layers.Layer):
         self.event_dims = event_dims
 
     def build(self, input_shape: tf.TensorShape) -> None:
-        # We need event_dims * 3 outputs: one set each for loc, scale, and df
+        # event_dims * 4 outputs: loc, scale, df, skewness (raw, unconstrained)
         self.weight = self.add_weight(
             name=f"{self.name}_weight",
-            shape=(int(input_shape[-1]), self.event_dims * 3),
+            shape=(int(input_shape[-1]), self.event_dims * 4),
         )
         self.bias = self.add_weight(
-            name=f"{self.name}_bias", shape=(1, self.event_dims * 3)
+            name=f"{self.name}_bias", shape=(1, self.event_dims * 4)
         )
 
     def call(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
-        # Simple linear transformation. The activation (softplus)
-        # happens inside the Distribution class.
+        # Linear map only. Constraints are applied in StudenttDistribution.constrain.
         return tf.matmul(inputs, self.weight) + self.bias

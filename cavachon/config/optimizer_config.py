@@ -6,7 +6,7 @@ from cavachon.config.base import BaseConfigModel
 class OptimizerConfig(BaseConfigModel):
     """Optimizer configuration model."""
 
-    name: str = "adam"
+    name: str = "adamW"
     learning_rate: float = 1e-4
 
     @field_validator("learning_rate", mode="before")

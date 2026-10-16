@@ -10,6 +10,9 @@ from .mixture_multivariate_normal_diag_parameterizer import (
 from .multivariate_normal_diag_parameterizer import (
     MultivariateNormalDiagParameterizer as MultivariateNormalDiagParameterizer,
 )
+from .ordered_logistic_parameterizer import (
+    OrderedLogisticParameterizer as OrderedLogisticParameterizer,
+)
 from .parameterizer import Parameterizer as Parameterizer
 from .studentt_parameterizer import (
     StudenttParameterizer as StudenttParameterizer,
