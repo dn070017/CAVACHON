@@ -119,6 +119,51 @@ class ClusterAnalysis:
 
         return logpy_z
 
+    def compute_cluster_log_probability_z_hat(
+        self,
+        modality: str,
+        component: str,
+        batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
+        distribution_names: Optional[Dict[str, str]] = None,
+        batch_size: int = 128,
+        min_n_obs=36,
+    ) -> np.array:
+        """Compute direct learned-prior cluster log probabilities in z_hat space."""
+        component_obj = self.model.components[component]
+        prior = component_obj.z_hat_prior_parameterizer
+        if prior is None:
+            raise ValueError(
+                f"Component '{component}' does not have z_hat prior parameterizer."
+            )
+
+        params = self._extract_gmm_parameters(prior)
+        dist_z, dist_z_y, logpy = self._build_gmm_distribution(
+            params["mu"], params["sigma2"], params["pi"]
+        )
+
+        z_hat_all = []
+        dataloader = DataLoader(
+            self.mdata, batch_size, batch_effect_colnames, distribution_names
+        )
+        for batch_data in tqdm(dataloader):
+            outputs = self.model(batch_data, training=False)
+            z_hat_all.append(outputs[f"{component}_z_hat"].numpy())
+        z_hat_all = np.vstack(z_hat_all)
+
+        logpy_zhat = self._score_and_cluster(
+            z_hat_all,
+            dist_z,
+            dist_z_y,
+            logpy.numpy(),
+            modality,
+            f"cluster_{component}_integrated",
+            f"logpy_zhat_{component}_integrated",
+            min_n_obs,
+            batch_size,
+        )
+
+        return logpy_zhat
+
     @staticmethod
     def _extract_gmm_parameters(prior_parameterizer):
         """Extract GMM parameters from a trained z_prior_parameterizer.
@@ -369,8 +414,17 @@ class ClusterAnalysis:
             logpy_z[start:end] = (logpy + logpz_y - logpz).numpy()
 
         cluster = tf.argmax(logpy_z, axis=-1).numpy()
+        initial_k = len(np.unique(cluster))
         logpy_z, cluster_final, final_labels = self._remove_small_clusters(
             logpy_z, cluster, min_n_obs
+        )
+
+        final_k = len(np.unique(cluster_final))
+        print(
+            f"[Clustering] {cluster_key}: initial K = {initial_k}, "
+            f"min_n_obs = {min_n_obs}, final K = {final_k}, "
+            f"removed {initial_k - final_k} cluster(s) "
+            f"(stored in obs['{cluster_key}'], obsm['{logpy_key}'])"
         )
 
         self.mdata.mod[modality].obs[cluster_key] = final_labels
@@ -542,6 +596,9 @@ class ClusterAnalysis:
         each *integrated* cluster in z_hat space for a hierarchical
         component.
 
+        This is the legacy analytical/post-hoc z_hat route that recombines
+        parent/child priors through hierarchical encoder weights.
+
         Unlike ``compute_cluster_log_probability`` (which clusters in
         ``z`` space of a single component), this method projects the
         GMM parameters of every parent component **and** the child
@@ -619,7 +676,7 @@ class ClusterAnalysis:
 
         n_initial = len(pi_zhat)
         print(f"[Integrated Clustering] Initial clusters (Cartesian product): {n_initial}")
-        print(f"[Integrated Clustering] Weight distribution before merging:")
+        print("[Integrated Clustering] Weight distribution before merging:")
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
         print(f"  Max weight: {np.max(pi_zhat):.4f}")
@@ -632,7 +689,7 @@ class ClusterAnalysis:
         print(f"[Integrated Clustering] After merging (bc_threshold={bc_threshold}): {n_merged} clusters")
         if n_initial > n_merged:
             print(f"[Integrated Clustering] Merged {n_initial - n_merged} redundant clusters")
-        print(f"[Integrated Clustering] Weight distribution after merging:")
+        print("[Integrated Clustering] Weight distribution after merging:")
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
         print(f"  Max weight: {np.max(pi_zhat):.4f}")

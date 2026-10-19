@@ -12,10 +12,12 @@ class Constants:
     MODEL_OUTPUTS_Z_HAT = "z_hat"
     MODEL_OUTPUTS_Z = "z"
     MODEL_OUTPUTS_Z_PRIOR_PARAMS = "z_prior_parameters"
+    MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS = "z_hat_prior_parameters"
     MODEL_OUTPUTS_Z_PARAMS = "z_parameters"
     MODEL_OUTPUTS_X_PARAMS = "x_parameters"
     MODEL_LOSS_STANDARD_KL_POSTFIX = "standard_kl_divergence"
     MODEL_LOSS_GMM_KL_POSTFIX = "gmm_kl_divergence"
+    MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX = "z_hat_gmm_density"
     MODEL_LOSS_DATA_POSTFIX = "negative_log_data_likelihood"
 
     MODULE_INPUTS_CONDITIONED_Z = "z_conditional"

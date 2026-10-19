@@ -10,6 +10,7 @@ from cavachon.config.component_config import ComponentConfig
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.layers.modifiers import ToDense
+from cavachon.losses.gmm_density_loss import GMMDensityLoss
 from cavachon.losses.gmm_kl_divergence import GMMKLDivergence
 from cavachon.losses.negative_log_data_likelihood import NegativeLogDataLikelihood
 from cavachon.losses.standard_kl_divergence import StandardKLDivergence
@@ -453,6 +454,8 @@ class Model(tf.keras.Model):
             self._standard_kl_weights = {}
         if not hasattr(self, "_gmm_kl_weights"):
             self._gmm_kl_weights = {}
+        if not hasattr(self, "_z_hat_density_weights"):
+            self._z_hat_density_weights = {}
 
         loss_weights = kwargs.get("loss_weights", dict())
         kwargs.pop("loss_weights", None)
@@ -527,6 +530,30 @@ class Model(tf.keras.Model):
                     self._data_loss_weights[component_name][modality_name] = loss[
                         nldl_name
                     ].weight
+
+                # z_hat GMM density loss (deterministic prior density)
+                component = self.components.get(component_name)
+                if (
+                    component.learn_z_hat_priors
+                    and component.z_hat_prior_parameterizer is not None
+                ):
+                    loss_name = (
+                        f"{component_name}_"
+                        f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                    )
+                    # Reuse existing Variable on recompile
+                    if component_name not in self._z_hat_density_weights:
+                        self._z_hat_density_weights[component_name] = tf.Variable(
+                            1.0,
+                            trainable=False,
+                            dtype=tf.float32,
+                            name=f"{component_name}_z_hat_density_weight",
+                        )
+                    weight_var = self._z_hat_density_weights[component_name]
+                    loss.setdefault(
+                        loss_name,
+                        GMMDensityLoss(weight=weight_var, name=loss_name),
+                    )
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -617,6 +644,22 @@ class Model(tf.keras.Model):
                         ),
                     )
 
+                # z_hat GMM density loss (deterministic prior density)
+                z_hat_density_name = (
+                    f"{component_name}_"
+                    f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                )
+                if z_hat_density_name in self.loss:
+                    z_hat_prior_params = results.get(
+                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS}"
+                    )
+                    z_hat = results.get(
+                        f"{component_name}_{Constants.MODEL_OUTPUTS_Z_HAT}"
+                    )
+                    if z_hat_prior_params is not None and z_hat is not None:
+                        y_true.setdefault(z_hat_density_name, z_hat_prior_params)
+                        y_pred.setdefault(z_hat_density_name, z_hat)
+
             #loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             loss_values = []
             for key in y_true:
@@ -644,6 +687,16 @@ class Model(tf.keras.Model):
                         weighted_loss = loss_fn(y_true[key], y_pred[key])
                         weight_scalar = loss_fn.weight(tf.ones(()))
                         loss_metrics[key] = weighted_loss / weight_scalar
+                    elif hasattr(loss_fn, "weight") and isinstance(
+                        loss_fn.weight, tf.Variable
+                    ):
+                        weighted_loss = loss_fn(y_true[key], y_pred[key])
+                        weight = loss_fn.weight
+                        loss_metrics[key] = tf.where(
+                            tf.greater(weight, 0.0),
+                            weighted_loss / weight,
+                            tf.zeros_like(weighted_loss),
+                        )
                     else:
                         loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
 

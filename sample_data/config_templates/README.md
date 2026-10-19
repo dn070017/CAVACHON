@@ -40,6 +40,16 @@ All training hyperparameters are set at the `training:` level, so you only need 
 
 If you need different values for different components, you can override any of these inside a component block. See [`CONFIG_REFERENCE.md`](./CONFIG_REFERENCE.md) for details.
 
+## Learned `z_hat` priors
+
+By default, clustering with `use_rep: z_hat` uses an analytical post-hoc method (`compute_integrated_cluster_log_probability`) to score each cell against the integrated parent-child GMM. When you set `learn_z_hat_priors: True` on a component (either at training level or per component), the model learns a direct diagonal GMM density on that component's deterministic `z_hat`. The loss is `-log p_GMM(z_hat)` with `n_latent_priors` mixture components. The density weight is 0.0 during parent annealing, ramps with the GMM KL crossfade during KL annealing, and stays at 1.0 during regular GMM training. When enabled, clustering with `use_rep: z_hat` uses the learned prior directly instead of the post-hoc analytical method.
+
+| Setting | Default | What it controls |
+|---|---|---|
+| `learn_z_hat_priors` | false | Learn a direct GMM density on `z_hat` during regular GMM training |
+
+This feature is inactive during parent annealing, ramps during KL annealing, and stays active during regular GMM training.
+
 ## Modality settings
 
 For each modality you only need:

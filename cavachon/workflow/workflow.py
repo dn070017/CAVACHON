@@ -321,12 +321,27 @@ class Workflow:
             use_rep = clustering_config.use_rep
             min_n_obs = clustering_config.min_n_obs
             if use_rep == "z_hat":
-                analysis.compute_integrated_cluster_log_probability(
-                    modality=modality,
-                    component=component,
-                    batch_size=batch_size,
-                    min_n_obs=min_n_obs,
-                )
+                component_obj = self.model.components[component]
+                if (
+                    getattr(component_obj, "learn_z_hat_priors", False)
+                    and getattr(component_obj, "z_hat_prior_parameterizer", None)
+                    is not None
+                ):
+                    analysis.compute_cluster_log_probability_z_hat(
+                        modality=modality,
+                        component=component,
+                        batch_size=batch_size,
+                        min_n_obs=min_n_obs,
+                        batch_effect_colnames=self.batch_effect_colnames,
+                        distribution_names=self.distribution_names,
+                    )
+                else:
+                    analysis.compute_integrated_cluster_log_probability(
+                        modality=modality,
+                        component=component,
+                        batch_size=batch_size,
+                        min_n_obs=min_n_obs,
+                    )
             else:
                 analysis.compute_cluster_log_probability(
                     modality=modality,
