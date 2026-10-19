@@ -36,6 +36,8 @@ def test_run_uses_deg_column_and_visualizes_result(tmp_path, monkeypatch):
         deg_table=deg_table,
         column="K(A>B|Z)",
         outdir=output_dir,
+        threshold=3.0,
+        threshold_operator="lt",
         permutation_num=10,
     )
 
@@ -205,7 +207,7 @@ def test_run_skips_output_when_no_pathways_pass_threshold(tmp_path, monkeypatch,
     output_dir = tmp_path / "enrichment"
     returned = EnrichmentAnalysis(gene_sets={}).run(
         deg_table=pd.DataFrame(
-            {"K(A>B|Z)": [1.0]}, index=pd.Index(["GeneA"])
+            {"K(A>B|Z)": [0.01]}, index=pd.Index(["GeneA"])
         ),
         column="K(A>B|Z)",
         outdir=output_dir,
