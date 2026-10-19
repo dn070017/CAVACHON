@@ -1,5 +1,6 @@
+import gc
 import warnings
-from typing import List, Mapping, Optional, Sequence, Union
+from typing import List, Mapping, Optional, Sequence, Union, cast
 
 import muon as mu
 import numpy as np
@@ -9,6 +10,7 @@ import tensorflow as tf
 from cavachon.dataloader.dataloader import DataLoader
 from cavachon.environment.constants import Constants
 from cavachon.tools.differential_analysis import DifferentialAnalysis
+from cavachon.utils.dataframe_utils import DataFrameUtils, ThresholdOperator
 from cavachon.utils.reflection_handler import ReflectionHandler
 
 
@@ -87,6 +89,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             total_count = tf.add_n(counts[component_name])
             means[component_name] = total_sum / total_count
 
+        gc.collect()
         return means
 
     def compute_differential_attribution_target_batch(
@@ -252,6 +255,8 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             representative_batch = batch
             break
         assert representative_batch is not None
+        del mdata_subset
+        gc.collect()
 
         delta_z = {
             comp_name: z_target[comp_name] - z_baseline[comp_name]
@@ -339,6 +344,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
                                 updates=tf.expand_dims(gradient_tensor[0], axis=0),
                             )
             del tape
+            gc.collect()
 
         # Scale by delta_z and divide by number of steps (Riemann sum).
         attributions = dict()
@@ -409,6 +415,9 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         with_respect_to: List[str],
         column: str = "K(A>B|Z)",
         threshold: float = 3.2,
+        threshold_operator: ThresholdOperator = "geq",
+        use_absolute: bool = True,
+        min_num_degs: int = 0,
         batch_size: int = 128,
         n_steps: int = 32,
     ) -> Optional[pd.DataFrame]:
@@ -439,7 +448,19 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             ``K(A>B|Z)``.
 
         threshold : float, optional
-            Absolute-value threshold applied to ``column``. Defaults to 3.2.
+            Threshold applied to ``column``. Defaults to 3.2.
+
+        threshold_operator : ThresholdOperator, optional
+            Operator used to compare ``column`` to ``threshold``. One of
+            ``leq``, ``geq``, ``lt``, ``gt``. Defaults to ``geq``.
+
+        use_absolute : bool, optional
+            Whether to compare ``|column|`` to ``threshold``. Defaults to
+            ``True``.
+
+        min_num_degs : int, optional
+            Minimum number of DEGs required to compute attributions.
+            Defaults to 0.
 
         batch_size : int, optional
             Encoder batch size. Defaults to 128.
@@ -450,12 +471,22 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         Returns
         -------
         Optional[pd.DataFrame]
-            Filtered and attributed DEG table, or ``None`` if no DEG
-            features overlap with the modality.
+            Filtered and attributed DEG table, or ``None`` if too few DEGs
+            pass the threshold or no features overlap with the modality.
 
         """
         deg = pd.read_csv(deg_file, sep=None, engine="python", index_col=0)
-        deg = deg.loc[deg[column].abs() >= threshold]
+        deg = deg.loc[
+            DataFrameUtils.filter_by_threshold(
+                deg[column], threshold, threshold_operator, use_absolute
+            )
+        ]
+        if len(deg) < min_num_degs:
+            print(
+                f"Skipping differential attribution for {component}/{modality}: "
+                f"only {len(deg)} DEGs (min_num_degs={min_num_degs})"
+            )
+            return None
         return self.compute_differential_attribution(
             deg=deg,
             component=component,
