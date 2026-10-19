@@ -9,6 +9,11 @@ from gseapy.gsea import Prerank
 from plotly.graph_objs._figure import Figure
 
 from cavachon.tools.interactive_visualization import InteractiveVisualization
+from cavachon.utils.dataframe_utils import (
+    THRESHOLD_OPERATOR_SYMBOLS,
+    ThresholdOperator,
+    DataFrameUtils,
+)
 
 
 PathLike = Union[str, Path]
@@ -117,6 +122,7 @@ class EnrichmentAnalysis:
         terms: Optional[List[str]] = None,
         metric: str = "FDR q-val",
         threshold: float = 0.05,
+        threshold_operator: ThresholdOperator = "leq",
     ) -> Dict[str, Figure]:
         """Create and save interactive enrichment visualizations.
 
@@ -142,7 +148,11 @@ class EnrichmentAnalysis:
             default term list. Defaults to ``"FDR q-val"``.
 
         threshold: float, optional
-            Maximum metric value for selected terms. Defaults to 0.05.
+            Metric value threshold for selected terms. Defaults to 0.05.
+
+        threshold_operator: ThresholdOperator, optional
+            Operator used to compare ``metric`` to ``threshold``. One of
+            ``leq``, ``geq``, ``lt``, ``gt``. Defaults to ``leq``.
 
         Returns
         -------
@@ -170,7 +180,13 @@ class EnrichmentAnalysis:
         results = cast(Dict[str, object], raw_results)
 
         if terms is None:
-            selected_results = result_table.loc[result_table[metric] <= threshold]
+            selected_results = result_table.loc[
+                DataFrameUtils.filter_by_threshold(
+                    cast(pd.Series, result_table[metric]),
+                    threshold,
+                    threshold_operator,
+                )
+            ]
             if "Term" in selected_results.columns:
                 selected_terms = selected_results["Term"].astype(str).tolist()
             else:
@@ -198,6 +214,7 @@ class EnrichmentAnalysis:
         terms: Optional[List[str]] = None,
         metric: str = "FDR q-val",
         threshold: float = 0.05,
+        threshold_operator: ThresholdOperator = "leq",
     ) -> Dict[str, Figure]:
         """Create visualizations for a completed enrichment analysis."""
         return self._visualize(
@@ -206,6 +223,7 @@ class EnrichmentAnalysis:
             terms=terms,
             metric=metric,
             threshold=threshold,
+            threshold_operator=threshold_operator,
         )
 
     def run(
@@ -216,8 +234,10 @@ class EnrichmentAnalysis:
         terms: Optional[List[str]] = None,
         metric: str = "FDR q-val",
         threshold: float = 0.05,
+        threshold_operator: ThresholdOperator = "leq",
+        min_num_degs: int = 0,
         **kwargs,
-    ) -> Prerank:
+    ) -> Optional[Prerank]:
         """Run enrichment analysis and create its visualizations.
 
         Parameters
@@ -241,22 +261,47 @@ class EnrichmentAnalysis:
             ``"FDR q-val"``.
 
         threshold: float, optional
-            Maximum metric value for selected terms. Defaults to 0.05.
+            Metric value threshold for selected terms. Defaults to 0.05.
+
+        threshold_operator: ThresholdOperator, optional
+            Operator used to compare ``metric`` to ``threshold``. One of
+            ``leq``, ``geq``, ``lt``, ``gt``. Defaults to ``leq``.
+
+        min_num_degs: int, optional
+            Minimum number of ranked genes required to run the analysis.
+            Defaults to 0.
 
         **kwargs
             Additional keyword arguments passed to ``gseapy.prerank``.
 
         Returns
         -------
-        Prerank
-            The completed gseapy prerank result.
+        Optional[Prerank]
+            The completed gseapy prerank result, or ``None`` if too few
+            DEGs are present.
         """
         if column not in deg_table.columns:
             raise ValueError(f"Column is not present in DEG table: {column}")
 
-        prerank = deg_table[column].dropna()
+        filtered_table = deg_table.loc[
+            DataFrameUtils.filter_by_threshold(
+                cast(pd.Series, deg_table[column]),
+                threshold,
+                threshold_operator,
+            )
+        ]
+        prerank = filtered_table[column].dropna()
         if prerank.empty:
             raise ValueError(f"Column contains no ranking values: {column}")
+
+        output_path = Path(outdir)
+        if len(prerank) < min_num_degs:
+            print(
+                f"Skipping enrichment: only {len(prerank)} DEGs "
+                f"(min_num_degs={min_num_degs}); "
+                f"skipping output directory: {output_path}"
+            )
+            return None
 
         gene_sets = self.gene_sets
         if isinstance(gene_sets, str):
@@ -279,11 +324,18 @@ class EnrichmentAnalysis:
                 raise ValueError(f"Result table does not contain metric: {metric}")
 
             significant_results = result_table.loc[
-                result_table[metric] <= threshold
+                DataFrameUtils.filter_by_threshold(
+                    cast(pd.Series, result_table[metric]),
+                    threshold,
+                    threshold_operator,
+                )
             ]
+            operator_symbol = THRESHOLD_OPERATOR_SYMBOLS.get(
+                threshold_operator, threshold_operator
+            )
             if significant_results.empty:
                 print(
-                    f"No enrichment pathways passed {metric} <= {threshold}; "
+                    f"No enrichment pathways passed {metric} {operator_symbol} {threshold}; "
                     f"skipping output directory: {output_path}"
                 )
                 return result
@@ -297,6 +349,7 @@ class EnrichmentAnalysis:
             terms=terms,
             metric=metric,
             threshold=threshold,
+            threshold_operator=threshold_operator,
         )
         return result
 
@@ -373,8 +426,10 @@ class EnrichmentAnalysis:
         terms: Optional[List[str]] = None,
         metric: str = "FDR q-val",
         threshold: float = 0.05,
+        threshold_operator: ThresholdOperator = "leq",
+        min_num_degs: int = 0,
         **kwargs,
-    ) -> Dict[Path, Prerank]:
+    ) -> Dict[Path, Optional[Prerank]]:
         """Run enrichment for every usable DEG/HDEG table in a directory.
 
         Each source table is passed to :meth:`run` and receives its own
@@ -395,7 +450,7 @@ class EnrichmentAnalysis:
             raise ValueError(message)
 
         output_path.mkdir(parents=True, exist_ok=True)
-        results: Dict[Path, Prerank] = {}
+        results: Dict[Path, Optional[Prerank]] = {}
         for filename, table in tables:
             table_output = output_path / self._output_name(input_path, filename)
             results[filename] = self.run(
@@ -405,6 +460,8 @@ class EnrichmentAnalysis:
                 terms=terms,
                 metric=metric,
                 threshold=threshold,
+                threshold_operator=threshold_operator,
+                min_num_degs=min_num_degs,
                 **kwargs,
             )
 
