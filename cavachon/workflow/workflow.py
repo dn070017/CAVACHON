@@ -637,6 +637,9 @@ class Workflow:
                     with_respect_to=analysis_config.with_respect_to,
                     column=analysis_config.column,
                     threshold=analysis_config.threshold,
+                    threshold_operator=analysis_config.threshold_operator,
+                    use_absolute=analysis_config.use_absolute,
+                    min_num_degs=analysis_config.min_num_degs,
                     batch_size=self.config.dataset.batch_size,
                     n_steps=analysis_config.n_steps,
                 )
@@ -695,6 +698,8 @@ class Workflow:
                 terms=enrichment_config.terms,
                 metric=enrichment_config.metric,
                 threshold=enrichment_config.threshold,
+                threshold_operator=enrichment_config.threshold_operator,
+                min_num_degs=enrichment_config.min_num_degs,
                 permutation_num=enrichment_config.permutation_num,
                 min_size=enrichment_config.min_size,
                 max_size=enrichment_config.max_size,
