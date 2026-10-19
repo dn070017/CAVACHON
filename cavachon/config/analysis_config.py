@@ -59,6 +59,9 @@ class AnalysisDifferentialAttributionConfig(AnalysisGenericConfig):
     use_cluster: str = ""
     column: str = "K(A>B|Z)"
     threshold: float = 3.2
+    threshold_operator: Literal["leq", "geq", "lt", "gt"] = "geq"
+    use_absolute: bool = True
+    min_num_degs: int = 10
     n_steps: int = 32
     recursive: bool = True
 
@@ -156,17 +159,12 @@ class AnalysisEnrichmentConfig(BaseConfigModel):
     recursive: bool = True
     terms: Optional[List[str]] = None
     metric: str = "FDR q-val"
-    threshold: float = 0.05
+    threshold: float = 3.2
+    threshold_operator: Literal["leq", "geq", "lt", "gt"] = "geq"
+    min_num_degs: int = 10
     permutation_num: int = 1000
     min_size: int = 15
     max_size: int = 500
-
-    @field_validator("threshold")
-    @classmethod
-    def _validate_threshold(cls, v: float) -> float:
-        if v < 0 or v > 1:
-            raise ValueError(f"threshold should be between 0 and 1, got {v}")
-        return v
 
     @field_validator("permutation_num", "min_size", "max_size")
     @classmethod
