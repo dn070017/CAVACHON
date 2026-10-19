@@ -35,8 +35,9 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
     * `visualize_embedding`: list of [Visualize Embedding](#visualize-embedding)
     * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
     * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
-     * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
-     * `enrichment_analysis`: list of [Enrichment Analysis](#enrichment-analysis)
+    * `differential_attribution_analysis`: list of [Differential Attribution Analysis](#differential-attribution-analysis)
+    * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
+    * `enrichment_analysis`: list of [Enrichment Analysis](#enrichment-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -142,9 +143,19 @@ The config for gene-set enrichment analysis is specified under `analysis.enrichm
   * description: result metric used for selecting terms to visualize.
 * `threshold`:
   * required: `False`.
-  * defaults: `0.05`
+  * defaults: `3.2`
   * type: `float`
-  * description: maximum metric value for selected terms.
+  * description: metric value threshold for selected terms.
+* `threshold_operator`:
+  * required: `False`.
+  * defaults: `geq`
+  * type: `str`
+  * description: comparison operator for `metric` and `threshold`. Must be one of `leq`, `geq`, `lt`, or `gt`.
+* `min_num_degs`:
+  * required: `False`.
+  * defaults: `10`
+  * type: `int`
+  * description: minimum number of ranked genes required to run enrichment for a DEG/HDEG table. Tables with fewer genes are skipped.
 * `permutation_num`:
   * required: `False`.
   * defaults: `1000`
@@ -371,6 +382,69 @@ The config for hierarchical differential analysis.
   * defaults: `128`
   * type: `int`
   * description: batch size used during sampling.
+
+[back to top](#config-hierarchy)
+&nbsp;
+## Differential Attribution Analysis
+The config for differential attribution analysis, which computes Integrated-Gradients attributions for DEGs/HDEGs.
+
+* `analysis_type`:
+  * required: `False`.
+  * defaults: `deg`
+  * type: `str`
+  * description: generated table source. Must be either `deg` or `hdeg`.
+* `modality`:
+  * required: `True`
+  * type: `str`
+  * description: which modality of the outputs of the component to use.
+* `component`:
+  * required: `True`
+  * type: `str`
+  * description: the outputs of which component to use.
+* `with_respect_to`:
+  * required: `True`
+  * type: `List[str]`
+  * description: component names whose latent changes should be attributed.
+* `use_cluster`:
+  * required: `False`.
+  * defaults: `""`
+  * type: `str`
+  * description: cluster column used to define group A and group B.
+* `column`:
+  * required: `False`.
+  * defaults: `K(A>B|Z)`
+  * type: `str`
+  * description: ranking column in the generated DEG/HDEG tables.
+* `threshold`:
+  * required: `False`.
+  * defaults: `3.2`
+  * type: `float`
+  * description: threshold applied to `column`.
+* `threshold_operator`:
+  * required: `False`.
+  * defaults: `geq`
+  * type: `str`
+  * description: comparison operator for `column` and `threshold`. Must be one of `leq`, `geq`, `lt`, or `gt`.
+* `use_absolute`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: whether to compare `|column|` to `threshold`.
+* `min_num_degs`:
+  * required: `False`.
+  * defaults: `10`
+  * type: `int`
+  * description: minimum number of DEGs required to compute attributions. Tables with fewer DEGs after threshold filtering are skipped.
+* `n_steps`:
+  * required: `False`.
+  * defaults: `32`
+  * type: `int`
+  * description: number of Riemann-sum steps for Integrated Gradients.
+* `recursive`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: whether to search nested result directories.
 
 [back to top](#config-hierarchy)
 &nbsp;
