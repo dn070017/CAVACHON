@@ -784,7 +784,10 @@ class ClusterAnalysis:
             proportions_k = list()
             for i, j in enumerate(self.mdata[modality].obsp["distances"]):
                 cluster = self.mdata[modality].obs.iloc[i][use_cluster]
-                neighbor_clusters = self.mdata[modality].obs.iloc[j.indices][
+                # Exclude the cell itself from its neighbor list so the
+                # proportion is computed over the k true nearest neighbors.
+                neighbor_indices = j.indices[j.indices != i]
+                neighbor_clusters = self.mdata[modality].obs.iloc[neighbor_indices][
                     use_cluster
                 ]
                 proportions_k.append((neighbor_clusters == cluster).sum() / k)
