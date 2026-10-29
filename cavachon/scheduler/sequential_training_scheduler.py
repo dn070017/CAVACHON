@@ -58,7 +58,7 @@ class SequentialTrainingScheduler:
         self,
         model: tf.keras.Model,
         mdata,
-        optimizer: str = "adam",
+        optimizer: str = "adamW",
         learning_rate: float = 1e-4,
         early_stopping: Union[bool, EarlyStoppingConfig] = True,
         batch_size: int = 128,

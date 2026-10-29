@@ -18,4 +18,4 @@ class OrderedLogisticSampler(tf.keras.layers.Layer):
         if training:
             return tf.cast(dist.sample(), tf.float32)
         # inference: most likely state
-        return tf.cast(tf.argmax(dist.probs_parameter(), axis=-1), tf.float32)
+        return tf.cast(tf.argmax(dist.categorical_probs(), axis=-1), tf.float32)

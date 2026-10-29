@@ -807,7 +807,7 @@ class ClusterAnalysis:
             analysis_result["% of KNN Cells with the Same Cluster"]
             * analysis_result["Number of Neighbors"]
         )
-        num_cells = self.mdata[modality].obs["cell_type"].value_counts()
+        num_cells = self.mdata[modality].obs["use_cluster"].value_counts()  #obs["cell_type"]
         total_num_cells = num_cells.sum()
         analysis_result["Number of Cells"] = analysis_result["Cluster"].map(num_cells)
         analysis_result["Cell Enrichment Score"] = (
