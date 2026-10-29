@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import field_validator, model_validator
 
@@ -121,6 +121,44 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     sort_output: bool = True
 
 
+class AnalysisEnrichmentConfig(BaseConfigModel):
+    """Gene-set enrichment analysis configuration."""
+
+    analysis_type: Literal["deg", "hdeg"]
+    gene_sets: str = "KEGG_2019_Mouse"
+    organism: Optional[str] = "Mouse"
+    column: str = "K(A>B|Z)"
+    recursive: bool = True
+    terms: Optional[List[str]] = None
+    metric: str = "FDR q-val"
+    threshold: float = 0.05
+    permutation_num: int = 1000
+    min_size: int = 15
+    max_size: int = 500
+
+    @field_validator("threshold")
+    @classmethod
+    def _validate_threshold(cls, v: float) -> float:
+        if v < 0 or v > 1:
+            raise ValueError(f"threshold should be between 0 and 1, got {v}")
+        return v
+
+    @field_validator("permutation_num", "min_size", "max_size")
+    @classmethod
+    def _validate_positive_integer(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"value should be a positive integer, got {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_gene_set_size(self) -> "AnalysisEnrichmentConfig":
+        if self.min_size > self.max_size:
+            raise ValueError(
+                "min_size should not be greater than max_size for enrichment"
+            )
+        return self
+
+
 class AnalysisConfig(BaseConfigModel):
     """Top-level analysis configuration."""
 
@@ -131,3 +169,4 @@ class AnalysisConfig(BaseConfigModel):
     hierarchical_differential_analysis: List[
         AnalysisHierarchicalDifferentialAnalysisConfig
     ] = []
+    enrichment_analysis: List[AnalysisEnrichmentConfig] = []

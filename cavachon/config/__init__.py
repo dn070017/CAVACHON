@@ -2,6 +2,7 @@ from cavachon.config.analysis_config import (
     AnalysisAttributionScoreConfig,
     AnalysisClusteringConfig,
     AnalysisConfig,
+    AnalysisEnrichmentConfig,
     AnalysisGenericConfig,
     AnalysisVisualizeEmbeddingConfig,
 )
@@ -43,4 +44,5 @@ __all__ = [
     "AnalysisClusteringConfig",
     "AnalysisGenericConfig",
     "AnalysisVisualizeEmbeddingConfig",
+    "AnalysisEnrichmentConfig",
 ]

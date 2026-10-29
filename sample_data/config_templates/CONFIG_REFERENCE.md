@@ -35,7 +35,8 @@ The config sould be prepared in a hierarchical structure using [YAML](https://en
     * `visualize_embedding`: list of [Visualize Embedding](#visualize-embedding)
     * `conditional_attribution_scores`: list of [Conditional Attribution Scores](#conditional-attribution-scores)
     * `differential_analysis`: list of [Differential Analysis](#differential-analysis)
-    * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
+     * `hierarchical_differential_analysis`: list of [Hierarchical Differential Analysis](#hierarchical-differential-analysis)
+     * `enrichment_analysis`: list of [Enrichment Analysis](#enrichment-analysis)
   * `modalities`: list of [Modalities](#modalities).
     * `filters`: list of [Filters](#filters).
   * `samples`: [Samples](#samples) (optional).
@@ -95,7 +96,65 @@ The configs for analysis and visualization are specified under the field `analys
   * required: `False`.
   * defaults: `[]`
   * type: `List[AnalysisHierarchicalDifferentialAnalysisConfig]`
-  * description: the config for hierarchical differential analysis. See [Hierarchical Differential Analysis](#hierarchical-differential-analysis) for more details.
+   * description: the config for hierarchical differential analysis. See [Hierarchical Differential Analysis](#hierarchical-differential-analysis) for more details.
+ * `enrichment_analysis`:
+   * required: `False`.
+   * defaults: `[]`.
+   * type: `List[AnalysisEnrichmentConfig]`
+   * description: the config for gene-set enrichment analysis on generated DEG or HDEG tables.
+
+## Enrichment Analysis
+The config for gene-set enrichment analysis is specified under `analysis.enrichment_analysis`.
+
+* `analysis_type`:
+  * required: `True`.
+  * type: `str`
+  * description: generated table source. Must be either `deg` or `hdeg`.
+* `gene_sets`:
+  * required: `False`.
+  * defaults: `KEGG_2019_Mouse`
+  * type: `str`
+  * description: Enrichr gene-set library passed to `gseapy`.
+* `organism`:
+  * required: `False`.
+  * defaults: `Mouse`
+  * type: `str | None`
+  * description: organism used when retrieving the gene-set library.
+* `column`:
+  * required: `False`.
+  * defaults: `K(A>B|Z)`
+  * type: `str`
+  * description: ranking column in the generated DEG/HDEG tables.
+* `recursive`:
+  * required: `False`.
+  * defaults: `True`
+  * type: `bool`
+  * description: whether to search nested result directories.
+* `terms`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `List[str] | None`
+  * description: terms for which enrichment-score plots are created.
+* `metric`:
+  * required: `False`.
+  * defaults: `FDR q-val`
+  * type: `str`
+  * description: result metric used for selecting terms to visualize.
+* `threshold`:
+  * required: `False`.
+  * defaults: `0.05`
+  * type: `float`
+  * description: maximum metric value for selected terms.
+* `permutation_num`:
+  * required: `False`.
+  * defaults: `1000`
+  * type: `int`
+  * description: number of permutations used by preranked GSEA.
+* `min_size` / `max_size`:
+  * required: `False`.
+  * defaults: `15` / `500`
+  * type: `int`
+  * description: minimum and maximum gene-set sizes used by preranked GSEA.
 
 ## Clustering
 The config for clustering.
@@ -543,6 +602,11 @@ The configs for the components in the model. See also [Modalities (in Component)
   * defaults: uses `training.enable_kmeans_init` (default `True`) if not set here.
   * type: `bool`.
   * description: whether to run k-means initialization for the GMM priors of this component before GMM training.
+* `learn_z_hat_priors`:
+  * required: `False`.
+  * defaults: uses `training.learn_z_hat_priors` (default `False`) if not set here.
+  * type: `bool`.
+  * description: whether to learn a direct diagonal GMM density over this component's deterministic `z_hat`. When enabled, a GMM with `n_latent_priors` components is trained on `z_hat`. The loss is a direct density (`-log p_GMM(z_hat)`); there is no sampler, posterior, or KL term. Overrides the training-level default. The loss weight is 0.0 during parent annealing, ramps with the GMM KL crossfade during KL annealing, and stays at 1.0 during regular GMM training. When disabled (default), `z_hat` clustering falls back to the post-hoc analytical `compute_integrated_cluster_log_probability` method.
 * `kl_annealing_ratio`:
   * required: `False`.
   * defaults: uses `training.kl_annealing_ratio` (default `[0.5, 0.2, 0.3]`) if not set here.
@@ -629,6 +693,11 @@ The configs for the training process. See also [Optimizer](#optimizer).
   * defaults: `True`.
   * type: `bool`.
   * description: default flag for k-means initialization. Can be overridden per component with `components[].enable_kmeans_init`.
+* `learn_z_hat_priors`:
+  * required: `False`.
+  * defaults: `False`.
+  * type: `bool`.
+  * description: default flag for learning a direct GMM density over the deterministic `z_hat` representation. When enabled, a diagonal GMM with `n_latent_priors` components is trained on the observed `z_hat` values. The density loss weight is 0.0 during parent annealing, ramps with the GMM KL crossfade during KL annealing, and stays at 1.0 during regular GMM training. This is a direct density loss (`-log p_GMM(z_hat)`), not a z_hat sampler or KL term. The learned prior is used for scoring during `z_hat` analysis when enabled; otherwise the legacy post-hoc analytical `compute_integrated_cluster_log_probability` method is used. Can be overridden per component with `components[].learn_z_hat_priors`.
 * `kl_annealing_ratio`:
   * required: `False`.
   * defaults: `[0.5, 0.2, 0.3]`.

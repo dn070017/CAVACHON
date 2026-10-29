@@ -79,3 +79,12 @@ analysis:
       n_samples: 10
       seed: 42
       batch_size: 128
+  enrichment_analysis:
+    - analysis_type: deg
+      gene_sets: KEGG_2019_Mouse
+      organism: Mouse
+      column: K(A>B|Z)
+      permutation_num: 1000
+      min_size: 15
+      max_size: 500
+      threshold: 0.05

@@ -119,6 +119,51 @@ class ClusterAnalysis:
 
         return logpy_z
 
+    def compute_cluster_log_probability_z_hat(
+        self,
+        modality: str,
+        component: str,
+        batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
+        distribution_names: Optional[Dict[str, str]] = None,
+        batch_size: int = 128,
+        min_n_obs=36,
+    ) -> np.array:
+        """Compute direct learned-prior cluster log probabilities in z_hat space."""
+        component_obj = self.model.components[component]
+        prior = component_obj.z_hat_prior_parameterizer
+        if prior is None:
+            raise ValueError(
+                f"Component '{component}' does not have z_hat prior parameterizer."
+            )
+
+        params = self._extract_gmm_parameters(prior)
+        dist_z, dist_z_y, logpy = self._build_gmm_distribution(
+            params["mu"], params["sigma2"], params["pi"]
+        )
+
+        z_hat_all = []
+        dataloader = DataLoader(
+            self.mdata, batch_size, batch_effect_colnames, distribution_names
+        )
+        for batch_data in tqdm(dataloader):
+            outputs = self.model(batch_data, training=False)
+            z_hat_all.append(outputs[f"{component}_z_hat"].numpy())
+        z_hat_all = np.vstack(z_hat_all)
+
+        logpy_zhat = self._score_and_cluster(
+            z_hat_all,
+            dist_z,
+            dist_z_y,
+            logpy.numpy(),
+            modality,
+            f"cluster_{component}_integrated",
+            f"logpy_zhat_{component}_integrated",
+            min_n_obs,
+            batch_size,
+        )
+
+        return logpy_zhat
+
     @staticmethod
     def _extract_gmm_parameters(prior_parameterizer):
         """Extract GMM parameters from a trained z_prior_parameterizer.
@@ -221,14 +266,12 @@ class ClusterAnalysis:
             return mu, sigma2, pi
 
         diff = mu[:, np.newaxis, :] - mu[np.newaxis, :, :]
-        diff_sq = diff**2
+        diff_sq = diff ** 2
         sigma_sum = sigma2[:, np.newaxis, :] + sigma2[np.newaxis, :, :]
 
         term1 = 0.125 * np.sum(diff_sq / sigma_sum, axis=2)
         term2 = 0.5 * np.sum(
-            np.log(
-                sigma_sum**2 / (4 * sigma2[:, np.newaxis, :] * sigma2[np.newaxis, :, :])
-            ),
+            np.log(sigma_sum ** 2 / (4 * sigma2[:, np.newaxis, :] * sigma2[np.newaxis, :, :])),
             axis=2,
         )
         D = term1 + term2
@@ -253,13 +296,9 @@ class ClusterAnalysis:
                             queue.append(neighbor)
                 current_label += 1
 
-        print(
-            f"[Merging] Found {current_label} connected components from {n_clusters} initial clusters"
-        )
+        print(f"[Merging] Found {current_label} connected components from {n_clusters} initial clusters")
         component_sizes = [np.sum(labels == i) for i in range(current_label)]
-        print(
-            f"[Merging] Component sizes: min={min(component_sizes)}, max={max(component_sizes)}, mean={np.mean(component_sizes):.1f}"
-        )
+        print(f"[Merging] Component sizes: min={min(component_sizes)}, max={max(component_sizes)}, mean={np.mean(component_sizes):.1f}")
 
         if max_k is not None and current_label > max_k:
             from scipy.cluster.hierarchy import fcluster, linkage
@@ -314,17 +353,11 @@ class ClusterAnalysis:
         sigma2_tf = tf.convert_to_tensor(sigma2, dtype=tf.float32)
         pi_tf = tf.convert_to_tensor(pi, dtype=tf.float32)
 
-        dist_z_y = MultivariateNormalDiagDistribution(
-            loc=mu_tf, scale_diag=tf.sqrt(sigma2_tf)
-        )
+        dist_z_y = MultivariateNormalDiagDistribution(loc=mu_tf, scale_diag=tf.sqrt(sigma2_tf))
 
         logits = tf.math.log(pi_tf + 1e-7)
-        params = tf.concat(
-            [tf.expand_dims(logits, -1), mu_tf, tf.sqrt(sigma2_tf)], axis=-1
-        )
-        dist_z = MixtureMultivariateNormalDiagDistribution.from_parameterizer_output(
-            params
-        )
+        params = tf.concat([tf.expand_dims(logits, -1), mu_tf, tf.sqrt(sigma2_tf)], axis=-1)
+        dist_z = MixtureMultivariateNormalDiagDistribution.from_parameterizer_output(params)
 
         logpy = tf.math.log(pi_tf + 1e-7)
 
@@ -381,8 +414,17 @@ class ClusterAnalysis:
             logpy_z[start:end] = (logpy + logpz_y - logpz).numpy()
 
         cluster = tf.argmax(logpy_z, axis=-1).numpy()
+        initial_k = len(np.unique(cluster))
         logpy_z, cluster_final, final_labels = self._remove_small_clusters(
             logpy_z, cluster, min_n_obs
+        )
+
+        final_k = len(np.unique(cluster_final))
+        print(
+            f"[Clustering] {cluster_key}: initial K = {initial_k}, "
+            f"min_n_obs = {min_n_obs}, final K = {final_k}, "
+            f"removed {initial_k - final_k} cluster(s) "
+            f"(stored in obs['{cluster_key}'], obsm['{logpy_key}'])"
         )
 
         self.mdata.mod[modality].obs[cluster_key] = final_labels
@@ -445,9 +487,9 @@ class ClusterAnalysis:
 
             for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
                 sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
-            sigma2_zhat[idx] += (
-                W_child_effective_sigma2.T @ child_params["sigma2"][child_idx]
-            )
+            sigma2_zhat[idx] += W_child_effective_sigma2.T @ child_params["sigma2"][
+                child_idx
+            ]
 
             pi_zhat[idx] = child_params["pi"][child_idx]
             for p_idx, p_params in zip(parent_idx, parent_params):
@@ -554,6 +596,9 @@ class ClusterAnalysis:
         each *integrated* cluster in z_hat space for a hierarchical
         component.
 
+        This is the legacy analytical/post-hoc z_hat route that recombines
+        parent/child priors through hierarchical encoder weights.
+
         Unlike ``compute_cluster_log_probability`` (which clusters in
         ``z`` space of a single component), this method projects the
         GMM parameters of every parent component **and** the child
@@ -630,9 +675,7 @@ class ClusterAnalysis:
         )
 
         n_initial = len(pi_zhat)
-        print(
-            f"[Integrated Clustering] Initial clusters (Cartesian product): {n_initial}"
-        )
+        print(f"[Integrated Clustering] Initial clusters (Cartesian product): {n_initial}")
         print("[Integrated Clustering] Weight distribution before merging:")
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
@@ -640,16 +683,12 @@ class ClusterAnalysis:
 
         mu_zhat, sigma2_zhat, pi_zhat = self._merge_similar_gmm_components(
             mu_zhat, sigma2_zhat, pi_zhat, bc_threshold, max_k
-        )
+            )
 
         n_merged = len(pi_zhat)
-        print(
-            f"[Integrated Clustering] After merging (bc_threshold={bc_threshold}): {n_merged} clusters"
-        )
+        print(f"[Integrated Clustering] After merging (bc_threshold={bc_threshold}): {n_merged} clusters")
         if n_initial > n_merged:
-            print(
-                f"[Integrated Clustering] Merged {n_initial - n_merged} redundant clusters"
-            )
+            print(f"[Integrated Clustering] Merged {n_initial - n_merged} redundant clusters")
         print("[Integrated Clustering] Weight distribution after merging:")
         print(f"  Top 5 weights: {np.sort(pi_zhat)[-5:][::-1]}")
         print(f"  Sum of top 5: {np.sum(np.sort(pi_zhat)[-5:]):.4f}")
@@ -768,7 +807,7 @@ class ClusterAnalysis:
             analysis_result["% of KNN Cells with the Same Cluster"]
             * analysis_result["Number of Neighbors"]
         )
-        num_cells = self.mdata[modality].obs[use_cluster].value_counts()  # "cell_type"
+        num_cells = self.mdata[modality].obs["cell_type"].value_counts()
         total_num_cells = num_cells.sum()
         analysis_result["Number of Cells"] = analysis_result["Cluster"].map(num_cells)
         analysis_result["Cell Enrichment Score"] = (

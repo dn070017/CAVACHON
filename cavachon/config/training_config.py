@@ -23,8 +23,8 @@ class TrainingConfig(BaseConfigModel):
     """Training configuration model.
 
     The fields ``max_regular_training_epochs``, ``n_parent_annealing_epochs``,
-    ``n_kl_annealing_epochs``, ``enable_kmeans_init``, and
-    ``kl_annealing_ratio`` serve as global defaults. Each component can
+    ``n_kl_annealing_epochs``, ``enable_kmeans_init``, ``learn_z_hat_priors``,
+    and ``kl_annealing_ratio`` serve as global defaults. Each component can
     override them by setting its own value.
     """
 
@@ -33,6 +33,7 @@ class TrainingConfig(BaseConfigModel):
     n_parent_annealing_epochs: int = 1
     n_kl_annealing_epochs: int = 25
     enable_kmeans_init: bool = True
+    learn_z_hat_priors: bool = False
     kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
     train: bool = True
     early_stopping: Union[bool, EarlyStoppingConfig] = True
