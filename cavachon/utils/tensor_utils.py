@@ -103,11 +103,11 @@ class TensorUtils:
 
     @staticmethod
     def create_backbone_layers(
-        n_layers: int = 2, #3
-        base_n_neurons: int = 32, #128
-        max_n_neurons: int = 64,  #2048
+        n_layers: int = 2,  # 3
+        base_n_neurons: int = 128,  # 32, #128
+        max_n_neurons: int = 2048,  # 64,  #2048
         rate: int = 2,
-        activation: str = "swish", #"linear"
+        activation: str = "swish",  # "linear"
         reverse: bool = False,
         name: Optional[str] = "backbone_network",
     ) -> tf.keras.Model:
@@ -161,7 +161,8 @@ class TensorUtils:
         for no_layer in range(0, n_layers):
             n_neurons = min(base_n_neurons * rate**no_layer, max_n_neurons)
             d = tf.keras.layers.Dense(
-                n_neurons, activation=activation,
+                n_neurons,
+                activation=activation,
                 name=f"{name}_dense_{no_layer}",
             )
             ln = tf.keras.layers.LayerNormalization(
