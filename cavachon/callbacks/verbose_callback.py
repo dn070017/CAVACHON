@@ -32,13 +32,26 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         self.debug = debug
         self._epoch_start = None
 
+    def _match_component(self, key):
+        """Return the component with the longest matching 'name_' prefix.
+
+        Component names can be prefixes of one another (e.g. ATAC vs
+        ATAC_DIST), so first-match attribution steals a child's metrics
+        from its parent.
+        """
+        best = None
+        for comp_name in self.component_order:
+            if key.startswith(comp_name + "_"):
+                if best is None or len(comp_name) > len(best):
+                    best = comp_name
+        return best
+
     def _strip_component_prefix(self, key):
         """Remove the leading component name from a metric key."""
-        for comp_name in self.component_order:
-            prefix = comp_name + "_"
-            if key.startswith(prefix):
-                return key[len(prefix):]
-        return key
+        comp_name = self._match_component(key)
+        if comp_name is None:
+            return key
+        return key[len(comp_name) + 1:]
 
     def on_epoch_begin(self, epoch, logs=None):
         self._epoch_start = time.time()
@@ -67,11 +80,10 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         for k, v in logs.items():
             if not isinstance(v, (int, float)) or k == "loss":
                 continue
-            for cn in self.component_order:
-                if k.startswith(cn + "_"):
-                    display = self._strip_component_prefix(k)
-                    comp_metrics[cn][display] = v
-                    break
+            cn = self._match_component(k)
+            if cn is not None:
+                display = self._strip_component_prefix(k)
+                comp_metrics[cn][display] = v
 
         if loss_val is not None:
             print(f"→ loss={loss_val:.3f}")
