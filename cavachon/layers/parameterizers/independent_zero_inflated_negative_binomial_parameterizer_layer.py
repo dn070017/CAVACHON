@@ -12,7 +12,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
     def __init__(
         self,
         event_dims: int,
-        use_shared_dispersion: bool = True,
+        use_shared_dispersion: bool = False,
         name: str = "independent_zero_inflated_negative_binomial_parameterizer_layer",
     ):
         """Constructor for
