@@ -16,7 +16,18 @@ Supports:
   - Interactive discovery scanning mdata.obsm, mdata.mod[mod].obsm,
     .varm, .uns with suggestions for z* / *z / *embed* patterns
   - Explicit --modality / --use_rep / --y-label / --cluster-label
+  - Multiple embeddings in one run, each evaluated in turn:
+      CLI:  --use-rep z_A z_B [--cluster-label cl_A cl_B]  (one label for
+            all, or one per embedding, paired by position)
+      YAML: embeddings:
+              - use_rep: z_A
+                cluster_label: cl_A
+              - use_rep: z_B      # no cluster_label -> default / fallback
+            (use_rep may also be a list)
+      Interactive: prompts for embeddings one at a time (Enter to finish),
+            asking for each embedding's cluster label
   - Fallback scanpy Leiden/Louvain if cluster_label missing
+  - Logistic regression accuracy of embedding -> y_label (fit on all cells)
 """
 
 from __future__ import annotations
@@ -61,10 +72,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--config", help="YAML config file (optional)")
     p.add_argument("--outdir", help="Output directory")
     p.add_argument("--modality", help="Modality to evaluate (e.g. rna, atac); for .h5ad input, the name given to it")
-    p.add_argument("--use-rep", dest="use_rep", help="obsm key for embedding (e.g. z_rna, X_emb)")
-    p.add_argument("--plane", help="Alias for --use-rep (explicit plane/key)")
+    p.add_argument("--use-rep", dest="use_rep", nargs="+",
+                   help="obsm key(s) for embedding (e.g. z_rna X_emb); each is evaluated in turn")
+    p.add_argument("--plane", nargs="+", help="Alias for --use-rep (explicit plane/key)")
     p.add_argument("--y-label", dest="y_label", help="obs column for cell identity (y)")
-    p.add_argument("--cluster-label", dest="cluster_label", help="obs column for cluster")
+    p.add_argument("--cluster-label", dest="cluster_label", nargs="+",
+                   help="obs column for cluster: one for all embeddings, or one per --use-rep (paired by position)")
     p.add_argument("--method", default=None, choices=["pca", "tsne", "umap"],
                    help="Embedding viz method for InteractiveVisualization")
     p.add_argument("--k", type=int, default=None, help="K for KNN purity (default 15)")
@@ -94,11 +107,57 @@ def merge_config_and_cli(args: argparse.Namespace) -> dict:
     # also handle plane
     if getattr(args, "plane", None) and "use_rep" not in merged:
         merged["use_rep"] = args.plane
+    # explicit CLI --use-rep overrides a YAML 'embeddings' list
+    if args.use_rep is not None:
+        merged.pop("embeddings", None)
     if args.ks is not None:
         merged["ks"] = args.ks
     merged["non_interactive"] = args.non_interactive or merged.get("non_interactive", False)
     merged["evaluate_all"] = args.evaluate_all or merged.get("evaluate_all", False)
     return merged
+
+
+def as_list(value) -> List:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+def normalize_embedding_specs(embeddings, use_rep, cluster_label):
+    """Turn YAML 'embeddings' / use_rep / cluster_label into per-embedding specs.
+
+    Returns (specs, default_cluster_label). Each spec has 'key' and, when it
+    was bound to one, 'cluster_label'. Specs without 'cluster_label' use
+    default_cluster_label.
+    """
+    specs: List[Dict] = []
+    if embeddings:
+        for item in as_list(embeddings):
+            if isinstance(item, dict):
+                key = item.get("use_rep") or item.get("key") or item.get("plane")
+                if not key:
+                    raise ValueError(f"embeddings entry {item} has no 'use_rep'")
+                spec = {"key": key}
+                if item.get("cluster_label"):
+                    spec["cluster_label"] = item["cluster_label"]
+                specs.append(spec)
+            else:
+                specs.append({"key": str(item)})
+        labels = as_list(cluster_label)
+        return specs, (labels[0] if len(labels) == 1 else None)
+
+    reps = as_list(use_rep)
+    labels = as_list(cluster_label)
+    if len(labels) > 1:
+        if len(labels) != len(reps):
+            raise ValueError(
+                f"{len(labels)} cluster labels given for {len(reps)} embeddings; "
+                "give one cluster label for all, or one per embedding"
+            )
+        return [{"key": r, "cluster_label": c} for r, c in zip(reps, labels)], None
+    return [{"key": r} for r in reps], (labels[0] if labels else None)
 
 
 def load_mdata(path: Path, modality: Optional[str] = None):
@@ -478,6 +537,21 @@ def compute_metrics(
             metrics["purity_curve"] = curve
         metrics["_knn_source"] = "sklearn.NearestNeighbors"
 
+    # Predictive power of the embedding for y_label: multinomial logistic
+    # regression fit and scored on all cells (training accuracy, no split)
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import accuracy_score, balanced_accuracy_score
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+        y_fit = clf.fit(embedding, y_true).predict(embedding)
+        metrics["logreg_accuracy"] = float(accuracy_score(y_true, y_fit))
+        metrics["logreg_balanced_accuracy"] = float(balanced_accuracy_score(y_true, y_fit))
+    except Exception as e:
+        print(f"  [warn] logistic regression failed ({e})", file=sys.stderr)
+
     df = pd.DataFrame({"y": y_true, "c": y_pred})
     cluster_purity = df.groupby("c")["y"].apply(lambda s: s.value_counts().iloc[0] / len(s)).mean()
     metrics["cluster_majority_purity_mean"] = float(cluster_purity)
@@ -582,9 +656,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
 
     modality_req = cfg.get("modality")
-    use_rep_req = cfg.get("use_rep")
     y_label_req = cfg.get("y_label") or cfg.get("yLabel") or cfg.get("cell_type")
-    cluster_label_req = cfg.get("cluster_label") or cfg.get("clusterLabel")
+    try:
+        embedding_specs, cluster_label_req = normalize_embedding_specs(
+            cfg.get("embeddings"),
+            cfg.get("use_rep"),
+            cfg.get("cluster_label") or cfg.get("clusterLabel"),
+        )
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
     method = cfg.get("method") or "tsne"
     k = int(cfg.get("k") or 15)
     ks = cfg.get("ks")
@@ -643,20 +724,21 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     use_rep_selections: List[Dict] = []
 
-    if use_rep_req:
-        in_mod = use_rep_req in mod_obsm
-        in_global = use_rep_req in global_obsm
+    for spec in embedding_specs:
+        key = spec["key"]
+        in_mod = key in mod_obsm
+        in_global = key in global_obsm
         if in_mod or in_global:
             is_global = in_global and not in_mod
-            use_rep_selections = [{"key": use_rep_req, "is_global": is_global}]
+            use_rep_selections.append({**spec, "is_global": is_global})
             source = "global mdata.obsm" if is_global else f"modality {modality}"
-            print(f"Using explicit --use-rep '{use_rep_req}' from {source}")
+            bound = f" with cluster_label '{spec['cluster_label']}'" if spec.get("cluster_label") else ""
+            print(f"Using explicit use_rep '{key}' from {source}{bound}")
         else:
             available = mod_obsm + [f"__global__:{k}" for k in global_obsm]
-            print(f"Warning: --use-rep '{use_rep_req}' not in obsm keys {available}", file=sys.stderr)
+            print(f"Warning: use_rep '{key}' not in obsm keys {available}", file=sys.stderr)
             if non_interactive:
                 return 2
-            use_rep_req = None
 
     if not use_rep_selections:
         if evaluate_all and (suggested_keys or global_suggested_keys):
@@ -682,14 +764,35 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"All modality obsm keys: {mod_obsm}")
             print(f"All global obsm keys: {global_obsm}")
             filt = [c for c in candidates if c["store"] == "obsm" and (c["modality"] == modality or c["modality"] == "__global__")]
-            sel = interactive_select(filt, f"Select embedding for modality '{modality}' (use_rep)", allow_skip=False)
-            if sel is None:
+            # Prompt repeatedly; each embedding is bound to its own cluster label
+            while True:
+                n = len(use_rep_selections) + 1
+                sel = interactive_select(
+                    filt,
+                    f"Select embedding #{n} for modality '{modality}' (use_rep)"
+                    + (" — Enter to finish" if use_rep_selections else ""),
+                    allow_skip=bool(use_rep_selections),
+                )
+                if sel is None:
+                    break
+                if "all" in sel:  # type: ignore
+                    use_rep_selections += [{"key": k, "is_global": False} for k in suggested_keys] + [{"key": k, "is_global": True} for k in global_suggested_keys]
+                    break
+                sel_cluster = resolve_obs_column(
+                    adata, None, f"cluster_label for '{sel['key']}'", False,
+                    fallback_options=["leiden", "louvain", "cluster", "cluster_rna", "cluster_atac"],
+                )
+                use_rep_selections.append({
+                    "key": sel["key"],
+                    "is_global": sel["modality"] == "__global__",
+                    "cluster_label": sel_cluster,
+                })
+                print("Selected so far: " + ", ".join(
+                    f"{s['key']} ({s.get('cluster_label') or 'fallback clustering'})" for s in use_rep_selections
+                ))
+            if not use_rep_selections:
                 print("No selection made.", file=sys.stderr)
                 return 2
-            if "all" in sel:  # type: ignore
-                use_rep_selections = [{"key": k, "is_global": False} for k in suggested_keys] + [{"key": k, "is_global": True} for k in global_suggested_keys]
-            else:
-                use_rep_selections = [{"key": sel["key"], "is_global": sel["modality"] == "__global__"}]
 
     # Resolve y_label and cluster_label interactively
     y_label = resolve_obs_column(adata, y_label_req, "y_label (cell identity)", non_interactive,
@@ -711,8 +814,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("Aborting: y_label required.", file=sys.stderr)
             return 2
 
-    cluster_label = resolve_obs_column(adata, cluster_label_req, "cluster_label", non_interactive,
-                                        fallback_options=["leiden", "louvain", "cluster", "cluster_rna", "cluster_atac"])
+    # Default cluster label, only for embeddings not bound to their own
+    cluster_label = None
+    if any("cluster_label" not in s for s in use_rep_selections):
+        cluster_label = resolve_obs_column(adata, cluster_label_req, "cluster_label", non_interactive,
+                                            fallback_options=["leiden", "louvain", "cluster", "cluster_rna", "cluster_atac"])
     # We'll ensure fallback per-embedding if needed
 
     # Evaluate each embedding
@@ -727,7 +833,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Evaluating {modality}:{use_rep} (global={is_global}, method={method}, k={k})")
         print(f"{'='*70}")
         # Ensure cluster label exists (per embedding, since fallback uses that rep)
-        cur_cluster_label = cluster_label
+        cur_cluster_label = sel["cluster_label"] if "cluster_label" in sel else cluster_label
         if cur_cluster_label is None or cur_cluster_label not in list(adata.obs.columns):
             # compute fallback using this embedding
             try:
@@ -771,7 +877,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             traceback.print_exc()
             viz_files = []
 
-        all_results[use_rep] = {
+        # same embedding may be listed with different cluster labels
+        result_key = use_rep if use_rep not in all_results else f"{use_rep}:{cur_cluster_label}"
+        all_results[result_key] = {
             "modality": modality,
             "use_rep": use_rep,
             "embedding_name": use_rep,
@@ -804,6 +912,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "y_label", "cluster_label", "n_cells", "n_true_classes", "n_pred_clusters",
             f"purity_k{k}_mean", f"purity_k{k}_median", f"purity_k{k}_std", "ari", "nmi",
             "homogeneity", "completeness", "v_measure", "cluster_majority_purity_mean",
+            "logreg_accuracy", "logreg_balanced_accuracy",
         ]
         cols = [c for c in cols if c in df.columns]
         df = df[cols + [c for c in df.columns if c not in cols]]
