@@ -9,8 +9,8 @@ class StandardKLDivergence(tf.keras.losses.Loss):
     KL divergence between encoder's N(μ, σ²) and standard normal N(0, 1).
     KL(N(μ, σ²) || N(0, 1)) = -0.5 * sum[1 + log(σ²) - μ² - σ²]
 
-    The encoder (MultivariateNormalDiagParameterizerLayer) outputs the
-    standard deviation σ = softplus(·) + 1e-7, not log(σ²).
+    - In order to avoid exploding graients, let log(σ²) be the direct output 's'
+    - Then σ² = exp(s)
 
     """
 
@@ -53,29 +53,35 @@ class StandardKLDivergence(tf.keras.losses.Loss):
 
         # Step 1: Figure out dimensions
         # y_pred has 3 parts concatenated, so divide by 3
-        # y_pred layout: [sampled_z, mean, std]
+        # y_pred layout: [sampled_z, mean, log_var]
         event_dims = y_pred.shape[1] // 3
 
         # Step 2: Extract mean (μ) and std (σ) from encoder output
         # We skip the first part (sampled z) and only use mean and std
         mean = y_pred[..., event_dims : 2 * event_dims]  # μ
-        std = y_pred[..., 2 * event_dims : 3 * event_dims]  # σ
+        log_var = y_pred[..., 2 * event_dims : 3 * event_dims]  # log(σ²)
 
-        # Step 3: calculate variance and log-variance
-        # std >= 1e-7 (softplus + 1e-7 in the parameterizer), so log is safe
-        var = tf.square(std)  # σ²
-        log_var = 2.0 * tf.math.log(std)  # log(σ²)
+        # Step 3: calculate variance
+        # use exp(), so that var is guaranteed to be positive
+        var = tf.exp(log_var)
+        # var = tf.square(std)  # σ² = std²
+        # log_var = tf.math.log(var + 1e-7)  # log(σ²), add small number to avoid log(0)
 
         # Step 4: Apply the closed-form KL formula
         # KL(N(μ, σ²) || N(0, 1)) = -0.5 * sum[1 + log(σ²) - μ² - σ²]
-        # Closed form is >= 0 since σ² >= 1 + log(σ²), so no clamping
-        # is needed (clamping would also zero the gradients).
         kl_divergence = -0.5 * tf.reduce_sum(
             1.0 + log_var - tf.square(mean) - var,
             axis=-1,  # Sum over latent dimensions
         )
         # Result shape: (batch,) - one KL value per sample
 
-        # Step 5: Scale by weight and return
+        # Step 5: Ensure KL is non-negative
+        # (Sometimes numerical errors make it slightly negative)
+        kl_divergence = tf.maximum(kl_divergence, 0.0)
+        # kl_divergence = tf.where(
+        #    kl_divergence < 0, tf.zeros_like(kl_divergence), kl_divergence
+        # )
+
+        # Step 6: Scale by weight and return
         # The reduction=SUM_OVER_BATCH_SIZE averages this automatically
         return self.weight(tf.ones(())) * kl_divergence

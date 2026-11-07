@@ -101,14 +101,15 @@ class GMMKLDivergence(tf.keras.losses.Loss):
         # shape: (batch, n_components)
         logpz_y = dist_z_y.log_prob(tf.expand_dims(z, -2))
         # shape: (1, n_components)
-        logpy = tf.math.log_softmax(logits_prior)
+        logpy = tf.math.log(tf.math.softmax(logits_prior) + 1e-7)
         # shape: (batch, 1)
         logpz = tf.expand_dims(dist_z.log_prob(z), -1)
 
         # shape: (batch, n_components)
         py_z = tf.math.softmax(logpz_y + logpy - logpz)
-        # exact identity: py_z = exp(logpy_z)
-        logpy_z = logpz_y + logpy - logpz
+        logpy_z = tf.math.log(py_z + 1e-7)
+        # logpy_z = logpz_y + logpy - logpz
+        # py_z = tf.exp(logpy_z)
 
         # term (b): 𝚺_j𝚺_y[py_z(logpz_y)]
         py_z_logpz_y = tf.reduce_sum(py_z * logpz_y, axis=-1)
@@ -123,5 +124,8 @@ class GMMKLDivergence(tf.keras.losses.Loss):
         py_z_logpy_z = tf.reduce_sum(py_z * logpy_z, axis=-1)
 
         kl_divergence = -py_z_logpz_y - py_z_logpy + py_z_logpy_z + logqz_x
+        kl_divergence = tf.where(
+            kl_divergence < 0, tf.zeros_like(kl_divergence), kl_divergence
+        )
 
         return self.weight(tf.ones(())) * kl_divergence
