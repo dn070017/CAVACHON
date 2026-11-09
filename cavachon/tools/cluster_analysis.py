@@ -454,8 +454,11 @@ class ClusterAnalysis:
         tuple
             (mu_zhat, sigma2_zhat, pi_zhat) for the integrated GMM.
         """
-        W_r = hierarchical_encoder.r_network.get_weights()[0]
-        W_b = hierarchical_encoder.b_network.get_weights()[0]
+        r_weights = hierarchical_encoder.r_network.get_weights()
+        b_weights = hierarchical_encoder.b_network.get_weights()
+        W_r = r_weights[0]
+        # b_network is the z_hat parameterizer: [loc_weight, loc_bias, ...]
+        W_b = b_weights[0]
 
         parent_dims = [p["D"] for p in parent_params]
         W_parent_parts = []
@@ -466,6 +469,11 @@ class ClusterAnalysis:
         W_child_raw = W_b[offset:, :]
         W_child_effective = W_r @ W_child_raw
         W_child_effective_sigma2 = (W_r**2) @ (W_child_raw**2)
+
+        # constant shift of the loc from the biases of r and b
+        mu_offset = b_weights[1].reshape(-1)
+        if len(r_weights) > 1:
+            mu_offset = mu_offset + r_weights[1] @ W_child_raw
 
         cluster_ranges = [range(p["K"]) for p in parent_params] + [
             range(child_params["K"])
@@ -484,6 +492,7 @@ class ClusterAnalysis:
             for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
                 mu_zhat[idx] += W_p.T @ p_params["mu"][p_idx]
             mu_zhat[idx] += W_child_effective.T @ child_params["mu"][child_idx]
+            mu_zhat[idx] += mu_offset
 
             for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
                 sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]

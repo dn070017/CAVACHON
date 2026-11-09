@@ -85,6 +85,7 @@ class Component(tf.keras.Model):
         z_sampler: Union[tf.keras.layers.Layer, tf.keras.Model],
         decoders: Mapping[str, tf.keras.Model],
         z_hat_prior_parameterizer: Optional[tf.keras.layers.Layer] = None,
+        z_hat_sampler: Optional[Union[tf.keras.layers.Layer, tf.keras.Model]] = None,
         conditioned_on_z: List[str] = [],
         conditioned_on_z_hat: List[str] = [],
         learn_z_hat_priors: bool = False,
@@ -139,6 +140,10 @@ class Component(tf.keras.Model):
             modality, the values are the corresponding decoder neural
             network.
 
+        z_hat_sampler: Union[tf.keras.layers.Layer, tf.keras.Model], optional
+            sampler used to transform z_hat_parameters into z_hat.
+            Defaults to None.
+
         conditioend_on_z: str, optional
             The current component will be conditionally independent
             with the specified components on the latent representation
@@ -170,6 +175,7 @@ class Component(tf.keras.Model):
         self.learn_z_hat_priors = learn_z_hat_priors
         self.hierarchical_encoder = hierarchical_encoder
         self.z_sampler = z_sampler
+        self.z_hat_sampler = z_hat_sampler
         self.decoders = decoders
         self.conditioned_on_z = conditioned_on_z
         self.conditioned_on_z_hat = conditioned_on_z_hat
@@ -585,6 +591,34 @@ class Component(tf.keras.Model):
         return MultivariateNormalDiagSampler(name=name)
 
     @classmethod
+    def setup_z_hat_sampler(
+        cls, name: str = "z_hat_sampler", **kwargs
+    ) -> tf.keras.layers.Layer:
+        """Builder function for setting up the sampler for the z_hat
+        distributions. The sampler starts deterministic (returns the
+        loc) and is switched to stochastic by the scheduler in the
+        z_hat annealing phase. Developers can overwrite this function
+        to create custom Component.
+
+        Parameters
+        ----------
+        name: str, optional:
+            Name for the tensorflow model. Defaults to
+            'z_hat_sampler'.
+
+        kwargs: Mapping[str, Any]
+            additional parameters used for custom
+            setup_z_hat_sampler()
+
+        Returns
+        -------
+        tf.keras.Model:
+            created sampler for the z_hat distributions.
+
+        """
+        return MultivariateNormalDiagSampler(name=name, stochastic=False)
+
+    @classmethod
     def setup_outputs(
         cls,
         inputs: Mapping[Any, tf.keras.Input],
@@ -596,6 +630,7 @@ class Component(tf.keras.Model):
         z_sampler: Union[tf.keras.Model, tf.keras.layers.Layer],
         decoders: Mapping[str, tf.keras.Model],
         z_hat_prior_parameterizer: Optional[tf.keras.layers.Layer] = None,
+        z_hat_sampler: Optional[Union[tf.keras.Model, tf.keras.layers.Layer]] = None,
         **kwargs,
     ) -> Mapping[Any, tf.Tensor]:
         """Builder function for setting up outputs. Developers can
@@ -629,6 +664,9 @@ class Component(tf.keras.Model):
         decoders: Mapping[str, tf.keras.Model]
             decoders created using setup_decoders()
 
+        z_hat_sampler: Union[tf.keras.Model, tf.keras.layers.Layer], optional
+            sampler for z_hat distributions using setup_z_hat_sampler()
+
         kwargs: Mapping[str, Any]
             additional parameters used for custom setup_outputs()
 
@@ -650,11 +688,13 @@ class Component(tf.keras.Model):
         hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
             inputs, z
         )
-        z_hat = hierarchical_encoder(hierarchical_encoder_inputs)
+        z_hat_parameters = hierarchical_encoder(hierarchical_encoder_inputs)
+        z_hat = z_hat_sampler(z_hat_parameters)
 
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_PARAMS, z_parameters)
+        outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT_PARAMS, z_hat_parameters)
 
         dummy_input = tf.keras.layers.Lambda(
             lambda x: tf.ones((1, 1)), name="z_prior_dummy_input"
@@ -840,6 +880,9 @@ class Component(tf.keras.Model):
             )
 
         z_sampler = cls.setup_z_sampler(name=f"{name}_z_sampler", **kwargs)
+        z_hat_sampler = cls.setup_z_hat_sampler(
+            name=f"{name}_z_hat_sampler", **kwargs
+        )
 
         decoders = cls.setup_decoders(
             modality_names=modality_names,
@@ -859,6 +902,7 @@ class Component(tf.keras.Model):
             z_prior_parameterizer=z_prior_parameterizer,
             z_hat_prior_parameterizer=z_hat_prior_parameterizer,
             z_sampler=z_sampler,
+            z_hat_sampler=z_hat_sampler,
             decoders=decoders,
             **kwargs,
         )
@@ -874,6 +918,7 @@ class Component(tf.keras.Model):
             z_hat_prior_parameterizer=z_hat_prior_parameterizer,
             hierarchical_encoder=hierarchical_encoder,
             z_sampler=z_sampler,
+            z_hat_sampler=z_hat_sampler,
             decoders=decoders,
             conditioned_on_z=conditioned_on_z,
             conditioned_on_z_hat=conditioned_on_z_hat,
@@ -957,7 +1002,7 @@ class Component(tf.keras.Model):
         Returns
         -------
         Mapping[str, tf.Tensor]
-            Mapping with key ``z_hat``.
+            Mapping with keys ``z_hat_parameters`` and ``z_hat``.
 
         Raises
         ------
@@ -968,10 +1013,14 @@ class Component(tf.keras.Model):
         hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
             batch, z
         )
-        z_hat = self.hierarchical_encoder(
+        z_hat_parameters = self.hierarchical_encoder(
             hierarchical_encoder_inputs, training=training
         )
-        return {Constants.MODEL_OUTPUTS_Z_HAT: z_hat}
+        z_hat = self.z_hat_sampler(z_hat_parameters, training=training)
+        return {
+            Constants.MODEL_OUTPUTS_Z_HAT_PARAMS: z_hat_parameters,
+            Constants.MODEL_OUTPUTS_Z_HAT: z_hat,
+        }
 
     def decode(
         self,

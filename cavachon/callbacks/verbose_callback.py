@@ -133,6 +133,10 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         except Exception:
             parts.append("KL weight=N/A")
 
+        z_hat_kl = getattr(self.model, "_z_hat_gmm_kl_weights", {}).get(cn)
+        if z_hat_kl is not None:
+            parts.append(f"z_hat GMM weight={z_hat_kl.numpy():.2f}")
+
         try:
             dw = self.model._data_loss_weights.get(cn, {})
             data_val = sum(float(v.numpy()) for v in dw.values()) if dw else 0.0

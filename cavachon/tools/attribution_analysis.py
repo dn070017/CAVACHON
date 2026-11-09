@@ -251,7 +251,10 @@ class AttributionAnalysis:
             hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
                 component_inputs, z
             )
-            z_hat = component_network.hierarchical_encoder(hierarchical_encoder_inputs)
+            z_hat_parameters = component_network.hierarchical_encoder(
+                hierarchical_encoder_inputs
+            )
+            z_hat = component_network.z_hat_sampler(z_hat_parameters, training=False)
 
             z_conditional.setdefault(component_name, z)
             z_hat_conditional.setdefault(component_name, z_hat)

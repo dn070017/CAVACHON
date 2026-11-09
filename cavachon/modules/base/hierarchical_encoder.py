@@ -1,8 +1,12 @@
 from typing import Optional
 
+import numpy as np
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
+from cavachon.layers.parameterizers.multivariate_normal_diag_parameterizer_layer import (
+    MultivariateNormalDiagParameterizerLayer,
+)
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 
 
@@ -12,8 +16,11 @@ class HierarchicalEncoder(tf.keras.Model):
     HierarchicalEncoder used to encode z_hat hierarchically through
     the dependency between components. It expects multiple tf.Tensor
     as inputs. The key of the inputs are 'z', 'z_conditional' (if
-    applicable) and 'z_hat_conditional' (if applicable). This base
-    module is implemented using Tensorflow sequential API.
+    applicable) and 'z_hat_conditional' (if applicable). The outputs
+    are the parameters (loc and scale_diag) of the independent
+    Gaussian distribution of z_hat. The loc is a linear function of
+    the inputs. This base module is implemented using Tensorflow
+    sequential API.
 
     """
 
@@ -49,8 +56,9 @@ class HierarchicalEncoder(tf.keras.Model):
             total iterations for progressive training. Defaults to 5000.
 
         use_bias: bool, optional
-            whether to use bias in the Dense layers of r_network and
-            b_network. Defaults to False.
+            whether to use bias in the Dense layer of r_network. The
+            parameterizer in b_network always uses bias. Defaults to
+            False.
 
         name: str, optional:
             Name for the tensorflow model. Defaults to
@@ -64,8 +72,13 @@ class HierarchicalEncoder(tf.keras.Model):
             [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias, name=f"{name}_r_dense")],
             name=Constants.MODULE_R_NETWORK
         )
+        # loc_weight is the first weight of the parameterizer, so
+        # b_network.get_weights()[0] remains the linear map of the loc.
+        self.z_hat_parameterizer = MultivariateNormalDiagParameterizerLayer(
+            n_latent_dims, name=f"{name}_b_parameterizer"
+        )
         self.b_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias, name=f"{name}_b_dense")],
+            [self.z_hat_parameterizer],
             name=Constants.MODULE_B_NETWORK
         )
 
@@ -95,8 +108,11 @@ class HierarchicalEncoder(tf.keras.Model):
         Returns
         -------
         tf.Tensor
-            z_hat (contains information of latent representation and
-            the conditioned components)
+            parameters of z_hat (contains information of latent
+            representation and the conditioned components), with shape
+            (batch, n_latent_dims * 2), where
+            1.  results[..., 0:n_latent_dims] are the loc (mean)
+            2.  results[..., n_latent_dims:] are the scale_diag (std)
 
         """
         z_hat = self.r_network(inputs.get(Constants.MODEL_OUTPUTS_Z))
@@ -114,9 +130,29 @@ class HierarchicalEncoder(tf.keras.Model):
 
         concat_inputs.append(z_hat)
         z_hat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(concat_inputs)
-        z_hat = self.b_network(z_hat)
+        z_hat_parameters = self.b_network(z_hat)
 
-        return z_hat
+        return z_hat_parameters
+
+    def initialize_scale_diag(self, scale_diag: np.ndarray) -> None:
+        """Set the scale_diag of z_hat to a constant per dimension by
+        zeroing the scale weights and assigning the bias to the
+        inverse softplus of scale_diag.
+
+        Parameters
+        ----------
+        scale_diag: np.ndarray
+            target std for each latent dimension, with shape
+            (n_latent_dims, ).
+        """
+        scale_diag = np.maximum(np.asarray(scale_diag, dtype=np.float32), 1e-6)
+        # inverse softplus: log(exp(y) - 1) = y + log(1 - exp(-y))
+        bias = scale_diag + np.log(-np.expm1(-scale_diag))
+        parameterizer = self.z_hat_parameterizer
+        parameterizer.scale_diag_weight.assign(
+            tf.zeros_like(parameterizer.scale_diag_weight)
+        )
+        parameterizer.scale_diag_bias.assign(bias.reshape(1, -1))
 
     def train_step(self, data):
         raise NotImplementedError()

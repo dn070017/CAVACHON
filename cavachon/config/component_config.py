@@ -33,6 +33,9 @@ class ComponentConfig(BaseConfigModel):
     enable_kmeans_init: Optional[bool] = None
     learn_z_hat_priors: Optional[bool] = None
     kl_annealing_ratio: Optional[Tuple[float, float, float]] = None
+    n_z_hat_annealing_epochs: Optional[int] = None
+    n_z_hat_training_epochs: Optional[int] = None
+    z_hat_kl_weight: Optional[float] = None
     reparameterize_z_hat: bool = True
     max_regular_training_epochs: Optional[int] = None
 

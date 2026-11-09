@@ -52,7 +52,14 @@ class SequentialTrainingScheduler:
         the component names, the values are the mapping where the keys
         are the modality names and the values are the weight.
 
+    z_hat_init_std_ratio: float
+        class attribute, initial std of z_hat at the start of the z_hat
+        annealing phase, relative to the std of the deterministic z_hat
+        in each dimension.
+
     """
+
+    z_hat_init_std_ratio: float = 0.1
 
     def __init__(
         self,
@@ -279,6 +286,10 @@ class SequentialTrainingScheduler:
         - loc_bias (means): at cluster centers
         - logits_bias: based on cluster sizes
 
+        Note that this sets ``self.model.trainable`` to True at the end,
+        so callers outside AnnealingCallback need to restore the
+        trainable flags afterwards.
+
         Parameters
         ----------
         component_name: str
@@ -297,6 +308,12 @@ class SequentialTrainingScheduler:
             Attribute name on the component object that holds the prior
             parameterizer to initialize.  Default ``"z_prior_parameterizer"``;
             use ``"z_hat_prior_parameterizer"`` for the z_hat prior.
+
+        Returns
+        -------
+        np.ndarray
+            the clustered latent representation, with shape
+            (n_samples, event_dims).
         """
         ci = self.component_order.index(component_name)
         color = VerboseCallback._COLORS[ci % len(VerboseCallback._COLORS)]
@@ -398,6 +415,8 @@ class SequentialTrainingScheduler:
 
         self.model.trainable = True
 
+        return z
+
     def _get_parent_component(self, child_name: str) -> Optional[str]:
         """Get parent component name for the child."""
         for component_config in self.component_configs:
@@ -461,6 +480,9 @@ class SequentialTrainingScheduler:
             elif (kl_ep := self._get_kl_annealing_epochs(cn)) > 0:
                 cumulative_total += kl_ep
             cumulative_total += comp_max_epochs
+            if self._z_hat_annealing_enabled(cn):
+                cumulative_total += self._get_z_hat_annealing_epochs(cn)
+                cumulative_total += self._get_z_hat_training_epochs(cn)
 
         cumulative_offset = 0
         phase_number = 1
@@ -596,6 +618,54 @@ class SequentialTrainingScheduler:
             cumulative_total -= (comp_max_epochs - actual)
             cumulative_offset += actual
             phase_number += 1
+
+            # --- z_hat annealing (encoder frozen, stochastic z_hat) ---
+            if self._z_hat_annealing_enabled(component_name):
+                n_z_hat_annealing_epochs = self._get_z_hat_annealing_epochs(
+                    component_name
+                )
+                self._run_z_hat_annealing_phase(
+                    component_name=component_name,
+                    component_order=component_order,
+                    train_components=train_components,
+                    x=x.take(n_batches * n_z_hat_annealing_epochs),
+                    history=history,
+                    experiment=experiment,
+                    cumulative_offset=cumulative_offset,
+                    cumulative_total=cumulative_total,
+                    phase_number=phase_number,
+                    kwargs=kwargs,
+                )
+                cumulative_offset += n_z_hat_annealing_epochs
+                phase_number += 1
+
+                # --- z_hat training (fixed KL weight, early stopping) ---
+                n_z_hat_training_epochs = self._get_z_hat_training_epochs(
+                    component_name
+                )
+                if n_z_hat_training_epochs > 0:
+                    before = len(history)
+                    self._run_z_hat_training_phase(
+                        component_name=component_name,
+                        component_order=component_order,
+                        x=x.take(n_batches * n_z_hat_training_epochs),
+                        history=history,
+                        experiment=experiment,
+                        n_epochs=n_z_hat_training_epochs,
+                        is_single_component=is_single_component,
+                        cumulative_offset=cumulative_offset,
+                        cumulative_total=cumulative_total,
+                        phase_number=phase_number,
+                        kwargs=kwargs,
+                    )
+                    actual = (
+                        len(history[-1].epoch)
+                        if len(history) > before
+                        else n_z_hat_training_epochs
+                    )
+                    cumulative_total -= (n_z_hat_training_epochs - actual)
+                    cumulative_offset += actual
+                    phase_number += 1
 
         return history
 
@@ -833,12 +903,15 @@ class SequentialTrainingScheduler:
             and getattr(component, "z_hat_prior_parameterizer", None) is not None
             and component_name in getattr(self.model, "_z_hat_density_weights", {})
         )
+        # GMMDensityLoss is kept but disabled: z_hat is regularized by
+        # the z_hat GMM KL in the z_hat annealing phase instead.
         self._set_component_weights(
             component_name,
             data_scale=1.0,
             gmm_kl=1.0,
             standard_kl=0.0,
-            z_hat_density=1.0 if z_hat_enabled else 0.0,
+            z_hat_density=0.0,
+            z_hat_gmm_kl=0.0,
         )
 
         callbacks = deepcopy(kwargs.get("callbacks", []))
@@ -875,6 +948,184 @@ class SequentialTrainingScheduler:
                     },
                 )
             )
+        callbacks.append(OptimizerStateCallback())
+        callbacks.extend(
+            self._common_callbacks(
+                kwargs, is_single_component, component_name,
+                cumulative_offset=cumulative_offset,
+            )
+        )
+
+        kwargs_copy = deepcopy(kwargs)
+        kwargs_copy.pop("epochs", None)
+        history.append(
+            self.model.fit(
+                x,
+                epochs=n_epochs,
+                callbacks=callbacks,
+                verbose=0,
+                **kwargs_copy,
+            )
+        )
+
+        mlflow.end_run()
+
+    def _run_z_hat_annealing_phase(
+        self,
+        component_name,
+        component_order,
+        train_components,
+        x,
+        history,
+        experiment,
+        cumulative_offset,
+        cumulative_total,
+        phase_number,
+        kwargs,
+    ):
+        """Run the z_hat annealing phase for a single component.
+
+        The encoder path (preprocessor, encoder and z prior) is frozen
+        so z keeps what it learned in the previous phases. z_hat is
+        sampled from its Gaussian, and the hierarchical encoder, the
+        decoders and the z_hat prior are trained while the z_hat GMM
+        KL weight is ramped from 0 to ``z_hat_kl_weight`` over
+        ``n_z_hat_annealing_epochs``. No early stopping is used since
+        the loss rises with the KL weight by design. The frozen encoder
+        path and the stochastic z_hat are kept for
+        ``_run_z_hat_training_phase``.
+        """
+        run_name = f"Z_hat Annealing/{component_order}/{component_name}"
+        self._mlflow_start_run(run_name, experiment)
+        component = self.model.components.get(component_name)
+        n_annealing_epochs = self._get_z_hat_annealing_epochs(component_name)
+        target_weight = float(
+            self.model._z_hat_gmm_kl_weights[component_name].scale
+        )
+
+        # 1. Initialize the z_hat prior on the deterministic z_hat (loc)
+        #    learned so far. k-means toggles model.trainable, so the
+        #    trainable flags of this stage are restored afterwards.
+        z_hat = self.initialize_gmm_priors_with_kmeans(
+            component_name=component_name,
+            seed=42,
+            add_noise=True,
+            noise_std=0.1,
+            representation_key="_z_hat",
+            target_parameterizer_attr="z_hat_prior_parameterizer",
+        )
+        self.setup_component_and_loss_weights(train_components)
+
+        # 2. Start z_hat with a small constant std relative to its spread.
+        component.hierarchical_encoder.initialize_scale_diag(
+            self.z_hat_init_std_ratio * np.std(z_hat, axis=0)
+        )
+
+        # 3. Freeze the encoder path and sample z_hat.
+        self._freeze_encoder_path(component_name)
+        component.z_hat_sampler.stochastic.assign(1.0)
+        self._set_component_weights(
+            component_name,
+            data_scale=1.0,
+            gmm_kl=1.0,
+            standard_kl=0.0,
+            z_hat_density=0.0,
+            z_hat_gmm_kl=0.0,
+        )
+        self._compile_model(self.learning_rate)
+
+        z_hat_kl_name = (
+            f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
+        )
+
+        def schedule(epoch):
+            progress = min(1.0, epoch / n_annealing_epochs)
+            return {z_hat_kl_name: target_weight * progress}
+
+        callbacks = deepcopy(kwargs.get("callbacks", []))
+        callbacks.append(
+            VerboseCallback(
+                labels=[(component_name, component_order)],
+                phase="Z_hat Annealing",
+                loss_prefixes={component_name: component_order},
+                phase_epochs=n_annealing_epochs,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
+                component_order=self.component_order,
+            )
+        )
+        callbacks.append(
+            AnnealingCallback(
+                schedule=schedule,
+                scheduler=self,
+                component_name=component_name,
+            )
+        )
+        # No early stopping: the loss rises with the KL weight by design.
+
+        kwargs_copy = deepcopy(kwargs)
+        kwargs_copy.pop("epochs", None)
+        history.append(
+            self.model.fit(
+                x,
+                epochs=n_annealing_epochs,
+                callbacks=callbacks,
+                verbose=0,
+                **kwargs_copy,
+            )
+        )
+
+        mlflow.end_run()
+
+    def _run_z_hat_training_phase(
+        self,
+        component_name,
+        component_order,
+        x,
+        history,
+        experiment,
+        n_epochs,
+        is_single_component,
+        cumulative_offset,
+        cumulative_total,
+        phase_number,
+        kwargs,
+    ):
+        """Run the z_hat training phase for a single component.
+
+        Continues from ``_run_z_hat_annealing_phase`` (encoder path
+        frozen, stochastic z_hat) with the z_hat GMM KL weight fixed at
+        ``z_hat_kl_weight``, using early stopping as in the regular
+        training phase.
+        """
+        run_name = f"Z_hat Training/{component_order}/{component_name}"
+        self._mlflow_start_run(run_name, experiment)
+        target_weight = float(
+            self.model._z_hat_gmm_kl_weights[component_name].scale
+        )
+        self._set_component_weights(
+            component_name,
+            data_scale=1.0,
+            gmm_kl=1.0,
+            standard_kl=0.0,
+            z_hat_density=0.0,
+            z_hat_gmm_kl=target_weight,
+        )
+
+        callbacks = deepcopy(kwargs.get("callbacks", []))
+        callbacks.append(
+            VerboseCallback(
+                labels=[(component_name, component_order)],
+                phase="Z_hat Training",
+                loss_prefixes={component_name: component_order},
+                phase_epochs=n_epochs,
+                cumulative_offset=cumulative_offset,
+                cumulative_total=cumulative_total,
+                phase_number=phase_number,
+                component_order=self.component_order,
+            )
+        )
         callbacks.append(OptimizerStateCallback())
         callbacks.extend(
             self._common_callbacks(
@@ -974,13 +1225,14 @@ class SequentialTrainingScheduler:
                     f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 3.0
                     * (1.0 - t),
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0 * t,
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 1.0 * t,
+                    # GMMDensityLoss disabled (replaced by z_hat GMM KL)
+                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
                 }
             else:
                 return {
                     f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 0.0,
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0,
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 1.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
                 }
 
         return schedule
@@ -1152,6 +1404,46 @@ class SequentialTrainingScheduler:
                 return c.kl_annealing_ratio or (0.5, 0.2, 0.3)
         return (0.5, 0.2, 0.3)
 
+    def _get_z_hat_annealing_epochs(self, component_name):
+        """Get z_hat annealing (KL ramp) epochs from component config."""
+        for c in self.component_configs:
+            if c.name == component_name:
+                return getattr(c, "n_z_hat_annealing_epochs", None) or 0
+        return 0
+
+    def _get_z_hat_training_epochs(self, component_name):
+        """Get z_hat training epochs (constant KL weight after the
+        ramp) from component config."""
+        for c in self.component_configs:
+            if c.name == component_name:
+                return getattr(c, "n_z_hat_training_epochs", None) or 0
+        return 0
+
+    def _z_hat_annealing_enabled(self, component_name):
+        """Whether the z_hat annealing phase runs for the component."""
+        component = self.model.components.get(component_name)
+        return bool(
+            self._get_z_hat_annealing_epochs(component_name) > 0
+            and getattr(component, "learn_z_hat_priors", False)
+            and getattr(component, "z_hat_prior_parameterizer", None) is not None
+            and component_name in getattr(self.model, "_z_hat_gmm_kl_weights", {})
+        )
+
+    def _freeze_encoder_path(self, component_name):
+        """Freeze the preprocessor, encoder and z prior of a component.
+
+        The hierarchical encoder, decoders and z_hat prior stay
+        trainable. The samplers also stay trainable (they have no
+        weights), otherwise they return the loc instead of sampling.
+        """
+        component = self.model.components.get(component_name)
+        for module in (
+            component.preprocessor,
+            component.encoder,
+            component.z_prior_parameterizer,
+        ):
+            module.trainable = False
+
     def _common_callbacks(
         self, kwargs, is_single_component, component_name,
         cumulative_offset=0,
@@ -1191,6 +1483,7 @@ class SequentialTrainingScheduler:
         gmm_kl: float = 1.0,
         standard_kl: float = 0.0,
         z_hat_density: Optional[float] = None,
+        z_hat_gmm_kl: Optional[float] = None,
     ) -> None:
         """Assign all loss-weight Variables for one component.
 
@@ -1208,6 +1501,9 @@ class SequentialTrainingScheduler:
         z_hat_density : float, optional
             If not None, value assigned to the z_hat GMM density weight
             Variable (only used when ``learn_z_hat_priors`` is enabled).
+        z_hat_gmm_kl : float, optional
+            If not None, value assigned to the z_hat GMM KL divergence
+            weight (only used when ``learn_z_hat_priors`` is enabled).
         """
         model = self.model
         if comp_name in getattr(model, '_gmm_kl_weights', {}):
@@ -1228,6 +1524,8 @@ class SequentialTrainingScheduler:
                 w.pin_to(float(z_hat_density))
             else:
                 w.assign(float(z_hat_density))
+        if z_hat_gmm_kl is not None and comp_name in getattr(model, '_z_hat_gmm_kl_weights', {}):
+            model._z_hat_gmm_kl_weights[comp_name].pin_to(float(z_hat_gmm_kl))
         for mod_name, var in model._data_loss_weights.get(comp_name, {}).items():
             mod_w = self.modality_weight.get(comp_name, {}).get(mod_name, 1.0)
             if isinstance(var, ProgressiveScaler):
@@ -1271,7 +1569,7 @@ class SequentialTrainingScheduler:
         for comp_name in component_names:
             self._set_component_weights(
                 comp_name, data_scale=0.0, gmm_kl=0.0, standard_kl=0.0,
-                z_hat_density=0.0,
+                z_hat_density=0.0, z_hat_gmm_kl=0.0,
             )
 
     def setup_component_and_loss_weights(
@@ -1317,5 +1615,6 @@ class SequentialTrainingScheduler:
                 data_scale=1.0 if should_train else 0.0,
                 gmm_kl=1.0 if should_train else 0.0,
                 standard_kl=0.0,
-                z_hat_density=0.0,  # enabled later only in _run_gmm_training_phase
+                z_hat_density=0.0,  # GMMDensityLoss is disabled
+                z_hat_gmm_kl=0.0,  # enabled only in _run_z_hat_annealing_phase
             )

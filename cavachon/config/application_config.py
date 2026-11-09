@@ -169,6 +169,14 @@ class ApplicationConfig(BaseConfigModel):
                 comp.learn_z_hat_priors = self.training.learn_z_hat_priors
             if comp.kl_annealing_ratio is None:
                 comp.kl_annealing_ratio = self.training.kl_annealing_ratio
+            if comp.n_z_hat_annealing_epochs is None:
+                comp.n_z_hat_annealing_epochs = (
+                    self.training.n_z_hat_annealing_epochs
+                )
+            if comp.n_z_hat_training_epochs is None:
+                comp.n_z_hat_training_epochs = self.training.n_z_hat_training_epochs
+            if comp.z_hat_kl_weight is None:
+                comp.z_hat_kl_weight = self.training.z_hat_kl_weight
             if comp.max_regular_training_epochs is None:
                 comp.max_regular_training_epochs = (
                     self.training.max_regular_training_epochs

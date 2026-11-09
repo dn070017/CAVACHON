@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+from cavachon.environment.constants import Constants
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 
 
@@ -10,7 +11,10 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
     The callback is driven by a schedule(epoch) function that returns
     a dict mapping loss-name substring patterns to target weights.
     For each loss, the longest matching pattern determines its weight
-    (so ``child1_standard_kl_divergence`` wins over ``child1``).
+    (so ``child1_standard_kl_divergence`` wins over ``child1``). The
+    z_hat GMM KL divergence is only matched by patterns that contain
+    its postfix, so component-wide patterns (e.g. ``child1``) never
+    switch it on outside the z_hat annealing phase.
 
     K-means initialization can be triggered at a specific epoch.
     """
@@ -40,7 +44,10 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
                 continue
             best_match = None
             best_len = 0
+            is_z_hat_kl = Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX in loss_name
             for pattern, weight in targets.items():
+                if is_z_hat_kl and Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX not in pattern:
+                    continue
                 if pattern in loss_name and len(pattern) > best_len:
                     best_match = weight
                     best_len = len(pattern)
