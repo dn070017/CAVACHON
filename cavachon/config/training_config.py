@@ -33,7 +33,9 @@ class TrainingConfig(BaseConfigModel):
     z_hat becomes stochastic and its GMM KL weight is ramped from 0 to
     ``z_hat_kl_weight`` over ``n_z_hat_annealing_epochs``, then kept for
     ``n_z_hat_training_epochs``. Setting ``n_z_hat_annealing_epochs`` to
-    0 disables the phase.
+    0 disables the phase. Root components (no parents) skip it: their
+    z_hat is z and the z prior serves as the z_hat prior, so
+    ``learn_z_hat_priors`` is ignored for them.
     """
 
     optimizer: OptimizerConfig = Field(default_factory=lambda: OptimizerConfig(name="adam", learning_rate=1e-4))

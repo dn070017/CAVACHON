@@ -180,6 +180,23 @@ class Component(tf.keras.Model):
         self.conditioned_on_z = conditioned_on_z
         self.conditioned_on_z_hat = conditioned_on_z_hat
 
+    @property
+    def is_root(self) -> bool:
+        """Whether the component has no parents. For a root component
+        z_hat is z itself: there is no hierarchical encoder in the
+        forward pass, no z_hat prior (the z prior is used) and no z_hat
+        annealing."""
+        return not self.conditioned_on_z and not self.conditioned_on_z_hat
+
+    @staticmethod
+    def is_root_inputs(inputs: Mapping[Any, tf.Tensor]) -> bool:
+        """Whether the inputs carry no conditional z / z_hat, i.e. they
+        belong to a root component."""
+        return (
+            Constants.MODULE_INPUTS_CONDITIONED_Z not in inputs
+            and Constants.MODULE_INPUTS_CONDITIONED_Z_HAT not in inputs
+        )
+
     @classmethod
     def setup_inputs(
         cls,
@@ -685,11 +702,16 @@ class Component(tf.keras.Model):
         preprocessor_outputs = preprocessor(preprocessor_inputs)
         z_parameters = encoder(preprocessor_outputs.get(preprocessor.matrix_key))
         z = z_sampler(z_parameters)
-        hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
-            inputs, z
-        )
-        z_hat_parameters = hierarchical_encoder(hierarchical_encoder_inputs)
-        z_hat = z_hat_sampler(z_hat_parameters)
+        if Component.is_root_inputs(inputs):
+            # without parents z_hat is z itself (and its prior the z prior)
+            z_hat_parameters = z_parameters
+            z_hat = z
+        else:
+            hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
+                inputs, z
+            )
+            z_hat_parameters = hierarchical_encoder(hierarchical_encoder_inputs)
+            z_hat = z_hat_sampler(z_hat_parameters)
 
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z_HAT, z_hat)
@@ -870,6 +892,9 @@ class Component(tf.keras.Model):
         )
 
         learn_z_hat_priors = kwargs.pop("learn_z_hat_priors", False) or False
+        if z_conditional_dims is None and z_hat_conditional_dims is None:
+            # root component: z_hat is z, so the z prior is the z_hat prior
+            learn_z_hat_priors = False
         z_hat_prior_parameterizer = None
         if learn_z_hat_priors:
             z_hat_prior_parameterizer = cls.setup_z_hat_prior_parameterizer(
@@ -1002,7 +1027,8 @@ class Component(tf.keras.Model):
         Returns
         -------
         Mapping[str, tf.Tensor]
-            Mapping with keys ``z_hat_parameters`` and ``z_hat``.
+            Mapping with keys ``z_hat_parameters`` and ``z_hat``. For a
+            root component z_hat is z and only ``z_hat`` is returned.
 
         Raises
         ------
@@ -1010,6 +1036,8 @@ class Component(tf.keras.Model):
             If ``z`` does not have rank 2.
         """
         tf.debugging.assert_rank(z, 2, message="Expected 'z' to have rank 2.")
+        if self.is_root:
+            return {Constants.MODEL_OUTPUTS_Z_HAT: z}
         hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
             batch, z
         )

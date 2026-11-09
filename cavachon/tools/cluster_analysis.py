@@ -131,6 +131,9 @@ class ClusterAnalysis:
         """Compute direct learned-prior cluster log probabilities in z_hat space."""
         component_obj = self.model.components[component]
         prior = component_obj.z_hat_prior_parameterizer
+        if prior is None and component_obj.is_root:
+            # z_hat is z for root components, so the z prior applies
+            prior = component_obj.z_prior_parameterizer
         if prior is None:
             raise ValueError(
                 f"Component '{component}' does not have z_hat prior parameterizer."

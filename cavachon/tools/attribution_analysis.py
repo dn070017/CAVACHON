@@ -248,13 +248,9 @@ class AttributionAnalysis:
                 z_sampler = MultivariateNormalDiagSampler()
                 z = alpha * z_sampler(z_parameters, training=False)
 
-            hierarchical_encoder_inputs = Component.prepare_hierarchical_encoder_inputs(
-                component_inputs, z
-            )
-            z_hat_parameters = component_network.hierarchical_encoder(
-                hierarchical_encoder_inputs
-            )
-            z_hat = component_network.z_hat_sampler(z_hat_parameters, training=False)
+            z_hat = component_network.hierarchical_encode(
+                component_inputs, z, training=False
+            ).get(Constants.MODEL_OUTPUTS_Z_HAT)
 
             z_conditional.setdefault(component_name, z)
             z_hat_conditional.setdefault(component_name, z_hat)
