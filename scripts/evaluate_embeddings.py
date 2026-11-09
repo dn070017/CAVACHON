@@ -28,6 +28,19 @@ Supports:
             asking for each embedding's cluster label
   - Fallback scanpy Leiden/Louvain if cluster_label missing
   - Logistic regression accuracy of embedding -> y_label (fit on all cells)
+  - Linear CKA between each embedding and one-hot y_label (cka_label,
+    plus cka_label_balanced with classes weighted equally)
+  - Linear CKA (Kornblith et al., 2019) between every pair of evaluated
+    embeddings, plus optional reference embeddings from other files
+    (cells matched by obs_names):
+      CLI:  --cka-ref other/mdata.h5mu:z_Joint [path:key ...]
+      YAML: cka_reference:
+              - other/mdata.h5mu:z_Joint
+              - input: other/mdata.h5mu
+                use_rep: z_Joint
+                name: joint          # column cka_joint in the summary
+    Writes embedding_cka.csv (pairwise matrix) and adds a cka_<name>
+    column per reference to the summary.
 """
 
 from __future__ import annotations
@@ -87,6 +100,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting")
     p.add_argument("--evaluate-all", action="store_true",
                    help="Evaluate all suggested embeddings instead of picking one")
+    p.add_argument("--cka-ref", dest="cka_reference", nargs="+",
+                   help="Reference embedding(s) 'path:obsm_key' to compare with by linear CKA")
     args = p.parse_args(argv)
     # plane alias
     if args.plane and not args.use_rep:
@@ -100,7 +115,7 @@ def merge_config_and_cli(args: argparse.Namespace) -> dict:
         cfg = load_yaml(Path(args.config))
     # YAML keys: input, outdir, modality, use_rep/plane, y_label, cluster_label, method, k, etc.
     merged = dict(cfg)
-    for key in ["input", "outdir", "modality", "use_rep", "y_label", "cluster_label", "method", "k", "resolution", "color_schema"]:
+    for key in ["input", "outdir", "modality", "use_rep", "y_label", "cluster_label", "method", "k", "resolution", "color_schema", "cka_reference"]:
         val = getattr(args, key, None)
         if val is not None:
             merged[key] = val
@@ -158,6 +173,76 @@ def normalize_embedding_specs(embeddings, use_rep, cluster_label):
             )
         return [{"key": r, "cluster_label": c} for r, c in zip(reps, labels)], None
     return [{"key": r} for r in reps], (labels[0] if labels else None)
+
+
+def normalize_cka_references(references) -> List[Dict]:
+    """Turn 'path:key' strings / {input, use_rep, name} dicts into specs
+    with 'input', 'key' and 'name'."""
+    specs: List[Dict] = []
+    for item in as_list(references):
+        if isinstance(item, dict):
+            path = item.get("input") or item.get("path")
+            key = item.get("use_rep") or item.get("key")
+            name = item.get("name")
+        else:
+            path, sep, key = str(item).rpartition(":")
+            if not sep:
+                raise ValueError(f"cka reference '{item}' must be 'path:obsm_key'")
+            name = None
+        if not path or not key:
+            raise ValueError(f"cka reference {item} needs both a path and a use_rep")
+        if not name:
+            # CAVACHON writes <run>/mdata/mdata.h5mu: name by the run directory
+            parent = Path(path).resolve().parent
+            run = parent.parent.name if parent.name == "mdata" else parent.name
+            name = f"{run}:{key}"
+        specs.append({"input": path, "key": key, "name": name})
+    return specs
+
+
+def load_reference_embedding(path: Path, key: str) -> pd.DataFrame:
+    """Load obsm[key] from mdata.obsm or any modality, indexed by obs_names."""
+    # read only obs and obsm[key] with h5py: obsm also holds large arrays
+    # (e.g. x_parameters_*) that would otherwise be loaded into memory
+    import h5py
+    try:
+        from anndata.io import read_elem
+    except ImportError:
+        from anndata.experimental import read_elem
+
+    with h5py.File(path, "r") as f:
+        groups = [f] + [f["mod"][m] for m in f.get("mod", {})]
+        for group in groups:
+            if "obsm" in group and key in group["obsm"]:
+                emb = read_elem(group["obsm"][key])
+                if hasattr(emb, "toarray"):
+                    emb = emb.toarray()
+                return pd.DataFrame(np.asarray(emb), index=read_elem(group["obs"]).index)
+    raise KeyError(f"obsm key '{key}' not found in {path}")
+
+
+def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
+    """Linear CKA (Kornblith et al., 2019) between two embeddings of the
+    same cells. Invariant to orthogonal transforms and isotropic scaling;
+    the dimensions of X and Y may differ."""
+    X = np.asarray(X, dtype=np.float64)
+    Y = np.asarray(Y, dtype=np.float64)
+    X = X - X.mean(axis=0)
+    Y = Y - Y.mean(axis=0)
+    return float(
+        np.linalg.norm(Y.T @ X) ** 2
+        / (np.linalg.norm(X.T @ X) * np.linalg.norm(Y.T @ Y))
+    )
+
+
+def aligned_cka(a: pd.DataFrame, b: pd.DataFrame) -> float:
+    """Linear CKA on the cells shared by two embeddings (by obs_names)."""
+    common = a.index.intersection(b.index)
+    if len(common) < 2:
+        return float("nan")
+    if len(common) < max(len(a), len(b)):
+        print(f"  [warn] CKA on {len(common)} shared cells ({len(a)} vs {len(b)})", file=sys.stderr)
+    return linear_cka(a.loc[common].values, b.loc[common].values)
 
 
 def load_mdata(path: Path, modality: Optional[str] = None):
@@ -552,6 +637,15 @@ def compute_metrics(
     except Exception as e:
         print(f"  [warn] logistic regression failed ({e})", file=sys.stderr)
 
+    # Linear CKA between the embedding and one-hot y_label (kernel-target
+    # alignment); the balanced variant scales each class column by
+    # 1/sqrt(n_c) so large classes do not dominate
+    classes, y_idx, counts = np.unique(y_true, return_inverse=True, return_counts=True)
+    onehot = np.zeros((len(y_true), len(classes)))
+    onehot[np.arange(len(y_true)), y_idx] = 1.0
+    metrics["cka_label"] = linear_cka(embedding, onehot)
+    metrics["cka_label_balanced"] = linear_cka(embedding, onehot / np.sqrt(counts))
+
     df = pd.DataFrame({"y": y_true, "c": y_pred})
     cluster_purity = df.groupby("c")["y"].apply(lambda s: s.value_counts().iloc[0] / len(s)).mean()
     metrics["cluster_majority_purity_mean"] = float(cluster_purity)
@@ -663,6 +757,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             cfg.get("use_rep"),
             cfg.get("cluster_label") or cfg.get("clusterLabel"),
         )
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    try:
+        cka_references = normalize_cka_references(cfg.get("cka_reference"))
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -824,6 +923,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Evaluate each embedding
     all_results = {}
     summary_rows = []
+    # embeddings for linear CKA, indexed by obs_names
+    cka_embeddings: Dict[str, pd.DataFrame] = {}
     for sel in use_rep_selections:
         use_rep = sel["key"]
         is_global = sel["is_global"]
@@ -855,6 +956,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if emb.ndim != 2:
             print(f"Embedding {use_rep} has ndim {emb.ndim}, shape {emb.shape}; skipping.", file=sys.stderr)
             continue
+        cka_embeddings.setdefault(use_rep, pd.DataFrame(emb, index=adata.obs_names))
         print(f"Embedding shape: {emb.shape}, y_label='{y_label}' ({adata.obs[y_label].nunique()} classes), cluster_label='{cur_cluster_label}' ({adata.obs[cur_cluster_label].nunique()} clusters)")
 
         metrics = compute_metrics(
@@ -903,6 +1005,34 @@ def main(argv: Optional[List[str]] = None) -> int:
         }
         summary_rows.append(row)
 
+    # Linear CKA: pairwise over evaluated embeddings and references
+    cka_ref_names: List[str] = []
+    if summary_rows:
+        for ref in cka_references:
+            if ref["name"] in cka_embeddings:
+                print(f"Warning: CKA reference name '{ref['name']}' clashes with an evaluated embedding; skipping", file=sys.stderr)
+                continue
+            try:
+                print(f"\nLoading CKA reference '{ref['name']}' from {ref['input']}:{ref['key']}")
+                cka_embeddings[ref["name"]] = load_reference_embedding(Path(ref["input"]), ref["key"])
+                cka_ref_names.append(ref["name"])
+            except Exception as e:
+                print(f"  [warn] could not load CKA reference '{ref['name']}' ({e})", file=sys.stderr)
+        names = list(cka_embeddings)
+        cka = pd.DataFrame(np.eye(len(names)), index=names, columns=names)
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                cka.loc[a, b] = cka.loc[b, a] = aligned_cka(cka_embeddings[a], cka_embeddings[b])
+        for row in summary_rows:
+            for ref_name in cka_ref_names:
+                row[f"cka_{ref_name}"] = float(cka.loc[row["use_rep"], ref_name])
+        for result in all_results.values():
+            result["cka"] = {name: float(cka.loc[result["use_rep"], name]) for name in names if name != result["use_rep"]}
+        cka_path = outdir / "embedding_cka.csv"
+        cka.to_csv(cka_path)
+        print(f"\nLinear CKA: {cka_path}")
+        print(cka.round(4).to_string())
+
     # Write summary
     if summary_rows:
         df = pd.DataFrame(summary_rows)
@@ -913,6 +1043,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"purity_k{k}_mean", f"purity_k{k}_median", f"purity_k{k}_std", "ari", "nmi",
             "homogeneity", "completeness", "v_measure", "cluster_majority_purity_mean",
             "logreg_accuracy", "logreg_balanced_accuracy",
+            "cka_label", "cka_label_balanced",
         ]
         cols = [c for c in cols if c in df.columns]
         df = df[cols + [c for c in df.columns if c not in cols]]
