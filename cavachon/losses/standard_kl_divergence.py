@@ -16,11 +16,12 @@ class StandardKLDivergence(tf.keras.losses.Loss):
 
     def __init__(
         self, 
-        weight: float = 3.0,
-        name: str = "standard_kl_divergence", 
+        weight: float = 1.0,
+        name: str = "standard_kl_divergence",
         **kwargs
     ):
-        """Standard KL with progressive scaler: effective weight = scale × α²."""
+        """Standard KL; the scheduler sets the weight through the scale of
+        the ProgressiveScaler (total_iterations=1, so weight = scale)."""
         super().__init__(
             name=name,
             reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE,

@@ -5,8 +5,8 @@ class ProgressiveScaler(tf.keras.layers.Layer):
     """ProgressiveScaler
 
     ProgressiveScaler used to scale the inputs during training. The input
-    tensor will be scale as current_iteration/iteration * tensor. Do
-    nothing in inference mode.
+    tensor is scaled as scale * (current_iteration / total_iterations)²
+    * tensor (also in inference mode; callers pin it to 1 for inference).
 
     Attributes
     ----------

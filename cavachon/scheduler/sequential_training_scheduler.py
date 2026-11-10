@@ -20,6 +20,9 @@ from cavachon.config.training_config import EarlyStoppingConfig
 from cavachon.environment.constants import Constants
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 
+# maximum weight of the standard KL (the ELBO, β = 1)
+STANDARD_KL_WEIGHT = 1.0
+
 
 class SequentialTrainingScheduler:
     """SequentialTrainingScheduler
@@ -324,6 +327,16 @@ class SequentialTrainingScheduler:
             f"{VerboseCallback._RESET}"
         )
 
+        # toggling trainable pins every progressive scaler to alpha = 1
+        # (Component.__setattr__), so their state is restored at the end
+        saved_progressive = {
+            name: (
+                float(component.hierarchical_encoder.progressive_scaler.current_iteration),
+                float(component.hierarchical_encoder.progressive_scaler.total_iterations),
+            )
+            for name, component in self.model.components.items()
+        }
+
         # 1. Extract latent representations from end of previous phase
         self.model.trainable = False
         outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
@@ -414,16 +427,21 @@ class SequentialTrainingScheduler:
             prior_layer.scale_diag_bias[k].assign(bias_tensor)
 
         self.model.trainable = True
+        for name, (current, total) in saved_progressive.items():
+            self.model.components[name].set_progressive_scaler_iteration(
+                current_iteration=current, total_iterations=total
+            )
 
         return z
 
-    def _get_parent_component(self, child_name: str) -> Optional[str]:
-        """Get parent component name for the child."""
+    def _get_parent_component(self, child_name: str) -> List[str]:
+        """Get the parent component names (conditioned on z or z_hat)
+        of the child."""
         for component_config in self.component_configs:
             if component_config.name == child_name:
-                conditioned_on_z_hat = component_config.conditioned_on_z_hat
-                if len(conditioned_on_z_hat) > 0:
-                    return conditioned_on_z_hat
+                return list(component_config.conditioned_on_z) + list(
+                    component_config.conditioned_on_z_hat
+                )
         return []
 
     # ==================================================================
@@ -499,7 +517,6 @@ class SequentialTrainingScheduler:
             )
             self._compile_model(self.learning_rate)  # retrace with current trainable_variables
 
-            kmeans_initialized_in_parent_phase = False
             # --- Parent annealing ---
             if self.run_progressive_training.get(component_name):
                 parent_names = self._get_parent_component(component_name)
@@ -508,23 +525,10 @@ class SequentialTrainingScheduler:
                         component_name
                     )
                     if n_prog_epochs > 0:
-                        # Parents stay frozen; only set their data weights to 1.0
-                        # so the schedule can fade them 1→0 during annealing.
-                        for pn in parent_names:
-                            self._set_component_weights(
-                                pn, data_scale=1.0, gmm_kl=1.0, standard_kl=0.0,
-                            )
+                        # parents are frozen and their loss weights zeroed by
+                        # setup_component_and_loss_weights
                         before = len(history)
-                        comp_kl_epochs = self._get_kl_annealing_epochs(
-                            component_name
-                        )
-                        comp_enable_kmeans_init = self._get_enable_kmeans_init(
-                            component_name
-                        )
-                        comp_kl_annealing_ratio = self._get_kl_annealing_ratios(
-                            component_name
-                        )
-                        kmeans_initialized_in_parent_phase = self._run_parent_annealing_phase(
+                        self._run_parent_annealing_phase(
                             component_name=component_name,
                             component_order=component_order,
                             parent_names=parent_names,
@@ -533,9 +537,6 @@ class SequentialTrainingScheduler:
                             x=x.take(n_batches * n_prog_epochs),
                             history=history,
                             experiment=experiment,
-                            kl_annealing_enabled=comp_kl_epochs > 0,
-                            kl_annealing_ratios=comp_kl_annealing_ratio,
-                            enable_kmeans_init=comp_enable_kmeans_init,
                             cumulative_offset=cumulative_offset,
                             cumulative_total=cumulative_total,
                             phase_number=phase_number,
@@ -607,8 +608,7 @@ class SequentialTrainingScheduler:
                 n_epochs=comp_max_epochs,
                 is_single_component=is_single_component,
                 enable_kmeans_init=self._get_enable_kmeans_init(component_name)
-                and not kmeans_initialized_in_kl_phase
-                and not kmeans_initialized_in_parent_phase,
+                and not kmeans_initialized_in_kl_phase,
                 cumulative_offset=cumulative_offset,
                 cumulative_total=cumulative_total,
                 phase_number=phase_number,
@@ -683,9 +683,6 @@ class SequentialTrainingScheduler:
         x,
         history,
         experiment,
-        kl_annealing_enabled,
-        kl_annealing_ratios,
-        enable_kmeans_init,
         cumulative_offset,
         cumulative_total,
         phase_number,
@@ -693,14 +690,16 @@ class SequentialTrainingScheduler:
     ):
         """Run the parent→child annealing phase (progressive epochs).
 
-        Activates the progressive scaler so alpha fades 0→1 over the
-        phase, then pins it to 1.0 afterwards.  Freezes parent
-        components and zeros their loss weights on completion.
-
-        Returns
-        -------
-        bool
-            True if kmeans initialization was applied during this phase.
+        The child z enters z_hat through the progressive scaler, whose
+        alpha grows from 0 to 1 over the phase (per batch); the parents
+        enter at full strength. The child loss is the plain VAE loss
+        (data weight 1, standard KL) except that the standard KL weight
+        follows the same alpha: the reconstruction gradient reaching the
+        child encoder scales with alpha, so a constant KL would dominate
+        while alpha is small and collapse the child z. Parents are
+        frozen with zero loss weights. No k-means initialization here:
+        the GMM priors are initialized in the KL annealing phase (or the
+        regular training phase without KL annealing).
         """
         run_name = (
             f"Training/{component_order}/ParentAnnealing/"
@@ -708,30 +707,26 @@ class SequentialTrainingScheduler:
         )
         self._mlflow_start_run(run_name, experiment)
 
+        n_iterations = n_batches * n_prog_epochs
+        self._set_component_weights(
+            component_name,
+            data_scale=1.0,
+            gmm_kl=0.0,
+            standard_kl=0.0,
+            z_hat_density=0.0,
+            z_hat_gmm_kl=0.0,
+        )
         self._set_component_progressive(
             component_name, active=True,
             n_batches=n_batches, n_epochs=n_prog_epochs,
         )
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=1.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-        )
+        # standard KL weight = scale (STANDARD_KL_WEIGHT) × alpha, advanced
+        # per batch together with alpha by AnnealingCallback.on_batch_end
+        self.model._standard_kl_weights[component_name].activate(n_iterations)
 
         kwargs_prog = deepcopy(kwargs)
         kwargs_prog.pop("epochs", None)
         callbacks_prog = deepcopy(kwargs.get("callbacks", []))
-
-        schedule, kmeans_epoch = self._make_parent_annealing_schedule(
-            parent_names=parent_names,
-            component_name=component_name,
-            n_prog_epochs=n_prog_epochs,
-            kl_annealing_enabled=kl_annealing_enabled,
-            kl_annealing_ratios=kl_annealing_ratios,
-            enable_kmeans_init=enable_kmeans_init,
-        )
 
         callbacks_prog.append(
             VerboseCallback(
@@ -752,8 +747,7 @@ class SequentialTrainingScheduler:
 
         callbacks_prog.append(
             AnnealingCallback(
-                schedule=schedule,
-                kmeans_epoch=kmeans_epoch,
+                schedule=lambda epoch: {},
                 scheduler=self,
                 component_name=component_name,
             )
@@ -773,11 +767,10 @@ class SequentialTrainingScheduler:
         mlflow.end_run()
 
         self._set_component_progressive(component_name, active=False)
+        self.model._standard_kl_weights[component_name].pin_to(STANDARD_KL_WEIGHT)
 
         # Zero parent loss weights (parents were already frozen)
         self._zero_component_variables(parent_names)
-
-        return kmeans_epoch is not None
 
     def _run_kl_annealing_phase(
         self,
@@ -1152,54 +1145,6 @@ class SequentialTrainingScheduler:
     # Schedule builders
     # ==================================================================
 
-    def _make_parent_annealing_schedule(
-        self,
-        parent_names,
-        component_name,
-        n_prog_epochs,
-        kl_annealing_enabled,
-        kl_annealing_ratios,
-        enable_kmeans_init,
-    ):
-        """Return (schedule_fn, kmeans_epoch) for the parent annealing phase.
-
-        When *kl_annealing_enabled* is True the child uses only standard
-        KL (no GMM KL) — the standard→GMM crossfade happens in the
-        separate KL annealing phase.  When False, the child uses GMM KL
-        throughout.
-        """
-        if not kl_annealing_enabled:
-            def schedule(epoch):
-                p = epoch / n_prog_epochs
-                result = {}
-                for pn in parent_names:
-                    result[pn] = 1.0 - p
-                    result[f"{pn}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 1.0
-                    result[f"{pn}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
-                result[component_name] = p
-                result[
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
-                ] = 0.0
-                return result
-            return schedule, 0 if enable_kmeans_init else None
-
-        def schedule(epoch):
-            p = epoch / n_prog_epochs
-            result = {}
-            for pn in parent_names:
-                result[pn] = 1.0 - p
-                result[f"{pn}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 1.0
-                result[f"{pn}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 0.0
-            result[component_name] = p
-            result[f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"] = 3.0 * p
-            result[f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"] = 0.0
-            result[
-                f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
-            ] = 0.0
-            return result
-
-        return schedule, 0 if enable_kmeans_init else None
-
     def _make_final_kl_schedule(
         self, component_name, total_epochs, kl_annealing_ratios
     ):
@@ -1213,7 +1158,7 @@ class SequentialTrainingScheduler:
         def schedule(epoch):
             if epoch < standard_kl_end:
                 return {
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 3.0,
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": STANDARD_KL_WEIGHT,
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 0.0,
                     f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
                 }
@@ -1222,7 +1167,7 @@ class SequentialTrainingScheduler:
                     gmm_kl_start - standard_kl_end
                 )
                 return {
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 3.0
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": STANDARD_KL_WEIGHT
                     * (1.0 - t),
                     f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0 * t,
                     # GMMDensityLoss disabled (replaced by z_hat GMM KL)
@@ -1303,7 +1248,7 @@ class SequentialTrainingScheduler:
         z_hat_w = {}
         for cn in all_components:
             d = getattr(self.model, '_standard_kl_weights', {})
-            std_w[cn] = float(d[cn].scale) if cn in d else 3.0
+            std_w[cn] = float(d[cn].scale) if cn in d else STANDARD_KL_WEIGHT
             d = getattr(self.model, '_gmm_kl_weights', {})
             gmm_w[cn] = float(d[cn].scale) if cn in d else 1.0
             d = getattr(self.model, '_data_loss_weights', {})

@@ -23,7 +23,8 @@ class GMMKLDivergence(tf.keras.losses.Loss):
         name: str = "gmm_kl_divergence", 
         **kwargs
     ):
-        """GMM KL with progressive scaler: effective weight = scale × α²."""
+        """GMM KL; the scheduler sets the weight through the scale of the
+        ProgressiveScaler (total_iterations=1, so weight = scale)."""
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
