@@ -28,6 +28,9 @@ Supports:
             asking for each embedding's cluster label
   - Fallback scanpy Leiden/Louvain if cluster_label missing
   - Logistic regression accuracy of embedding -> y_label (fit on all cells)
+  - KNN purity on exact neighbors in one or more spaces (--knn-space):
+    raw, pca (leading PCs explaining --knn-pca-variance, default 0.95),
+    standardize, cosine; *_balanced averages the purity per class
   - Linear CKA between each embedding and one-hot y_label (cka_label,
     plus cka_label_balanced with classes weighted equally)
   - Linear CKA (Kornblith et al., 2019) between every pair of evaluated
@@ -95,6 +98,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Embedding viz method for InteractiveVisualization")
     p.add_argument("--k", type=int, default=None, help="K for KNN purity (default 15)")
     p.add_argument("--ks", nargs="*", type=int, help="List of K values for purity curve")
+    p.add_argument("--knn-space", dest="knn_space", nargs="+", choices=["raw", "pca", "standardize", "cosine"],
+                   help="Space(s) for KNN purity (default: raw pca)")
+    p.add_argument("--knn-pca-variance", dest="knn_pca_variance", type=float,
+                   help="Variance kept by the 'pca' KNN space (default 0.95)")
     p.add_argument("--resolution", type=float, default=0.8, help="Leiden resolution fallback")
     p.add_argument("--color-schema", dest="color_schema", help="YAML file mapping obs column values to hex colors")
     p.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting")
@@ -115,7 +122,7 @@ def merge_config_and_cli(args: argparse.Namespace) -> dict:
         cfg = load_yaml(Path(args.config))
     # YAML keys: input, outdir, modality, use_rep/plane, y_label, cluster_label, method, k, etc.
     merged = dict(cfg)
-    for key in ["input", "outdir", "modality", "use_rep", "y_label", "cluster_label", "method", "k", "resolution", "color_schema", "cka_reference"]:
+    for key in ["input", "outdir", "modality", "use_rep", "y_label", "cluster_label", "method", "k", "resolution", "color_schema", "cka_reference", "knn_space", "knn_pca_variance"]:
         val = getattr(args, key, None)
         if val is not None:
             merged[key] = val
@@ -533,6 +540,70 @@ def ensure_cluster_label(adata, modality: str, cluster_label: Optional[str], use
         return new_label
 
 
+KNN_SPACES = ["raw", "pca", "standardize", "cosine"]
+
+
+def knn_space_transform(embedding: np.ndarray, space: str, pca_variance: float = 0.95):
+    """Map the embedding to the space whose Euclidean distance the kNN uses.
+
+    raw          embedding as is
+    pca          centered, keeping the leading principal components that
+                 explain pca_variance of the variance (drops low-variance
+                 directions, whose noise otherwise perturbs the neighbors)
+    standardize  per-dim z-score (inflates near-constant dims; reference only)
+    cosine       L2-normalized rows (Euclidean = monotone in cosine distance)
+    """
+    X = np.asarray(embedding, dtype=np.float64)
+    if space == "raw":
+        return X
+    if space == "pca":
+        Xc = X - X.mean(axis=0)
+        _, s, vt = np.linalg.svd(Xc, full_matrices=False)
+        ratio = np.cumsum(s ** 2) / max((s ** 2).sum(), 1e-12)
+        n = int(min(np.searchsorted(ratio, pca_variance) + 1, len(s)))
+        return Xc @ vt[:n].T
+    if space == "standardize":
+        return (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-12)
+    if space == "cosine":
+        return X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+    raise ValueError(f"unknown knn space '{space}', expected one of {KNN_SPACES}")
+
+
+def knn_purity_metrics(embedding, y_true, k: int, ks: Optional[List[int]], space: str, pca_variance: float = 0.95) -> Dict:
+    """Fraction of the k exact nearest neighbors (self excluded) sharing the
+    cell's label. Keys are purity_k{k}_* for the raw space and
+    purity_{space}_k{k}_* otherwise; *_balanced averages per class first so
+    large classes do not dominate."""
+    from sklearn.neighbors import NearestNeighbors
+
+    y = np.asarray(y_true)
+    X = knn_space_transform(embedding, space, pca_variance)
+    k_list = sorted({kk for kk in [k] + list(ks or []) if kk < len(y)})
+    k_max = k_list[-1]
+    _, idx = NearestNeighbors(n_neighbors=k_max + 1).fit(X).kneighbors(X)
+    # drop the cell itself (not always column 0 when duplicates exist)
+    idx = np.array([row[row != i][:k_max] for i, row in enumerate(idx)])
+    match = y[idx] == y[:, None]
+    classes = np.unique(y)
+
+    prefix = "purity" if space == "raw" else f"purity_{space}"
+    metrics: Dict = {}
+    if space == "pca":
+        metrics[f"{prefix}_n_components"] = int(X.shape[1])
+    curve = {}
+    for kk in k_list:
+        same = match[:, :kk].mean(axis=1)
+        curve[str(kk)] = float(same.mean())
+        if kk == k:
+            metrics[f"{prefix}_k{kk}_mean"] = float(same.mean())
+            metrics[f"{prefix}_k{kk}_median"] = float(np.median(same))
+            metrics[f"{prefix}_k{kk}_std"] = float(same.std())
+            metrics[f"{prefix}_k{kk}_balanced"] = float(np.mean([same[y == c].mean() for c in classes]))
+    if ks:
+        metrics[f"{prefix}_curve"] = curve
+    return metrics
+
+
 def compute_metrics(
     adata,
     y_label: str,
@@ -541,9 +612,8 @@ def compute_metrics(
     k: int = 15,
     ks: Optional[List[int]] = None,
     *,
-    mdata=None,
-    modality: Optional[str] = None,
-    use_rep_key: Optional[str] = None,
+    knn_spaces: Optional[List[str]] = None,
+    knn_pca_variance: float = 0.95,
 ) -> Dict:
     from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, homogeneity_score, completeness_score, v_measure_score
 
@@ -560,67 +630,11 @@ def compute_metrics(
     metrics["n_true_classes"] = int(len(np.unique(y_true)))
     metrics["n_pred_clusters"] = int(len(np.unique(y_pred)))
 
-    # KNN purity via Cavachon ClusterAnalysis when possible, fallback to sklearn
-    purity_computed = False
-    if mdata is not None and modality is not None and use_rep_key is not None:
-        try:
-            from cavachon.tools.cluster_analysis import ClusterAnalysis
-
-            n_list: List[int] = [k] + (ks or [])
-            # ClusterAnalysis expects modality key and obs column with true labels
-            ca = ClusterAnalysis(mdata, model=None)  # type: ignore[arg-type]
-            df_knn = ca.compute_neighbors_with_same_annotations(
-                modality=modality,
-                use_cluster=y_label,
-                use_rep=use_rep_key,
-                n_neighbors=n_list,
-            )
-            # df columns: Number of Neighbors, Cluster, % of KNN Cells with the Same Cluster
-            # mean across all rows for each K approximates purity mean
-            for kk in n_list:
-                if kk >= len(y_true):
-                    continue
-                sub = df_knn[df_knn["Number of Neighbors"] == kk]
-                if len(sub):
-                    col = "% of KNN Cells with the Same Cluster"
-                    metrics[f"purity_k{kk}_mean"] = float(sub[col].mean())
-                    metrics[f"purity_k{kk}_median"] = float(sub[col].median())
-                    metrics[f"purity_k{kk}_std"] = float(sub[col].std(ddof=0))
-            if ks:
-                curve = {str(kk): float(metrics[f"purity_k{kk}_mean"]) for kk in ks if f"purity_k{kk}_mean" in metrics}
-                if curve:
-                    metrics["purity_curve"] = curve
-            metrics["_knn_source"] = "cavachon.ClusterAnalysis"
-            metrics["_knn_table_rows"] = int(len(df_knn))
-            purity_computed = True
-        except Exception as e:
-            print(f"  [warn] Cavachon KNN purity failed ({e}); falling back to sklearn", file=sys.stderr)
-
-    if not purity_computed:
-        from sklearn.neighbors import NearestNeighbors
-
-        if embedding.shape[0] != len(y_true):
-            raise ValueError(f"Embedding rows {embedding.shape[0]} != n_obs {len(y_true)}")
-        nn = NearestNeighbors(n_neighbors=k+1, algorithm="auto").fit(embedding)
-        _, indices = nn.kneighbors(embedding)
-        neigh = indices[:, 1:]
-        y_true_arr = np.array(y_true)
-        same = (y_true_arr[neigh] == y_true_arr[:, None]).sum(axis=1) / k
-        metrics[f"purity_k{k}_mean"] = float(same.mean())
-        metrics[f"purity_k{k}_median"] = float(np.median(same))
-        metrics[f"purity_k{k}_std"] = float(same.std())
-        if ks:
-            curve = {}
-            for kk in ks:
-                if kk >= len(y_true):
-                    continue
-                nn2 = NearestNeighbors(n_neighbors=kk+1).fit(embedding)
-                _, idx2 = nn2.kneighbors(embedding)
-                neigh2 = idx2[:, 1:]
-                same2 = (y_true_arr[neigh2] == y_true_arr[:, None]).sum(axis=1) / kk
-                curve[str(kk)] = float(same2.mean())
-            metrics["purity_curve"] = curve
-        metrics["_knn_source"] = "sklearn.NearestNeighbors"
+    # KNN purity, exact neighbors in each requested space (see knn_space)
+    if embedding.shape[0] != len(y_true):
+        raise ValueError(f"Embedding rows {embedding.shape[0]} != n_obs {len(y_true)}")
+    for space in knn_spaces or ["raw"]:
+        metrics.update(knn_purity_metrics(embedding, y_true, k, ks, space, knn_pca_variance))
 
     # Predictive power of the embedding for y_label: multinomial logistic
     # regression fit and scored on all cells (training accuracy, no split)
@@ -768,6 +782,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     method = cfg.get("method") or "tsne"
     k = int(cfg.get("k") or 15)
     ks = cfg.get("ks")
+    knn_spaces = as_list(cfg.get("knn_space") or ["raw", "pca"])
+    knn_pca_variance = float(cfg.get("knn_pca_variance") or 0.95)
     resolution = float(cfg.get("resolution") or 0.8)
     non_interactive = bool(cfg.get("non_interactive"))
     evaluate_all = bool(cfg.get("evaluate_all"))
@@ -825,6 +841,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     for spec in embedding_specs:
         key = spec["key"]
+        # a key only in another modality (e.g. z_RNA_* when evaluating ATAC)
+        # is copied in, aligned on obs_names
+        if key not in mod_obsm and key not in global_obsm:
+            for other, other_adata in getattr(mdata, "mod", {}).items():
+                if other == modality or key not in other_adata.obsm:
+                    continue
+                emb = pd.DataFrame(np.asarray(other_adata.obsm[key]), index=other_adata.obs_names)
+                if adata.obs_names.isin(emb.index).all():
+                    adata.obsm[key] = emb.loc[adata.obs_names].values
+                    mod_obsm.append(key)
+                    print(f"Copied obsm '{key}' from modality {other} (aligned on obs_names)")
+                    break
         in_mod = key in mod_obsm
         in_global = key in global_obsm
         if in_mod or in_global:
@@ -961,11 +989,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         metrics = compute_metrics(
             adata, y_label, cur_cluster_label, emb, k=k, ks=ks,
-            mdata=mdata, modality=modality, use_rep_key=use_rep,
+            knn_spaces=knn_spaces, knn_pca_variance=knn_pca_variance,
         )
         print("Metrics:")
         for kk, vv in metrics.items():
-            if kk == "purity_curve":
+            if kk.endswith("_curve"):
                 print(f"  {kk}: {vv}")
             else:
                 print(f"  {kk}: {vv:.4f}" if isinstance(vv, float) else f"  {kk}: {vv}")
@@ -1040,7 +1068,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         cols = [
             "modality", "use_rep", "embedding_name", "embedding_dim", "outdir",
             "y_label", "cluster_label", "n_cells", "n_true_classes", "n_pred_clusters",
-            f"purity_k{k}_mean", f"purity_k{k}_median", f"purity_k{k}_std", "ari", "nmi",
+            f"purity_k{k}_mean", f"purity_k{k}_median", f"purity_k{k}_std", f"purity_k{k}_balanced",
+            *[f"purity_{sp}_k{k}_{st}" for sp in knn_spaces if sp != "raw" for st in ("mean", "balanced")],
+            "ari", "nmi",
             "homogeneity", "completeness", "v_measure", "cluster_majority_purity_mean",
             "logreg_accuracy", "logreg_balanced_accuracy",
             "cka_label", "cka_label_balanced",
