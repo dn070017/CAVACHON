@@ -162,6 +162,8 @@ def normalize_embedding_specs(embeddings, use_rep, cluster_label):
                 if not key:
                     raise ValueError(f"embeddings entry {item} has no 'use_rep'")
                 spec = {"key": key}
+                if item.get("modality"):
+                    spec["modality"] = item["modality"]
                 if item.get("cluster_label"):
                     spec["cluster_label"] = item["cluster_label"]
                 specs.append(spec)
@@ -429,6 +431,39 @@ def interactive_select(candidates: List[Dict], prompt: str, allow_skip=False) ->
     return interactive_select(candidates, prompt, allow_skip=allow_skip)
 
 
+def pick_source_modality(mdata, adata, modality: str, key: str, non_interactive: bool) -> Optional[str]:
+    """For an obsm key missing from the evaluated modality, return the other
+    modality to take it from: the only one holding it for all cells, or the
+    user's choice when several hold different values (an error in
+    non-interactive mode; set 'modality' on the embedding entry instead)."""
+    found = {}
+    for other, other_adata in getattr(mdata, "mod", {}).items():
+        if other != modality and key in other_adata.obsm and adata.obs_names.isin(other_adata.obs_names).all():
+            emb = pd.DataFrame(np.asarray(other_adata.obsm[key]), index=other_adata.obs_names)
+            found[other] = emb.loc[adata.obs_names].values
+    if not found:
+        return None
+    names = list(found)
+    first = found[names[0]]
+    if len(names) == 1 or all(found[n].shape == first.shape and np.allclose(found[n], first) for n in names[1:]):
+        return names[0]
+    if non_interactive:
+        raise ValueError(
+            f"obsm '{key}' differs between modalities {names}; "
+            f"set 'modality' on its embedding entry (or use MOD:{key})"
+        )
+    print(f"\nobsm '{key}' is not in modality {modality} and differs between:")
+    for i, n in enumerate(names):
+        print(f"  [{i}] {n}  shape={found[n].shape}")
+    while True:
+        raw = input("Pick the modality (index or name) > ").strip()
+        if raw in names:
+            return raw
+        if raw.isdigit() and int(raw) < len(names):
+            return names[int(raw)]
+        print(f"Could not resolve '{raw}', please try again.")
+
+
 def resolve_modality(mdata, requested: Optional[str], non_interactive: bool) -> str:
     mods = getattr(mdata, "mod", None)
     if mods is None or len(list(mods.keys())) == 0:
@@ -676,7 +711,7 @@ def visualize_two(adata, use_rep: str, method: str, y_label: str, cluster_label:
         adata.uns["cavachon"] = {"name": modality}
     elif "name" not in cav:
         cav["name"] = modality
-    safe_rep = use_rep.replace("/", "_")
+    safe_rep = use_rep.replace("/", "_").replace(":", "_")
     f1 = str(outdir / f"{modality}_{safe_rep}_{method}_by_{y_label}.html")
     f2 = str(outdir / f"{modality}_{safe_rep}_{method}_by_{cluster_label}.html")
 
@@ -841,18 +876,35 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     for spec in embedding_specs:
         key = spec["key"]
-        # a key only in another modality (e.g. z_RNA_* when evaluating ATAC)
-        # is copied in, aligned on obs_names
-        if key not in mod_obsm and key not in global_obsm:
-            for other, other_adata in getattr(mdata, "mod", {}).items():
-                if other == modality or key not in other_adata.obsm:
-                    continue
-                emb = pd.DataFrame(np.asarray(other_adata.obsm[key]), index=other_adata.obs_names)
-                if adata.obs_names.isin(emb.index).all():
-                    adata.obsm[key] = emb.loc[adata.obs_names].values
-                    mod_obsm.append(key)
-                    print(f"Copied obsm '{key}' from modality {other} (aligned on obs_names)")
-                    break
+        # 'MOD:key' (CLI) is the same as a YAML entry with modality: MOD
+        mods = getattr(mdata, "mod", {})
+        if "modality" not in spec and ":" in key and key not in mod_obsm and key not in global_obsm:
+            prefix, rest = key.split(":", 1)
+            if prefix in mods:
+                spec = {**spec, "modality": prefix, "key": rest}
+                key = rest
+        source_mod = spec.get("modality")
+        if source_mod is None and key not in mod_obsm and key not in global_obsm:
+            try:
+                source_mod = pick_source_modality(mdata, adata, modality, key, non_interactive)
+            except ValueError as e:
+                print(str(e), file=sys.stderr)
+                return 2
+        if source_mod is not None and source_mod != modality:
+            if source_mod not in mods or key not in mods[source_mod].obsm:
+                print(f"obsm '{key}' not found in modality {source_mod}", file=sys.stderr)
+                if non_interactive:
+                    return 2
+                continue
+            # keep the evaluated modality's own key intact on a name clash
+            dest = key if key not in mod_obsm else f"{source_mod}:{key}"
+            src = mods[source_mod]
+            emb = pd.DataFrame(np.asarray(src.obsm[key]), index=src.obs_names)
+            adata.obsm[dest] = emb.loc[adata.obs_names].values
+            mod_obsm.append(dest)
+            print(f"Copied obsm '{key}' from modality {source_mod} as '{dest}' (aligned on obs_names)")
+            spec = {**spec, "key": dest}
+            key = dest
         in_mod = key in mod_obsm
         in_global = key in global_obsm
         if in_mod or in_global:
