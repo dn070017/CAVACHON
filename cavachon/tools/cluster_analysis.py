@@ -5,9 +5,9 @@ from typing import Dict, List, Optional, Sequence, Union
 import muon as mu
 import numpy as np
 import pandas as pd
-import scanpy
 import tensorflow as tf
 from sklearn.metrics.cluster import contingency_matrix
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
@@ -782,31 +782,34 @@ class ClusterAnalysis:
             self.mdata[modality].obsm["z_custom"] = use_rep
             use_rep = "z_custom"
 
-        for k in tqdm(n_neighbors):
+        n_neighbors = list(n_neighbors)
+        for idx, k in enumerate(n_neighbors):
             if isinstance(k, float):
-                k = int(k)
+                n_neighbors[idx] = int(k)
                 message = (
                     "Expect int for element in n_neighbors, transform float to int."
                 )
                 warnings.warn(message, RuntimeWarning)
 
-            scanpy.pp.neighbors(
-                self.mdata[modality], n_neighbors=k + 1, use_rep=use_rep
-            )
-            proportions_k = list()
-            for i, j in enumerate(self.mdata[modality].obsp["distances"]):
-                cluster = self.mdata[modality].obs.iloc[i][use_cluster]
-                # Exclude the cell itself from its neighbor list so the
-                # proportion is computed over the k true nearest neighbors.
-                neighbor_indices = j.indices[j.indices != i]
-                neighbor_clusters = self.mdata[modality].obs.iloc[neighbor_indices][
-                    use_cluster
-                ]
-                proportions_k.append((neighbor_clusters == cluster).sum() / k)
-                clusters_series += [cluster]
+        # Exact neighbors, computed once for the largest k. (scanpy's
+        # neighbors stores k + 1 non-self neighbors per cell once n_obs
+        # >= 4096, which inflated the proportions, and is approximate.)
+        matrix = np.asarray(self.mdata[modality].obsm[use_rep])
+        k_max = max(n_neighbors)
+        _, indices = (
+            NearestNeighbors(n_neighbors=k_max + 1).fit(matrix).kneighbors(matrix)
+        )
+        # Exclude the cell itself (not always column 0 when duplicates exist)
+        indices = np.array(
+            [row[row != i][:k_max] for i, row in enumerate(indices)]
+        )
+        clusters = self.mdata[modality].obs[use_cluster].to_numpy()
+        same_cluster = clusters[indices] == clusters[:, None]
 
-            proportions_series.append(np.array(proportions_k))
-            n_neighbors_series.append(np.array([k] * len(proportions_k)))
+        for k in tqdm(n_neighbors):
+            proportions_series.append(same_cluster[:, :k].mean(axis=1))
+            n_neighbors_series.append(np.array([k] * len(clusters)))
+            clusters_series += list(clusters)
 
         analysis_result = pd.DataFrame(
             {
@@ -822,7 +825,7 @@ class ClusterAnalysis:
             analysis_result["% of KNN Cells with the Same Cluster"]
             * analysis_result["Number of Neighbors"]
         )
-        num_cells = self.mdata[modality].obs["cell_type"].value_counts()
+        num_cells = self.mdata[modality].obs[use_cluster].value_counts()
         total_num_cells = num_cells.sum()
         analysis_result["Number of Cells"] = analysis_result["Cluster"].map(num_cells)
         analysis_result["Cell Enrichment Score"] = (
