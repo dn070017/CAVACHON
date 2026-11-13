@@ -36,6 +36,8 @@ build-backend = "poetry.core.masonry.api"
 ipykernel = "^6.29.5"
 ruff = "^0.9.7"
 pytest = "^8.3.4"
+mypy = "^2.4.1"
+coverage = "^7.17.3"
 
 [tool.pixi.activation]
 env = { LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cudnn/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cublas/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cufft/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/curand/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cusolver/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/cusparse/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/nccl/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib/python3.11/site-packages/nvidia/nvtx/lib:$PIXI_PROJECT_ROOT/.pixi/envs/default/lib" }
@@ -59,3 +61,18 @@ opencode = { cmd = "./scripts/opencode-sandbox.sh" }
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+
+[tool.mypy]
+packages = ["cavachon"]
+# cavachon/ has no top-level __init__.py
+explicit_package_bases = true
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+# third-party libraries without type stubs
+module = [
+  "anndata.*", "gseapy.*", "muon.*", "networkx.*", "pandas.*", "plotly.*",
+  "scanpy.*", "scipy.*", "sklearn.*", "tensorflow.*", "tensorflow_probability.*",
+  "tqdm.*", "umap.*", "yaml.*",
+]
+ignore_missing_imports = true
