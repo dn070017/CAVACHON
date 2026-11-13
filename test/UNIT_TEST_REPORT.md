@@ -1,4 +1,4 @@
-# Unit Test Report — low-coupling packages
+# Unit Test Report
 
 Date: 2026-11-13 · Branch: `feature/attribution_analysis`
 
@@ -16,9 +16,20 @@ New tests cover every package that imports from fewer than 4 other cavachon pack
 | config + io | 2 / 1 | `test/config`, `test/io` | 161 | 22 |
 | dataloader + modality | 3 / 1 | `test/dataloader`, `test/modality` | 104 | 12 |
 | filter + app | 1 / 1 | `test/filter`, `test/app` | 105 | 5 |
-| **Total** | | | **831** | **29** |
+| **Total (low-coupling)** | | | **914** | **7** |
 
-The per-group counts above are from before the fixes. After the H1–H6 and medium fixes, the suite has 831 passed and 29 xfailed. All 29 remaining xfails are low-severity bugs.
+The per-group counts above are from before the fixes. After the H1–H6, medium and low fixes, these packages have 914 passed and 7 xfailed. All 7 remaining xfails are low-severity bugs, left open on purpose.
+
+Packages that import from exactly 4 other cavachon packages were added later, under the same isolation rules. See [Coupled packages (out-deps = 4)](#coupled-packages-out-deps--4).
+
+| Packages tested | Test dirs | Passed | xfail | Coverage (own tests only) |
+|---|---|---|---|---|
+| callbacks | `test/callbacks` | 43 | 6 | 91% |
+| scheduler | `test/scheduler` | 72 | 8 | 96% |
+| modules (base, parameterizers, preprocessors) | `test/modules/{base,parameterizers,preprocessors}` | 80 | 7 | 99% (modules overall) |
+| modules (components) | `test/modules/components` | 93 | 11 | (included above) |
+| workflow (`setup_train_scheduler` only) | `test/workflow` | 2 | 0 | not measured |
+| **Whole suite (after M1/M2/M5/M6/M7 fixes)** | | **1211** | **32** | |
 
 ### Isolation (mocking policy)
 
@@ -166,20 +177,51 @@ Every medium item below is fixed.
 - ✅ `AnnData(..., dtype=)` is used in `anndata_utils.py:111` and `file_reader.py:109`.
 - ✅ `np.mat` is used in `tensor_utils.py:285`. It was removed in NumPy 2.
 
-### Low
+### Low. ✅ Mostly fixed (2026-11-13)
+
+Seven xfails remain, all deliberately left open:
+
+- **`event_dims` in the KL losses:** latent; current inputs are always rank 2.
+- **`ToSparse`:** unused.
+- **`ProgressiveScaler.activate(0)`:** possibly intended.
+- **ReflectionHandler:** `assert` validation and acronyms in `_camel_to_snake`.
+- **`embedding_method`:** an omitted field skips its validator.
+
+Fixes in this round that users will notice:
+
+- **IO paths:** omitted IO paths are resolved against the working directory when the config loads.
+- **Configs that fail to load:** configs with no components, or a component with no modalities.
+- **FilterQC:**
+  - it works on AnnData whose var index has no name, matching on `var_names`;
+  - `filter_threshold` is optional (metrics only, every cell kept);
+  - the default `percent_top` is trimmed to the number of features.
+- **Duplicate names:** duplicate `obs_names` and duplicate component names raise clear errors.
 
 **Distributions**
 
-- In the ZINB, the mixture weights come from `sigmoid` and `1 - sigmoid`, which is imprecise in float32. With a large dropout logit, `log_prob(x>0)` is about −48 instead of about −22.
+- ✅ **Fixed. This was under-rated: it was a real training problem, not just imprecision.** `IndependentZeroInflatedNegativeBinomialDistribution` built its mixture weights as `probs = sigmoid(logits)` and `1 - probs`. In float32, `sigmoid(l)` rounds to 1.0 once the dropout logit reaches about 17, so the NB component got weight 0. Measured with x=5, mean 3 and dispersion 2:
+
+  | logit | old `log_prob` | fixed / exact |
+  |---|---|---|
+  | 15 | −18.172 | −18.146 |
+  | 17 | **−78.527** | −20.146 |
+  | 20 | **−78.527** | −23.146 |
+  | 30 | **−78.527** | −33.146 |
+
+  - The gradient with respect to the dropout logit was **NaN** for any non-zero count once the logit reached about 17. `remove_nan_gradients` set it to 0, so a gene whose dropout logit drifted past about 17 got no gradient to pull it back.
+  - **Fix:** the weights are now `Categorical(logits=stack([logits, 0]))`. Since `softmax([l, 0]) = [sigmoid(l), sigmoid(−l)]`, the weights are mathematically the same, but they are computed in log space.
+  - Parameter meanings, shapes and the parameterizer are unchanged.
+  - Models trained before the fix were only affected where a dropout logit exceeded about 17. Retraining is recommended anyway.
+  - **Still open (documented in the class docstring, not a bug):** the "zero" component is NB(mean = 1e-7), not an exact point mass at 0. So `mean()` includes a `sigmoid(logits) * 1e-7` term, and `log_prob(0)` is very close to, but not exactly, the textbook ZINB value.
 - The KL losses read `event_dims` from `shape[1]` but slice on the last axis, which is wrong for rank-3 inputs.
-- `IndependentBernoulliDistribution.from_parameterizer_output` returns a plain tfp `Bernoulli`, not `cls`, and drops `**kwargs`.
-- `MixtureMultivariateNormalDiagDistribution` is missing from `distributions/__init__`.
+- ✅ Fixed: `IndependentBernoulliDistribution.from_parameterizer_output` returned a plain tfp `Bernoulli`, not `cls`, and dropped `**kwargs`.
+- ✅ Fixed: `MixtureMultivariateNormalDiagDistribution` was missing from `distributions/__init__`.
 
 **Layers**
 
 - `ToSparse` does nothing in eager mode, although it is currently unused.
 - `ProgressiveScaler.activate(0)` never turns fully on. This may be intended.
-- The mixture grid side `ceil(K**(1/D))` is wrong by one for some exact powers, such as 3125 = 5^5, because of floating-point error.
+- ✅ The mixture grid side `ceil(K**(1/D))` is wrong by one for some exact powers, such as 3125 = 5^5, because of floating-point error.
 
 **Utils**
 
@@ -188,37 +230,109 @@ Every medium item below is fixed.
   - `_camel_to_snake` does not split acronyms or digits (`ZINBDistribution` becomes `zinbdistribution`).
   - Its glob is not actually recursive.
 - `general_utils`:
-  - `tensorflow_compatible_str` accepts a trailing `\n`, because it uses `match` with `$`.
-  - An unknown parent component produces the unhelpful error "None cannot be a node".
-  - Duplicate component names are accepted.
+  - ✅ `tensorflow_compatible_str` accepts a trailing `\n`, because it uses `match` with `$`.
+  - ✅ An unknown parent component produces the unhelpful error "None cannot be a node".
+  - ✅ Duplicate component names are accepted.
 - `tensor_utils`:
-  - `split` adds an empty chunk when n is divisible by batch_size.
-  - `remove_nan_gradients` changes its input list.
+  - ✅ `split` adds an empty chunk when n is divisible by batch_size.
+  - ✅ `remove_nan_gradients` changes its input list.
 
 **DataLoader and Modality**
 
-- Calling `create_dataset()` a second time doubles `n_vars_batch_effect`.
-- Duplicate sparse entries crash instead of being summed.
-- `StudenttDataModifier` never sets `modality_name`.
-- `Modality` changes the caller's `uns` dict and, for AnnData input, the input's `.uns`.
-- Duplicate obs_names produce an unclear pandas error.
+- ✅ Calling `create_dataset()` a second time doubles `n_vars_batch_effect`.
+- ✅ Duplicate sparse entries crash instead of being summed.
+- ✅ `StudenttDataModifier` never sets `modality_name`.
+- ✅ `Modality` changes the caller's `uns` dict and, for AnnData input, the input's `.uns`.
+- ✅ Duplicate obs_names produce an unclear pandas error.
 
 **Filter**
 
 - `filter_qc`:
-  - It crashes when `var.index.name` is unset, which is true of any AnnData not loaded through `FileReader`.
-  - `filter_threshold` is described as optional but is required.
-  - scanpy's default `percent_top` includes 500, which raises on modalities with fewer than 500 features.
+  - ✅ It crashes when `var.index.name` is unset, which is true of any AnnData not loaded through `FileReader`.
+  - ✅ `filter_threshold` is described as optional but is required.
+  - ✅ scanpy's default `percent_top` includes 500, which raises on modalities with fewer than 500 features.
 
 **Config**
 
-- The default IO paths stay relative, while explicit ones are made absolute.
-- When an analysis component is unknown, the error message names the wrong problem.
-- `learning_rate: null` gives a raw TypeError.
-- A dense `.mtx` file fails on `.tocsr()`.
-- Missing `components` and missing component `modalities` are not rejected.
+- ✅ The default IO paths stay relative, while explicit ones are made absolute.
+- ✅ When an analysis component is unknown, the error message names the wrong problem.
+- ✅ `learning_rate: null` gives a raw TypeError.
+- ✅ A dense `.mtx` file fails on `.tocsr()`.
+- ✅ Missing `components` and missing component `modalities` are not rejected.
 
 ---
+
+## Coupled packages (out-deps = 4)
+
+These are `callbacks`, `scheduler` and `modules`. No source code was changed; each bug below is documented by a strict xfail.
+
+**Mocking:** anything these packages import from other cavachon packages is mocked:
+- Layers and losses are replaced by tiny real `tf.keras` layers or loss objects with deterministic outputs, so the Keras models still build and train.
+- `ProgressiveScaler`, `DataLoader`, the distributions, `TensorUtils` and `ReflectionHandler` are fakes.
+- **mlflow is fully mocked.**
+- The scheduler drives a `FakeModel`/`FakeComponent` that records `compile`/`fit`, trainable flags and annealing state for each phase.
+
+Code inside the package stays real. For example, `Component` tests may use the real `modules.base` encoders.
+
+**Commit 73eecd0 checked:** passing scheduler tests confirm the intent of "parent annealing ramps only alpha with the KL tied to it". During parent annealing the parents are frozen with weights 0. The child's alpha and standard KL ramp together, and its z_hat KL is 0. Afterwards alpha is pinned to (1, 1) and the standard KL to 1.
+
+### Not in the production path (latent)
+
+`Component.compile` and `Component.train_step` are never called in production. Training goes through `Model.compile` and `Model.train_step`, driven by the scheduler. Component bugs C1, C2, C3, C4 and C8 therefore affect only standalone Component training. They are real, but they don't affect current results.
+
+### Medium (affect current runs or configs). ✅ M1, M2, M5, M6 and M7 fixed (2026-11-13)
+
+| # | Location | Issue |
+|---|---|---|
+| M1 | `modules/base/decoder_data_parameterizer.py:58-63` | **`n_decoder_layers` is ignored.** The decoder backbone is hard-coded to `n_layers=2, base_n_neurons=32`. `Component.setup_decoders` passes the per-modality value, but it has no effect. The docstring says the default is 3. **Fixed:** `n_layers` is passed to the backbone. **With the default of 3 (your choice), every decoder is now Dense32 → LN → Dense64 → LN → Dense64 → LN instead of 2 layers.** Models trained before this change had 2-layer decoders. |
+| M2 | `modules/components/component.py:494-501` + `modules/base/hierarchical_encoder.py:245,277` | **`progressive_iterations` never reaches the hierarchical encoder.** Component passes `progressive_step=`, and HierarchicalEncoder silently swallows unknown `**kwargs` (including `trainable`/`dtype`). The scaler therefore stays at 5000, and the scheduler later overwrites `total_iterations`, which limits the impact. **Fixed:** Component passes `progressive_iterations=`, and HierarchicalEncoder forwards `**kwargs` to `tf.keras.Model`, so unknown keywords now raise an error and `trainable`/`dtype` are honoured. |
+| M3 | `callbacks/optimizer_state_callback.py:13,21` | **`OptimizerStateCallback` does nothing.** Keras 3 optimizers have no `get_weights`, and a bare `except` hides the error. The restore step also looks up `model._callbacks`, which doesn't exist. The scheduler adds this callback to every phase. |
+| M4 | `callbacks/periodic_tsne_callback.py:43` | **`PeriodicTSNECallback` never saves.** `save_epochs = set()` is hard-coded, but the scheduler adds the callback whenever `output_dir` is set. |
+| M5 | `workflow/workflow.py:242-251` | **Positional arguments are swapped.** `SequentialTrainingScheduler(..., outdir, batch_effect_colnames, distribution_names)` is called, but the signature is `(..., outdir, distribution_names, batch_effect_colnames)`. This is harmless today, because the only consumer is the non-saving `PeriodicTSNECallback`. It will matter once M4 is fixed. The workflow package isn't unit-tested, so this was confirmed by reading the code. **Fixed:** the workflow passes `outdir`, `distribution_names` and `batch_effect_colnames` by keyword. A regression test is in `test/workflow/`. |
+| M6 | `scheduler/sequential_training_scheduler.py:235-240` | **k-means++ crashes on a collapsed latent.** With fewer distinct points than clusters, every logit is `-inf` and `tf.gather` raises. Training aborts exactly when posterior collapse happens. **Fixed:** when every distance is 0, k-means++ falls back to choosing uniformly. |
+| M7 | `scheduler/sequential_training_scheduler.py:727-764` and the other phase runners | **User `callbacks=` (or `verbose=`) passed to `fit` raise "multiple values for 'callbacks'".** They are kept in `kwargs_copy` and also passed explicitly. This is latent: the workflow never passes them. **Fixed:** each phase drops `callbacks` and `verbose` from the kwargs it forwards. User callbacks are still deep-copied into every phase. |
+| C1 | `modules/components/component.py:1351` | `Component.train_step` calls `compiled_metrics.update_state(y_true, y_pred_dict)`, which raises a ValueError on Keras 3. *(latent; see above)* |
+| C2 | `component.py:1308-1319` | A standard-KL-only setup raises KeyError, because y_true/y_pred are filled only under the GMM key. *(latent)* |
+| C3 | `component.py:1183-1212` | The `_standard_kl_weights` and `_gmm_kl_weights` Variables are never passed to the losses, so assigning them has no effect, despite the docstring. *(latent)* |
+| C4 | `component.py:1242-1254` | `_data_loss_weights` is copied with `float(...)` by NegativeLogDataLikelihood, so assigning it later has no effect. *(latent)* |
+
+### Low
+
+- **Scheduler:**
+  - float truncation in the KL schedule boundaries (`int(10*(0.1+0.7)) = 7`; 12 of 144 ratio/epoch combinations are affected);
+  - k-means never runs when `kl_annealing_ratio[0] == 1.0`;
+  - the prior std initialisation uses `std - 0.5` as the inverse softplus (about 15% too small at std ≈ 3);
+  - the mlflow run is left open if `fit` raises;
+  - `compute_modality_weight(constant=True)` raises UnboundLocalError;
+  - the training order isn't a real topological sort: a child listed before its parent raises KeyError.
+- **Callbacks:**
+  - `PeriodicTSNECallback(batch_size=int)` uses the type as a default value;
+  - `EarlyStoppingCallback` prints the restored epoch one too low;
+  - a positional `monitor` argument is swallowed by `cumulative_offset`.
+- **Modules:**
+  - `exp_transform=True` crashes `Parameterizer.make` on Keras 3 (`tf.math.exp` on a KerasTensor);
+  - HierarchicalEncoder and EncoderLatentParameterizer have no `get_config`, so the auto-config records default values;
+  - `Component`:
+    - pops entries from the caller's `loss_weights` dict;
+    - a weight of 0 still creates the loss, whose metric is then NaN;
+    - has no `test_step`, so `evaluate()` fails;
+    - drops `**kwargs` in `__init__`;
+    - `decode()` requires undocumented matrix keys.
+
+### Worth a look (not marked as bugs)
+
+- **ZINB library size semantics.** The library size is the row sum of *log1p* counts, because NormalizeLibrarySize runs after LogTransform. The decoder computes `exp(min(mean·libsize, 7)) − 1`, so the expected count is capped at about 1,096. This may be intended; worth confirming.
+- **`EarlyStoppingConfig`:**
+  - its monitor, mode and patience are ignored, and `min_delta=5` is hard-coded;
+  - patience comes from `fit(epochs=…)`.
+- **z_hat annealing:**
+  - the KL ramp only reaches its target if `n_z_hat_training_epochs > 0`;
+  - the z_hat sampler is left stochastic after annealing;
+  - the z_hat prior is k-means-initialised twice.
+- **AnnealingCallback:**
+  - it freezes the model and relies on the scheduler to unfreeze it;
+  - loss patterns match anywhere in the name, not as a prefix.
+- **`Component.train_step` doesn't drop NaN gradients**, unlike `Model.train_step`. This is latent.
 
 ## Suspicious but not marked as bugs
 
