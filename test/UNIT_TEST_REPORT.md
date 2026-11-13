@@ -16,9 +16,9 @@ New tests cover every package that imports from fewer than 4 other cavachon pack
 | config + io | 2 / 1 | `test/config`, `test/io` | 161 | 22 |
 | dataloader + modality | 3 / 1 | `test/dataloader`, `test/modality` | 104 | 12 |
 | filter + app | 1 / 1 | `test/filter`, `test/app` | 105 | 5 |
-| **Total** | | | **754** | **74** |
+| **Total** | | | **831** | **29** |
 
-The per-group counts above are from before the H1–H6 fixes. After the fixes, 6 xfails became regular passing tests and 3 regression tests were added.
+The per-group counts above are from before the fixes. After the H1–H6 and medium fixes, the suite has 831 passed and 29 xfailed. All 29 remaining xfails are low-severity bugs.
 
 ### Isolation (mocking policy)
 
@@ -84,59 +84,87 @@ pytest --runxfail
 | H5 | `io/file_reader.py:106` | Reading **two or more samples always fails**. The per-sample features tables are concatenated, so var has n_vars × n_samples rows. | Features are taken once, from the first sample. Any later sample whose features differ raises a `ValueError`. |
 | H6 | `config/modality_file_config.py:18` + `io/file_reader.py:62-80,164` | The docs say `colnames` is optional, but its default `[]` leads to `df.columns = []`, which raises "Length mismatch". | `read_table` treats an empty `colnames` the same as `None`. |
 
-### Medium
+### Medium. ✅ All fixed (2026-11-13)
+
+Every medium item below is fixed.
+
+**Fixes that change behaviour users will see:**
+
+- **Default FilterQC `qc_vars`**
+  - Mitochondrial genes now match `(?i)^MT-` and spike-ins match `^ERCC-`.
+  - Human `pct_counts_MT` no longer counts MTOR, MTHFR and similar genes, so it drops.
+  - Mouse `mt-` genes are now detected, so MT filtering removes cells it used to keep.
+  - Column names are unchanged, and configs that set `qc_vars` explicitly behave as before.
+- **Stricter configs.** These now raise an error:
+  - duplicate modality or component names;
+  - an unknown modality `type` with no `dist`;
+  - unknown names in `conditioned_on_z`, `conditioned_on_z_hat` or `donor_components`;
+  - invalid `hierarchical_differential_analysis` entries.
+
+  Unknown top-level YAML keys now emit a warning. The repo configs still load.
+- **`hierarchical_differential_analysis.use_cluster`** defaults to `cluster_<component>`, not `""`.
+- **`yaml_raw`** is now the YAML exactly as written. Nothing outside `cavachon/config` reads it.
+- **`has_headers: true`** barcodes and features files are now indexed by their first column. No repo config uses this.
+- **`n_vars_batch_effect`** always equals the width of the batch-effect tensor. A reused encoder now fixes how a column is encoded, so subset DataLoaders encode the same way as the full one.
+- **A batch column missing from `obs`** emits a warning but is still skipped.
+- **`MultiModality`, `Modality` and the config validators** no longer change their inputs in place. `workflow.py` uses only the returned objects, so it is unaffected.
+- **`ReflectionHandler`** raises an error when a class name matches files at the same depth in more than one place. No current lookup is ambiguous.
+
+**Checked:** an end-to-end run on synthetic data used the real code throughout, from config → h5ad → filter → MultiModality → DataLoader → Model. It trained 7 epochs, ran predict and saved the weights. The ATAC cells were stored in reverse order and were aligned correctly. The batch-effect widths match `n_vars`, and the embeddings are finite. Old layer weights still load into the fixed layers.
+
+**Side observation (not a bug in this code path):** `tf.train.Checkpoint` does not restore the mixture-prior loc/scale weights, because they are kept in Python lists. CAVACHON saves through Keras `model.save_weights`, which does restore them.
 
 **Found while isolating the tests**
 
-- `config/filter_config.py:9` with `base.py:28-36`: **every valid filter config emits a warning**. `FilterConfig` allows extra fields, but it inherits the "Unexpected field … typo" warning, so `min_counts`, `qc_vars` and the other real parameters all trigger it. Real typos get lost in the noise.
-- `config/application_config.py:142-150`: names given in `conditioned_on_z`/`conditioned_on_z_hat` are never checked against the components that exist. The error only shows up later, inside utils/networkx, as "None cannot be a node".
-- `dataloader/dataloader.py:181-197`: `n_vars_batch_effect` is computed from the encoder dict, not from the tensor that is returned. A reused encoder dict that holds columns not requested this time inflates `n_vars`, for example 3 when the actual width is 1. `workflow` and `tools/*` both reuse `dataloader.batch_effect_encoders`.
+- ✅ `config/filter_config.py:9` with `base.py:28-36`: **every valid filter config emits a warning**. `FilterConfig` allows extra fields, but it inherits the "Unexpected field … typo" warning, so `min_counts`, `qc_vars` and the other real parameters all trigger it. Real typos get lost in the noise.
+- ✅ `config/application_config.py:142-150`: names given in `conditioned_on_z`/`conditioned_on_z_hat` are never checked against the components that exist. The error only shows up later, inside utils/networkx, as "None cannot be a node".
+- ✅ `dataloader/dataloader.py:181-197`: `n_vars_batch_effect` is computed from the encoder dict, not from the tensor that is returned. A reused encoder dict that holds columns not requested this time inflates `n_vars`, for example 3 when the actual width is 1. `workflow` and `tools/*` both reuse `dataloader.batch_effect_encoders`.
 
 **Dataloader and tensor utilities**
 
-- `utils/tensor_utils.py:182` has the same mutable-default bug as H2, in `create_tensor_from_df(encoder_dict=dict())`.
-- `utils/tensor_utils.py:173` uses `reverse=True` in `create_backbone_layers`, which reverses the flat `[Dense, LN, Dense, LN]` list. The result is `LN → Dense → … → Dense` with no norm after the last Dense layer. The intent was presumably to reverse only the layer widths. ⚠ Decoders that use `reverse=True` are affected.
-- The way a numeric batch column is encoded **depends on n_obs**, through the 20% unique-ratio heuristic in `dataframe_utils.check_is_categorical`. A subset DataLoader, as used in `tools/*`, can get a width-1 tensor while `n_vars_batch_effect` reports 2.
-- A batch-effect column missing from `obs` is silently replaced by a zero column of width 1, while `n_vars_batch_effect` reports 0, so the two disagree.
-- `dataframe_utils.py:121`: `check_is_categorical` raises a TypeError on string columns that contain NaN.
-- `anndata_utils.py:42-50`: a NaN group label adds an all-NaN pseudo-bulk row.
+- ✅ `utils/tensor_utils.py:182` has the same mutable-default bug as H2, in `create_tensor_from_df(encoder_dict=dict())`.
+- ✅ `utils/tensor_utils.py:173` uses `reverse=True` in `create_backbone_layers`, which reverses the flat `[Dense, LN, Dense, LN]` list. The result is `LN → Dense → … → Dense` with no norm after the last Dense layer. The intent was presumably to reverse only the layer widths. ⚠ Decoders that use `reverse=True` are affected. **Fixed: `reverse=True` now reverses only the widths, so the encoders are Dense64 → LN → Dense64 → LN → Dense32 → LN.** ⚠ This changes the encoder architecture. Checkpoints saved before this change will not load, and all models must be retrained (this was decided).
+- ✅ The way a numeric batch column is encoded **depends on n_obs**, through the 20% unique-ratio heuristic in `dataframe_utils.check_is_categorical`. A subset DataLoader, as used in `tools/*`, can get a width-1 tensor while `n_vars_batch_effect` reports 2.
+- ✅ A batch-effect column missing from `obs` is silently replaced by a zero column of width 1, while `n_vars_batch_effect` reports 0, so the two disagree.
+- ✅ `dataframe_utils.py:121`: `check_is_categorical` raises a TypeError on string columns that contain NaN.
+- ✅ `anndata_utils.py:42-50`: a NaN group label adds an all-NaN pseudo-bulk row.
 
 **Losses and layers**
 
-- `losses/gmm_density_loss.py:88`: the docstring says the weight can be a `ProgressiveScaler`, but `loss * self.weight` fails when given one. Current callers pass a `tf.Variable`, which works.
-- Every `from_parameterizer_output` raises `UnboundLocalError` for a `tf.Variable` or numpy input.
-- `layers/modifiers/binarize.py:42`: the typo `__name___` means an out-of-range threshold raises `AttributeError` instead of warning.
-- `from_config` fails on 8 layers: all parameterizers, both samplers and `ProgressiveScaler`. They take no `**kwargs`, so Keras 3's `trainable`/`dtype` cause a TypeError. This breaks `clone_model` and `.keras` save/load.
-- `normalize_library_size.py:61`: a row of all zeros produces NaN (0/0).
-- `scale_library_size.py:78`: `tf.ones((tensor.shape[0], 1))` fails inside a `tf.function` when the batch dimension is unknown.
+- ✅ `losses/gmm_density_loss.py:88`: the docstring says the weight can be a `ProgressiveScaler`, but `loss * self.weight` fails when given one. Current callers pass a `tf.Variable`, which works.
+- ✅ Every `from_parameterizer_output` raises `UnboundLocalError` for a `tf.Variable` or numpy input.
+- ✅ `layers/modifiers/binarize.py:42`: the typo `__name___` means an out-of-range threshold raises `AttributeError` instead of warning.
+- ✅ `from_config` fails on 8 layers: all parameterizers, both samplers and `ProgressiveScaler`. They take no `**kwargs`, so Keras 3's `trainable`/`dtype` cause a TypeError. This breaks `clone_model` and `.keras` save/load.
+- ✅ `normalize_library_size.py:61`: a row of all zeros produces NaN (0/0).
+- ✅ `scale_library_size.py:78`: `tf.ones((tensor.shape[0], 1))` fails inside a `tf.function` when the batch dimension is unknown.
 
 **Utils and environment**
 
-- `utils/reflection_handler.py:50-67`: the "more than one file" check can never trigger, because only `glob(...)[0]` is returned. A filename that exists in two places resolves arbitrarily.
+- ✅ `utils/reflection_handler.py:50-67`: the "more than one file" check can never trigger, because only `glob(...)[0]` is returned. A filename that exists in two places resolves arbitrarily.
 
 **Filter**
 
-- `filter/filter_qc.py:96`: the default `qc_vars=["MT"]` is an unanchored regex, so it also matches `MTOR`, `MTHFR` and similar genes and **inflates `pct_counts_MT`**. It never matches mouse `mt-` genes.
-- `filter/anndata_filter_handler.py:87`: a modality with no steps entry crashes with `NoneType is not iterable`.
+- ✅ `filter/filter_qc.py:96`: the default `qc_vars=["MT"]` is an unanchored regex, so it also matches `MTOR`, `MTHFR` and similar genes and **inflates `pct_counts_MT`**. It never matches mouse `mt-` genes.
+- ✅ `filter/anndata_filter_handler.py:87`: a modality with no steps entry crashes with `NoneType is not iterable`.
 
 **Config**
 
-- `ComponentConfig` and `TrainingConfig` validators change the raw YAML dict (`yaml_raw`). Validating the same dict a second time behaves differently.
-- `application_config.py:127` appends each sample without de-duplicating. A sample also listed under the modality, or a re-validated config, is read twice.
-- Duplicate component or modality names silently overwrite earlier ones (`application_config.py:74,139`).
-- `hierarchical_differential_analysis` entries are never cross-validated, and their `use_cluster` defaults to `""`, which leads to `obs[""]` in `workflow.py:520`.
-- An unknown modality `type` is accepted with `dist=""`.
-- Unknown top-level YAML keys are silently dropped. For example, a typo `sample:` loses every sample.
-- `io/file_reader.py:164-171`: with `has_headers=True`, `index_col` is ignored and the obs/var index becomes 0..n.
+- ✅ `ComponentConfig` and `TrainingConfig` validators change the raw YAML dict (`yaml_raw`). Validating the same dict a second time behaves differently.
+- ✅ `application_config.py:127` appends each sample without de-duplicating. A sample also listed under the modality, or a re-validated config, is read twice.
+- ✅ Duplicate component or modality names silently overwrite earlier ones (`application_config.py:74,139`).
+- ✅ `hierarchical_differential_analysis` entries are never cross-validated, and their `use_cluster` defaults to `""`, which leads to `obs[""]` in `workflow.py:520`.
+- ✅ An unknown modality `type` is accepted with `dist=""`.
+- ✅ Unknown top-level YAML keys are silently dropped. For example, a typo `sample:` loses every sample.
+- ✅ `io/file_reader.py:164-171`: with `has_headers=True`, `index_col` is ignored and the obs/var index becomes 0..n.
 
 **MultiModality**
 
-- `MultiModality` changes the caller's mapping or MuData in place. With MuData input it drops the cells that are not shared from the **original** object.
+- ✅ `MultiModality` changes the caller's mapping or MuData in place. With MuData input it drops the cells that are not shared from the **original** object.
 
 **Deprecated APIs**
 
-- `AnnData(..., dtype=)` is used in `anndata_utils.py:111` and `file_reader.py:109`.
-- `np.mat` is used in `tensor_utils.py:285`. It was removed in NumPy 2.
+- ✅ `AnnData(..., dtype=)` is used in `anndata_utils.py:111` and `file_reader.py:109`.
+- ✅ `np.mat` is used in `tensor_utils.py:285`. It was removed in NumPy 2.
 
 ### Low
 
@@ -240,9 +268,6 @@ Most of these are pinned by passing tests that record the current behaviour.
 
 ## Suggested fix order
 
-H1–H6 are fixed. Next:
+H1–H6 and every medium item are fixed. Remaining:
 
-1. **The `tensor_utils.create_tensor_from_df` mutable default**: it has the same pattern as H2. DataLoader always passes a dict explicitly, so it is safe in practice.
-2. **`create_backbone_layers(reverse=True)`**: check whether trained decoders depend on the current layer order before changing it, because the change would alter the architecture.
-3. **`filter_qc` `qc_vars`**: anchor the patterns (`^MT-`) and match case-insensitively.
-4. Add `**kwargs` to the 8 layer constructors and pass them through to `super().__init__`.
+1. The low-severity items. Each is still documented by a strict xfail.

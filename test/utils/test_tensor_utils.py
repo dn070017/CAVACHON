@@ -124,16 +124,24 @@ class TestCreateBackboneLayers:
         assert dense_units == [8, 4, 2]
         assert seq(tf.zeros((1, 3))).shape == (1, 2)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: reverse=True reverses the flat [Dense, Norm, ...] list, so "
-        "LayerNormalization precedes each Dense (net starts with a norm on the "
-        "raw input and ends with a bare Dense) instead of Dense->Norm pairs",
-    )
     def test_reverse_keeps_dense_norm_pairs(self):
+        # regression: reverse=True used to reverse the flat [Dense, Norm, ...]
+        # list, starting the network with a norm on the raw input and ending
+        # it with a bare Dense
         seq = TensorUtils.create_backbone_layers(n_layers=2, reverse=True)
         kinds = [type(l).__name__ for l in seq.layers]
         assert kinds == ["Dense", "LayerNormalization"] * 2
+
+    def test_reverse_layer_names_follow_network_order(self):
+        seq = TensorUtils.create_backbone_layers(
+            n_layers=3, base_n_neurons=2, max_n_neurons=100, reverse=True, name="b"
+        )
+        assert [l.name for l in seq.layers] == [
+            "b_dense_0", "b_layer_norm_0",
+            "b_dense_1", "b_layer_norm_1",
+            "b_dense_2", "b_layer_norm_2",
+        ]
+        assert [l.units for l in seq.layers[::2]] == [8, 4, 2]
 
 
 class TestCreateOneHotEncodedTensor:

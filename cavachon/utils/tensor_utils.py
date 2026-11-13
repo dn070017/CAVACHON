@@ -145,6 +145,7 @@ class TensorUtils:
 
         reverse: bool, optional
             whether to decrease the number of neurons in later layers.
+            Each block is still Dense followed by LayerNormalization.
             Defaults to False.
 
         name: str, optional
@@ -158,9 +159,17 @@ class TensorUtils:
 
         """
 
+        n_neurons_list = [
+            min(base_n_neurons * rate**no_layer, max_n_neurons)
+            for no_layer in range(0, n_layers)
+        ]
+        # only reverse the number of neurons, each block is still
+        # Dense followed by LayerNormalization.
+        if reverse:
+            n_neurons_list.reverse()
+
         layers = []
-        for no_layer in range(0, n_layers):
-            n_neurons = min(base_n_neurons * rate**no_layer, max_n_neurons)
+        for no_layer, n_neurons in enumerate(n_neurons_list):
             d = tf.keras.layers.Dense(
                 n_neurons,
                 activation=activation,
@@ -171,8 +180,6 @@ class TensorUtils:
             )
             layers.append(d)
             layers.append(ln)
-        if reverse:
-            layers.reverse()
         seq = tf.keras.Sequential(layers, name=name)
         return seq
 
