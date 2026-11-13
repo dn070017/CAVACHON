@@ -20,7 +20,7 @@ class ScaleLibrarySize(tf.keras.layers.Layer):
     """
 
     def __init__(self, key: Hashable, *args, **kwargs):
-        """Constructor for NormalizeLibrarySize
+        """Constructor for ScaleLibrarySize
 
         Parameters
         ----------

@@ -13,7 +13,7 @@ class MultivariateNormalDiagModifier(tf.keras.Model):
     distribution. The instance will be used before calling the
     tf.keras.Model. Note that this will not change the data in the
     DataLoader.dataset which
-    dataloader.modifiers.IndependentBernoulliModifier does.
+    dataloader.modifiers.MultivariateNormalDiagDataModifier does.
 
     Attributes
     ----------
@@ -26,7 +26,7 @@ class MultivariateNormalDiagModifier(tf.keras.Model):
 
     modifiers: List[tf.keras.layers.Layer]
         list of modifiers that will be applied to the data created from
-        tf.data.Dataset. Defaults to [ToDense, Binarize].
+        tf.data.Dataset. Defaults to [ToDense].
 
     See Also
     --------

@@ -30,9 +30,9 @@ class Binarize(tf.keras.layers.Layer):
             key to access the data needed to be binarized.
 
         threshold: float, optional
-            threshold used to binarize the data. If the value is larger
-            than this threshold, it will be set to 1.0. Needs to be in the
-            range of [0.0, 1.0] Defaults to 1.0.
+            threshold used to binarize the data. Values greater than or
+            equal to this threshold are set to 1.0, the others to 0.0.
+            Needs to be in the range of [0.0, 1.0]. Defaults to 1.0.
 
         """
         super().__init__(*args, **kwargs)

@@ -1,6 +1,8 @@
 class Constants:
     TENSOR_NAME_X = "matrix"
-    TENSOR_NAME_ORIGIONAL_X = "_matrix"
+    TENSOR_NAME_ORIGINAL_X = "_matrix"
+    # deprecated misspelling, kept as an alias for existing code
+    TENSOR_NAME_ORIGIONAL_X = TENSOR_NAME_ORIGINAL_X
     TENSOR_NAME_LIBSIZE = "libsize"
     TENSOR_NAME_BATCH = "batch_effect"
 

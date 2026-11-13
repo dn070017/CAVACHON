@@ -1,8 +1,10 @@
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import model_validator
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Annotated
 
 from cavachon.config.base import BaseConfigModel, TensorflowCompatibleStr
+from cavachon.config.training_config import validate_kl_annealing_ratio
 from cavachon.utils.general_utils import GeneralUtils
 
 
@@ -24,20 +26,28 @@ class ComponentConfig(BaseConfigModel):
     save_z: Dict[str, bool] = {}
     n_vars: Dict[str, int] = {}
     n_vars_batch_effect: Dict[str, int] = {}
-    n_latent_dims: int = 5
-    n_latent_priors: int = 0
-    n_encoder_layers: int = 3
-    n_decoder_layers: Dict[str, int] = {}
-    n_parent_annealing_epochs: Optional[int] = None
-    n_kl_annealing_epochs: Optional[int] = None
+    n_latent_dims: int = Field(5, ge=1)
+    # 0 means 2 * n_latent_dims + 1 (see _default_n_latent_priors)
+    n_latent_priors: int = Field(0, ge=0)
+    n_encoder_layers: int = Field(3, ge=1)
+    n_decoder_layers: Dict[str, Annotated[int, Field(ge=1)]] = {}
+    n_parent_annealing_epochs: Optional[int] = Field(None, ge=0)
+    n_kl_annealing_epochs: Optional[int] = Field(None, ge=0)
     enable_kmeans_init: Optional[bool] = None
     learn_z_hat_priors: Optional[bool] = None
     kl_annealing_ratio: Optional[Tuple[float, float, float]] = None
-    n_z_hat_annealing_epochs: Optional[int] = None
-    n_z_hat_training_epochs: Optional[int] = None
-    z_hat_kl_weight: Optional[float] = None
+    n_z_hat_annealing_epochs: Optional[int] = Field(None, ge=0)
+    n_z_hat_training_epochs: Optional[int] = Field(None, ge=0)
+    z_hat_kl_weight: Optional[float] = Field(None, ge=0)
     reparameterize_z_hat: bool = True
-    max_regular_training_epochs: Optional[int] = None
+    max_regular_training_epochs: Optional[int] = Field(None, ge=0)
+
+    @field_validator("kl_annealing_ratio")
+    @classmethod
+    def _validate_kl_annealing_ratio(
+        cls, v: Optional[Tuple[float, float, float]]
+    ) -> Optional[Tuple[float, float, float]]:
+        return validate_kl_annealing_ratio(v)
 
     @model_validator(mode="before")
     @classmethod
@@ -72,6 +82,9 @@ class ComponentConfig(BaseConfigModel):
 
     @model_validator(mode="after")
     def _default_n_latent_priors(self) -> "ComponentConfig":
-        if self.n_latent_priors <= 0:
+        # n_latent_priors: 0 (the default) means automatic: one prior at
+        # the origin plus two per latent dimension. Negative values are
+        # rejected by the field constraint.
+        if self.n_latent_priors == 0:
             self.n_latent_priors = 2 * self.n_latent_dims + 1
         return self

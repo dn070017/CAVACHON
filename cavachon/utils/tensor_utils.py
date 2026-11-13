@@ -106,36 +106,35 @@ class TensorUtils:
 
     @staticmethod
     def create_backbone_layers(
-        n_layers: int = 2,  # 3
-        base_n_neurons: int = 32,  # 32, #128
-        max_n_neurons: int = 64,  # 64,  #2048
+        n_layers: int = 2,
+        base_n_neurons: int = 32,
+        max_n_neurons: int = 64,
         rate: int = 2,
-        activation: str = "swish",  # "linear"
+        activation: str = "swish",
         reverse: bool = False,
         name: Optional[str] = "backbone_network",
     ) -> tf.keras.Model:
-        """Create tf.keras.Sequential models with tf.keras.layers.Dense
-        and tf.keras.layers.BatchNormalization(). The created dense
-        layers would have number of neurons
-        [`base_n_neurons`, `base_n_neurons`*`rate`, ...]. For instance,
-        with default parameters, it creates layers of:
-        1. tf.keras.layers.Dense(128, activation='elu')
-        2. tf.keras.layers.BatchNormalization()
-        3. tf.keras.layers.Dense(256, activation='elu')
-        4. tf.keras.layers.BatchNormalization()
-        5. tf.keras.layers.Dense(512, activation='elu')
-        6. tf.keras.layers.BatchNormalization()
+        """Create tf.keras.Sequential models of blocks of
+        tf.keras.layers.Dense followed by
+        tf.keras.layers.LayerNormalization. The dense layers have number
+        of neurons min(`base_n_neurons` * `rate`**i, `max_n_neurons`)
+        for i = 0, ..., `n_layers` - 1 (reversed if `reverse`). For
+        instance, with default parameters, it creates layers of:
+        1. tf.keras.layers.Dense(32, activation='swish')
+        2. tf.keras.layers.LayerNormalization()
+        3. tf.keras.layers.Dense(64, activation='swish')
+        4. tf.keras.layers.LayerNormalization()
 
         Parameters
         ----------
         n_layers: int, optional
-            number of layers. Defaults to 3.
+            number of layers. Defaults to 2.
 
         base_n_neurons: int, optional
-            base number of neurons. Defaults to 128.
+            base number of neurons. Defaults to 32.
 
         max_n_neurons: int, optional
-            maximum number of neurons. Defaults to 1024.
+            maximum number of neurons. Defaults to 64.
 
         rate: int, optional
             increasing rate of number of neurons (see description of
@@ -143,7 +142,7 @@ class TensorUtils:
 
         activation: str, optional
             activation functions in tf.keras.layers.Dense layer.
-            Defaults to 'elu'.
+            Defaults to 'swish'.
 
         reverse: bool, optional
             whether to decrease the number of neurons in later layers.

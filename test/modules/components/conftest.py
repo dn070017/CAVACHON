@@ -21,6 +21,7 @@ HierarchicalEncoder is exercised in one file, with its own
 Constants (cavachon.environment.Constants) are used as-is.
 """
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -406,7 +407,13 @@ def fakes(monkeypatch):
     }
     for name, fake in patches.items():
         monkeypatch.setattr(component_module, name, fake)
+    # TensorUtils (cavachon.utils): remove_nan_gradients passes the
+    # gradients through unchanged and records them.
+    tensor_utils = MagicMock(name="TensorUtils")
+    tensor_utils.remove_nan_gradients.side_effect = lambda gradients: list(gradients)
+    monkeypatch.setattr(component_module, "TensorUtils", tensor_utils)
     return SimpleNamespace(
+        TensorUtils=tensor_utils,
         Preprocessor=FakePreprocessor, Encoder=FakeEncoder,
         HierarchicalEncoder=FakeHierarchicalEncoder, Decoder=FakeDecoder,
         Prior=FakeMixturePrior, Sampler=FakeSampler, Scaler=FakeScaler,

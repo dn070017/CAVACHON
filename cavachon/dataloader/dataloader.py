@@ -336,7 +336,7 @@ class DataLoader:
             128.
         """
         datadir = os.path.realpath(datadir)
-        self.dataset = tf.data.experimental.load(datadir)
+        self.dataset = tf.data.Dataset.load(datadir)
         return
 
     def save_dataset(self, datadir: str) -> None:
@@ -351,6 +351,6 @@ class DataLoader:
         """
         datadir = os.path.realpath(datadir)
         os.makedirs(datadir, exist_ok=True)
-        tf.data.experimental.save(self.dataset, datadir)
+        self.dataset.save(datadir)
 
         return

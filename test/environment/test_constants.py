@@ -12,7 +12,9 @@ def test_constants_reexported_from_package():
 
 def test_tensor_names():
     assert Constants.TENSOR_NAME_X == "matrix"
-    assert Constants.TENSOR_NAME_ORIGIONAL_X == "_matrix"
+    assert Constants.TENSOR_NAME_ORIGINAL_X == "_matrix"
+    # deprecated misspelled alias kept for existing code
+    assert Constants.TENSOR_NAME_ORIGIONAL_X == Constants.TENSOR_NAME_ORIGINAL_X
     assert Constants.TENSOR_NAME_LIBSIZE == "libsize"
     assert Constants.TENSOR_NAME_BATCH == "batch_effect"
 

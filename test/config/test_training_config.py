@@ -93,3 +93,22 @@ def test_type_errors():
         TrainingConfig(max_regular_training_epochs="lots")
     with pytest.raises(ValidationError):
         TrainingConfig(train="maybe")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("max_regular_training_epochs", -1),
+        ("n_parent_annealing_epochs", -1),
+        ("n_kl_annealing_epochs", -1),
+        ("n_z_hat_annealing_epochs", -1),
+        ("n_z_hat_training_epochs", -1),
+        ("z_hat_kl_weight", -1.0),
+        ("kl_annealing_ratio", (-0.2, 0.7, 0.5)),
+        ("kl_annealing_ratio", (0.3, 0.3, 0.3)),
+    ],
+)
+def test_invalid_training_values_rejected(field, value):
+    # regression: negative epochs/ratios were accepted
+    with pytest.raises(ValidationError):
+        TrainingConfig(**{field: value})

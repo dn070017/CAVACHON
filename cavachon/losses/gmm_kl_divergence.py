@@ -52,11 +52,12 @@ class GMMKLDivergence(tf.keras.losses.Loss):
             the developers wish to use custom eager training.
 
         y_pred: tf.Tensor
-            The outputs of layers.parameterizers.MultivariateNormalDiag,
-            which outputs a tf.Tensor with a shape of
-            (batch, event_dims * 2), where
-            1. y_pred[..., 0:event_dim] is the loc.
-            2. y_pred[..., event_dim:2*event_dims] is the scale_diag.
+            The sampled z concatenated with the outputs of
+            layers.parameterizers.MultivariateNormalDiag, a tf.Tensor
+            with a shape of (batch, event_dims * 3), where
+            1. y_pred[..., 0:event_dims] is the sampled z.
+            2. y_pred[..., event_dims:2*event_dims] is the loc.
+            3. y_pred[..., 2*event_dims:3*event_dims] is the scale_diag.
             Note that this special requirement is designed to follow
             the API tf.keras.losses.Loss provides. Can be ignored if
             the developers wish to use custom eager training.

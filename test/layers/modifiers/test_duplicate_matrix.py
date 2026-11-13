@@ -15,7 +15,7 @@ def tensor_utils(mock_tensor_utils):
 
 def test_str_key_duplicates_dense():
     out = DuplicateMatrix("rna")({"rna": dense()})
-    key = f"rna_{Constants.TENSOR_NAME_ORIGIONAL_X}"
+    key = f"rna_{Constants.TENSOR_NAME_ORIGINAL_X}"
     assert key in out
     np.testing.assert_array_equal(to_np(out[key]), X)
     np.testing.assert_array_equal(to_np(out["rna"]), X)
@@ -23,14 +23,14 @@ def test_str_key_duplicates_dense():
 
 def test_tuple_key_replaces_last_element():
     out = DuplicateMatrix(("rna", "x"))({("rna", "x"): dense()})
-    key = ("rna", Constants.TENSOR_NAME_ORIGIONAL_X)
+    key = ("rna", Constants.TENSOR_NAME_ORIGINAL_X)
     assert key in out
     np.testing.assert_array_equal(to_np(out[key]), X)
 
 
 def test_sparse_duplicate_is_sparse():
     out = DuplicateMatrix("rna")({"rna": sparse()})
-    dup = out[f"rna_{Constants.TENSOR_NAME_ORIGIONAL_X}"]
+    dup = out[f"rna_{Constants.TENSOR_NAME_ORIGINAL_X}"]
     assert isinstance(dup, tf.SparseTensor)
     np.testing.assert_array_equal(to_np(dup), X)
 

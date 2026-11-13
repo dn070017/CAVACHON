@@ -10,14 +10,14 @@ class DuplicateMatrix(tf.keras.layers.Layer):
     """DuplicateMatrix
 
     Modifier used to duplicate the tf.Tensor stored in a MutableMapping.
+    The copy is stored under `{key}_matrix` for str keys, or under
+    key[:-1] + ('_matrix', ) for tuple keys
+    (Constants.TENSOR_NAME_ORIGINAL_X).
 
     Attributes
     ----------
     key: Any
         key to access the data needed to be duplicated.
-
-    threshold: float
-        threshold used to duplicate the tf.Tensor.
 
     """
 
@@ -60,9 +60,9 @@ class DuplicateMatrix(tf.keras.layers.Layer):
             is_sparse = True
 
         if isinstance(self.key, str):
-            duplicate_key = f"{self.key}_{Constants.TENSOR_NAME_ORIGIONAL_X}"
+            duplicate_key = f"{self.key}_{Constants.TENSOR_NAME_ORIGINAL_X}"
         elif isinstance(self.key, Iterable):
-            duplicate_key = self.key[:-1] + (Constants.TENSOR_NAME_ORIGIONAL_X,)
+            duplicate_key = self.key[:-1] + (Constants.TENSOR_NAME_ORIGINAL_X,)
         else:
             raise NotImplementedError(
                 f"Expected key to be str or a hashable Iterable, get {type(self.key)}"

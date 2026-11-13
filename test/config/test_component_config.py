@@ -85,10 +85,56 @@ def test_n_latent_priors_explicit_positive_kept():
     assert ComponentConfig(name="c", n_latent_priors=7).n_latent_priors == 7
 
 
-@pytest.mark.parametrize("value", [0, -3])
-def test_n_latent_priors_non_positive_falls_back_to_default(value):
-    c = ComponentConfig(name="c", n_latent_dims=4, n_latent_priors=value)
+def test_n_latent_priors_zero_means_automatic():
+    c = ComponentConfig(name="c", n_latent_dims=4, n_latent_priors=0)
     assert c.n_latent_priors == 9
+
+
+def test_negative_n_latent_priors_rejected():
+    # regression: negative values were silently replaced by 2 * dims + 1
+    with pytest.raises(ValidationError):
+        ComponentConfig(name="c", n_latent_dims=4, n_latent_priors=-3)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("n_latent_dims", 0),
+        ("n_latent_dims", -1),
+        ("n_encoder_layers", 0),
+        ("n_kl_annealing_epochs", -1),
+        ("n_parent_annealing_epochs", -1),
+        ("n_z_hat_annealing_epochs", -1),
+        ("n_z_hat_training_epochs", -1),
+        ("max_regular_training_epochs", -1),
+        ("z_hat_kl_weight", -0.5),
+    ],
+)
+def test_negative_or_zero_dims_rejected(field, value):
+    # regression: negative dims, layers and epochs were accepted
+    with pytest.raises(ValidationError):
+        ComponentConfig(name="c", **{field: value})
+
+
+def test_decoder_layers_must_be_positive():
+    with pytest.raises(ValidationError):
+        ComponentConfig.model_validate(
+            {"name": "c", "modalities": [{"name": "RNA", "n_decoder_layers": 0}]}
+        )
+
+
+@pytest.mark.parametrize(
+    "ratio", [(-0.1, 0.6, 0.5), (0.5, 0.2, 0.2), (0.5, 0.5, 0.5)]
+)
+def test_invalid_kl_annealing_ratio_rejected(ratio):
+    # regression: negative ratios (or ratios not summing to 1) were accepted
+    with pytest.raises(ValidationError):
+        ComponentConfig(name="c", kl_annealing_ratio=ratio)
+
+
+def test_kl_annealing_ratio_none_and_valid_accepted():
+    assert ComponentConfig(name="c").kl_annealing_ratio is None
+    assert ComponentConfig(name="c", kl_annealing_ratio=(1.0, 0.0, 0.0)).kl_annealing_ratio == (1.0, 0.0, 0.0)
 
 
 def test_kl_annealing_ratio_parsed_as_tuple():

@@ -165,12 +165,12 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
             'independent_zero_inflated_negative_binomial'.
 
         libsize_scaling: bool, optional
-            whether to perform scaling by libsize. Defaults to False.
+            whether to perform scaling by libsize. Defaults to True.
 
         exp_transform: bool, optional
             whether to perform exponential transformation. This will be
             performed after scaling by libsize by default. Defaults to
-            False.
+            True.
 
         Returns
         -------

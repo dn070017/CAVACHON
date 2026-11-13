@@ -62,6 +62,11 @@ class ApplicationConfig(BaseConfigModel):
         filename = os.path.realpath(filename)
         with open(filename, "r") as f:
             yaml_raw: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
+        if not isinstance(yaml_raw, dict):
+            raise ValueError(
+                f"Config file {filename} is empty or not a mapping of fields "
+                f"(got {type(yaml_raw).__name__})."
+            )
 
         # --- unknown top-level fields (likely typos) ---
         known_fields = (

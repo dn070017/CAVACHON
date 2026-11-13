@@ -29,7 +29,7 @@ Packages that import from exactly 4 other cavachon packages were added later, un
 | modules (base, parameterizers, preprocessors) | `test/modules/{base,parameterizers,preprocessors}` | 80 | 7 | 99% (modules overall) |
 | modules (components) | `test/modules/components` | 93 | 11 | (included above) |
 | workflow (`setup_train_scheduler` only) | `test/workflow` | 2 | 0 | not measured |
-| **Whole suite (after M1/M2/M5/M6/M7 and early-stopping fixes)** | | **1222** | **32** | |
+| **Whole suite (latest)** | | **1255** | **32** | |
 
 ### Isolation (mocking policy)
 
@@ -340,7 +340,7 @@ Code inside the package stays real. For example, `Component` tests may use the r
 - **AnnealingCallback:**
   - it freezes the model and relies on the scheduler to unfreeze it;
   - loss patterns match anywhere in the name, not as a prefix.
-- **`Component.train_step` doesn't drop NaN gradients**, unlike `Model.train_step`. This is latent.
+- ✅ Fixed: `Component.train_step` didn't drop NaN gradients, unlike `Model.train_step`. It now passes them through `TensorUtils.remove_nan_gradients`.
 
 ## Suspicious but not marked as bugs
 
@@ -352,9 +352,12 @@ Most of these are pinned by passing tests that record the current behaviour.
 - Operators must be names such as `gt`; the symbol `>` raises AttributeError.
 - Relative IO paths are resolved against the working directory, not the config file's directory.
 - A component-level `distribution_names` is always overwritten by the modality's `dist`.
-- `n_latent_priors ≤ 0` is silently replaced by `2*dims+1`.
-- Negative `kl_annealing_ratio` and dims values are accepted.
-- An empty YAML file raises AttributeError.
+- ✅ Fixed: `n_latent_priors ≤ 0` was silently replaced by `2*dims+1`. Now `0` (the default) means automatic, `2*dims+1`, and negative values are rejected.
+- ✅ Fixed: negative `kl_annealing_ratio` and dims values were accepted.
+  - `kl_annealing_ratio` must now be non-negative and sum to 1.
+  - `n_latent_dims`, `n_encoder_layers` and `n_decoder_layers` must be at least 1.
+  - Epoch counts and `z_hat_kl_weight` must be at least 0, in both the component and the training config.
+- ✅ Fixed: an empty YAML file raised AttributeError. An empty or non-mapping file now raises a clear ValueError.
 - ✅ Fixed: `EarlyStoppingConfig` was parsed but never used (see the coupled-packages section).
 
 **Filter**
@@ -364,14 +367,14 @@ Most of these are pinned by passing tests that record the current behaviour.
 **Distributions and losses**
 
 - The `StudenttDistribution` comment promises a finite variance, but df can be exactly 2.
-- The `GMMKLDivergence` and Mixture docstrings describe the wrong `y_pred` layouts.
+- ✅ Fixed: the `GMMKLDivergence` and Mixture docstrings described the wrong `y_pred` layouts.
 - `GMMDensityLoss` returns a batch mean under `Reduction.NONE`, so `sample_weight` cannot weight individual samples.
 
 **Layers**
 
 - The mixture `parameters` property only works when the layer was built with an input dimension of 1, and it squeezes away the component axis when K = 1.
 - Binarize's default threshold of 1.0 turns values in [0, 1) into 0, which would wipe normalised or TF-IDF ATAC input.
-- The ZINB data modifier docstring promises LogTransform and library-size normalisation, but only ToDense runs.
+- ✅ Fixed (docstring): the ZINB data modifier docstring promised LogTransform and library-size normalisation, but only ToDense runs. It now says those are applied later by the preprocessor modifier.
 - `MultivariateNormalDiagSampler` honours `trainable`, while `StudenttSampler` ignores it.
 
 **App and environment**
@@ -382,9 +385,15 @@ Most of these are pinned by passing tests that record the current behaviour.
 
 **Other**
 
-- `tf.data.experimental.save/load` is deprecated.
-- The constant has a typo: `TENSOR_NAME_ORIGIONAL_X`.
-- Several docstrings are stale, for example in `create_backbone_layers`, `DuplicateMatrix` and `ScaleLibrarySize`.
+- ✅ Fixed: `tf.data.experimental.save/load` was deprecated; `Dataset.save` and `tf.data.Dataset.load` are now used.
+- ✅ Fixed: the constant typo `TENSOR_NAME_ORIGIONAL_X`. It is now `TENSOR_NAME_ORIGINAL_X`, and the old name is kept as a deprecated alias.
+- ✅ Fixed: several stale docstrings:
+  - `create_backbone_layers`: LayerNorm, swish, and defaults 2/32/64;
+  - `DuplicateMatrix`: listed a non-existent `threshold`;
+  - `ScaleLibrarySize`;
+  - Binarize: now says `>=`;
+  - `MultivariateNormalDiagModifier`;
+  - the ZINB parameterizer `make` defaults.
 
 ---
 

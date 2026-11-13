@@ -27,6 +27,7 @@ from cavachon.modules.base.decoder_data_parameterizer import (
 )
 from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 from cavachon.modules.preprocessors import Preprocessor
+from cavachon.utils.tensor_utils import TensorUtils
 
 
 class Component(tf.keras.Model):
@@ -1347,6 +1348,8 @@ class Component(tf.keras.Model):
 
             loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             gradients = tape.gradient(loss, self.trainable_variables)
+            # same as Model.train_step: NaN gradients are replaced by 0.
+            gradients = TensorUtils.remove_nan_gradients(gradients)
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
             self.compiled_metrics.update_state(y_true, y_pred)
 

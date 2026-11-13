@@ -498,3 +498,10 @@ def test_direct_construction_requires_metadata():
             io={}, modality={"RNA": {"name": "RNA", "type": "rna"}}, sample={},
             model={}, training={}, dataset={}, analysis={},
         )
+
+
+@pytest.mark.parametrize("content", [None, [], "just a string"])
+def test_empty_or_non_mapping_yaml_rejected(load_config, content):
+    # regression: an empty YAML file raised AttributeError ('NoneType' has no 'get')
+    with pytest.raises(ValueError, match="empty or not a mapping"):
+        load_config(content)

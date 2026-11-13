@@ -38,7 +38,7 @@ class MixtureMultivariateNormalDiagDistribution(
             Parameters for the distribution created by parameterizers.
             Alternatively, a mapping of tf.Tensor with parameter name as
             keys can be provided. If provided with a tf.Tensor. The last
-            dimension needs to be a multiple of 2 plus 1,, and:
+            dimension needs to be a multiple of 2 plus 1, and:
             1.  params[..., component, 0] will be used as the mixture
                 logits.
             2.  params[..., component, 1:p+1] will be used as the loc
@@ -51,8 +51,8 @@ class MixtureMultivariateNormalDiagDistribution(
                 two dimensions of the provided tf.Tensor. For instance
                 if provided params.shape: (3, 5, 11). The batch_shape
                 will be (3).
-            2.  The event_shape should be half of the last dimension
-                ([p]) of the provided tf.Tensor.
+            2.  The event_shape should be ([p]), where p = (last
+                dimension - 1) / 2 of the provided tf.Tensor.
             3.  The number of components will be the second last
                 dimension. For instance if provided params.shape:
                 (3, 5, 11). The number of components will be 5.

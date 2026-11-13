@@ -258,3 +258,29 @@ def test_test_step_reports_same_losses(fakes, metrics_shim):
     assert {k: float(v) for k, v in logs.items()} == pytest.approx(
         {"loss": 19.0, GMM: 5.0, NLL_RNA: 7.0, NLL_ATAC: 7.0}
     )
+
+
+# ---------------------------------------------------------------------------
+# NaN gradients
+# ---------------------------------------------------------------------------
+def test_gradients_pass_through_remove_nan_gradients(fakes, metrics_shim):
+    # regression: Component.train_step applied raw gradients, while
+    # Model.train_step drops NaN gradients via TensorUtils
+    c = make_component(name="c")
+    _compile(c)
+    _train(c, make_batch())
+    fakes.TensorUtils.remove_nan_gradients.assert_called_once()
+    (grads,), _ = fakes.TensorUtils.remove_nan_gradients.call_args
+    assert len(list(grads)) == len(c.trainable_variables)
+
+
+def test_cleaned_gradients_are_the_ones_applied(fakes, metrics_shim):
+    c = make_component(name="c")
+    _compile(c, lr=1.0)
+    fakes.TensorUtils.remove_nan_gradients.side_effect = (
+        lambda gradients: [None if g is None else tf.zeros_like(g) for g in gradients]
+    )
+    before = [v.numpy().copy() for v in c.trainable_variables]
+    _train(c, make_batch())
+    for b, v in zip(before, c.trainable_variables):
+        np.testing.assert_array_equal(b, v.numpy())

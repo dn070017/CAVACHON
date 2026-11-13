@@ -26,8 +26,10 @@ class IndependentZeroInflatedNegativeBinomialDataModifier(tf.keras.Model):
 
     modifiers: List[tf.keras.layers.Layer]
         list of modifiers that will be applied to the data created from
-        tf.data.Dataset. Defaults to
-        [ToDense, LogTransform, NormalizeLibrarySize].
+        tf.data.Dataset. Defaults to [ToDense]. The log transformation
+        and library size normalization are applied later by
+        modules.preprocessors.modifiers
+        .IndependentZeroInflatedNegativeBinomialModifier.
 
     See Also
     --------

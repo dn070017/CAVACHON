@@ -508,21 +508,21 @@ def test_from_h5mu_reads_updates_and_builds(monkeypatch, mdata_two):
 
 
 def test_save_dataset_creates_dir_and_saves(monkeypatch, mdata_two):
-    save = mock.MagicMock()
+    # uses tf.data.Dataset.save (tf.data.experimental.save is deprecated)
     makedirs = mock.MagicMock()
-    monkeypatch.setattr(f"{DL_MODULE}.tf.data.experimental.save", save)
     monkeypatch.setattr(f"{DL_MODULE}.os.makedirs", makedirs)
     dl = DataLoader(mdata_two, batch_effect_encoders={})
+    dl.dataset = mock.MagicMock(name="dataset")
     dl.save_dataset("out/../ds")
     path = os.path.realpath("out/../ds")
     makedirs.assert_called_once_with(path, exist_ok=True)
-    save.assert_called_once_with(dl.dataset, path)
+    dl.dataset.save.assert_called_once_with(path)
 
 
 def test_load_dataset_replaces_dataset(monkeypatch, mdata_two):
     loaded = tf.data.Dataset.from_tensor_slices({"rna_matrix": tf.ones((2, 5))})
     load = mock.MagicMock(return_value=loaded)
-    monkeypatch.setattr(f"{DL_MODULE}.tf.data.experimental.load", load)
+    monkeypatch.setattr(f"{DL_MODULE}.tf.data.Dataset.load", load)
     dl = DataLoader(mdata_two, batch_effect_encoders={})
     dl.load_dataset("ds")
     load.assert_called_once_with(os.path.realpath("ds"))
