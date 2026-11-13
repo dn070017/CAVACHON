@@ -423,6 +423,8 @@ class Workflow:
 
     def perform_differential_analysis(self) -> None:
         """Perform differential analysis across clusters"""
+        if not self.config.analysis.differential_analysis:
+            return
         outdir = os.path.join(self.config.io.outdir, "differential_analysis")
         os.makedirs(outdir, exist_ok=True)
         analysis = DifferentialAnalysis(
@@ -458,15 +460,12 @@ class Workflow:
                         (result["K(A>B|Z)"].abs() >= 3.2)
                         | (result["K(B>A|Z)"].abs() >= 3.2)
                     ]
-                target = (
-                    modality_name,
-                    component,
-                    analysis_config.group_a,
-                    analysis_config.group_b,
-                )
-                self.differential_analysis_results[target] = {
-                    f"{analysis_config.group_a}/{analysis_config.group_b}": result
-                }
+                # keyed like the pairwise mode, so comparisons on different
+                # annotations (use_cluster) do not overwrite each other.
+                target = (modality_name, component, use_cluster)
+                self.differential_analysis_results.setdefault(target, dict())[
+                    f"{analysis_config.group_a}/{analysis_config.group_b}"
+                ] = result
             else:
                 # Pairwise mode: all cluster combinations
                 results = analysis.across_clusters_pairwise(
@@ -479,16 +478,16 @@ class Workflow:
                     keep_only_significant=analysis_config.keep_only_significant,
                     sort_output=analysis_config.sort_output,
                 )
-                for cluster_pair, deg_table in results.items():
-                    group_a, group_b = cluster_pair.split("/")
-                    deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a
-                    deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = group_b
+                # GroupA/GroupB are set by the analysis (labels may contain
+                # '/', so they are not parsed back from the "A/B" keys).
                 target = (modality_name, component, use_cluster)
-                self.differential_analysis_results[target] = results
+                self.differential_analysis_results.setdefault(target, dict()).update(
+                    results
+                )
 
         for target, result in self.differential_analysis_results.items():
             for cluster, degs in result.items():
-                cluster = cluster.lower().replace("/", "_")
+                cluster = cluster.lower().replace("/", "_").replace(" ", "_")
                 degs.to_csv(
                     f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{cluster}.tsv",
                     sep="\t",
@@ -498,6 +497,8 @@ class Workflow:
 
     def perform_hierarchical_differential_analysis(self) -> None:
         """Perform hierarchical differential analysis between clusters."""
+        if not self.config.analysis.hierarchical_differential_analysis:
+            return
         outdir = os.path.join(self.config.io.outdir, "hierarchical_differential_analysis")
         os.makedirs(outdir, exist_ok=True)
         analysis = HierarchicalDifferentialAnalysis(

@@ -386,7 +386,7 @@ class Model(tf.keras.Model):
 
             dataloader = DataLoader(x, batch_size=batch_size)
             for batch in tqdm(dataloader):
-                result = self.predict_on_batch(batch)
+                result = self.predict_on_batch(self.select_inputs(batch))
                 for key in outputs:
                     outputs[key].append(result.get(key))
             for key in outputs:
@@ -411,7 +411,9 @@ class Model(tf.keras.Model):
 
             return outputs
         else:
-            return super.__predict__(x=x, batch_size=batch_size, **kwargs)
+            return super().predict(
+                x=self.select_inputs(x), batch_size=batch_size, **kwargs
+            )
 
     def compile(
         self,
@@ -597,6 +599,30 @@ class Model(tf.keras.Model):
 
         super().compile(**kwargs)
 
+    def select_inputs(self, data: Any) -> Any:
+        """Keep only the entries of a batch that are inputs of the model.
+
+        Keras matches dict inputs by position when the keys do not match
+        the input names, so extra entries (e.g. the matrix of a modality
+        that no component uses) would be fed to the wrong input.
+
+        Parameters
+        ----------
+        data: Any
+            a batch. Only Mapping batches are filtered, other inputs are
+            returned as they are.
+
+        Returns
+        -------
+        Any
+            the batch restricted to the input names of the model.
+
+        """
+        inputs = self.input
+        if isinstance(data, Mapping) and isinstance(inputs, Mapping):
+            return {key: data[key] for key in inputs}
+        return data
+
     def train_step(self, data: Mapping[Any, tf.Tensor]) -> Mapping[str, float]:
         """Training step for one iteration. The trainable variables in
         the Model will be trained once after calling this function.
@@ -614,7 +640,7 @@ class Model(tf.keras.Model):
 
         """
         with tf.GradientTape() as tape:
-            results = self(data, training=True)
+            results = self(self.select_inputs(data), training=True)
             y_true = dict()
             y_pred = dict()
 
