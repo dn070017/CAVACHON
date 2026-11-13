@@ -110,6 +110,7 @@ class FakeComponent:
             ),
             initialize_scale_diag=MagicMock(name=f"{name}.initialize_scale_diag"),
         )
+        self.z_sampler = SimpleNamespace(stochastic=FakeVar(1.0))
         self.z_hat_sampler = SimpleNamespace(stochastic=FakeVar(0.0))
         self.submodules = [
             self.preprocessor,
@@ -235,6 +236,7 @@ class FakeModel:
                     else None
                 ),
                 stochastic=float(comp.z_hat_sampler.stochastic),
+                z_stochastic=float(comp.z_sampler.stochastic),
             )
         return snap
 

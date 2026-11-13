@@ -33,10 +33,22 @@ def test_stochastic_variable_toggle():
     np.testing.assert_allclose(s(PARAMS, training=True).numpy(), LOC)
 
 
-def test_frozen_layer_returns_loc():
+def test_frozen_layer_still_samples():
+    # sampling is controlled by the stochastic flag only: a frozen sampler
+    # (e.g. of a frozen parent component) still samples in training mode
     s = Sampler()
     s.trainable = False
+    assert not np.allclose(s(PARAMS, training=True).numpy(), LOC)
+
+
+def test_frozen_non_stochastic_returns_loc():
+    s = Sampler(stochastic=False)
+    s.trainable = False
     np.testing.assert_array_equal(s(PARAMS, training=True).numpy(), LOC)
+
+
+def test_inference_returns_loc_even_if_stochastic():
+    np.testing.assert_array_equal(Sampler()(PARAMS, training=False).numpy(), LOC)
 
 
 def test_reparameterized_gradient():

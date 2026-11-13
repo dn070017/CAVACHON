@@ -327,10 +327,16 @@ Code inside the package stays real. For example, `Component` tests may use the r
   - `early_stopping: true` uses the documented defaults (loss, min, patience 25), and `false` disables it.
   - `mode`, `patience` and `min_delta` are validated.
   - An end-to-end run with `patience: 2` stopped each regular phase after 3 epochs.
-- **z_hat annealing:**
-  - the KL ramp only reaches its target if `n_z_hat_training_epochs > 0`;
-  - the z_hat sampler is left stochastic after annealing;
-  - the z_hat prior is k-means-initialised twice.
+- ✅ **z_hat annealing (fixed 2026-11-13):**
+  - **KL ramp:** the z_hat GMM KL ramp used `epoch / n`, so the last annealing epoch only reached (n−1)/n of the target, and n = 1 gave weight 0. It now uses `(epoch + 1) / n`.
+  - **Samplers:** samplers sample whenever `training=True` and their `stochastic` flag is on, whether or not their component is frozen. Before, a frozen parent always passed its *mean* z and z_hat to children.
+    - z is stochastic for the whole training.
+    - z_hat is deterministic until its component's z_hat annealing (when it gets a KL term and a calibrated scale), and stochastic from then on.
+    - Both flags are set to 0 when `fit` finishes, and reset at the start of `fit`, since they're stored in the weights.
+  - **z_hat k-means:** the z_hat prior is k-means-initialised exactly once:
+    - at the start of z_hat annealing, on the z_hat learned during regular training, if annealing runs;
+    - otherwise in the KL or regular phase, with a warning that the z_hat prior is then never trained.
+    - Previously it ran in the KL or regular phase *and* again at annealing, and the first result was discarded.
 - **AnnealingCallback:**
   - it freezes the model and relies on the scheduler to unfreeze it;
   - loss patterns match anywhere in the name, not as a prefix.

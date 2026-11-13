@@ -424,6 +424,34 @@ def _z_hat_setup(fakes, **cfg):
 
 
 class TestZHatPhases:
+    def test_sampler_flags_during_and_after_training(self, fakes, dataset):
+        s, model, _ = _z_hat_setup(fakes)
+        # flags stored in loaded weights must not leak into training
+        model.components["B"].z_sampler.stochastic.assign(0.0)
+        model.components["B"].z_hat_sampler.stochastic.assign(1.0)
+        s.fit(dataset, epochs=5)
+        # z is sampled in every phase, for every (also frozen) component
+        for call in model.fit_calls:
+            assert all(st["z_stochastic"] == 1.0 for st in call.state.values())
+        # z_hat of B: deterministic until its annealing, stochastic afterwards
+        assert [c.state["B"]["stochastic"] for c in model.fit_calls] == [0.0, 0.0, 1.0, 1.0]
+        # training completed: posterior means
+        for comp in model.components.values():
+            assert float(comp.z_sampler.stochastic) == 0.0
+            assert float(comp.z_hat_sampler.stochastic) == 0.0
+
+    def test_z_hat_kmeans_only_at_annealing_when_annealing_runs(self, fakes, dataset):
+        s, model, _ = _z_hat_setup(fakes, enable_kmeans_init=True)
+        s.fit(dataset, epochs=5)
+        regular_b = model.fit_calls[1]
+        anns = callbacks_of(regular_b, fakes.AnnealingCallback)
+        assert all("kmeans_kwargs" not in a.kwargs for a in anns)
+
+    def test_warns_when_z_hat_prior_is_never_trained(self, fakes, dataset):
+        s, model, _ = _z_hat_setup(fakes, n_z_hat_annealing_epochs=0)
+        with pytest.warns(UserWarning, match="z_hat prior is only initialized"):
+            s.fit(dataset, epochs=5)
+
     def test_phase_order_and_runs(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes)
         s.fit(dataset, epochs=5)
@@ -471,10 +499,20 @@ class TestZHatPhases:
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         name = f"B_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
+        # regression: the ramp used epoch / n, so the last annealing epoch
+        # only reached (n - 1) / n of the target (and n = 1 gave weight 0)
         assert [ann["schedule"](e) for e in range(4)] == [
-            {name: 0.0}, {name: 0.5}, {name: 1.0}, {name: 1.5},
+            {name: 0.5}, {name: 1.0}, {name: 1.5}, {name: 2.0},
         ]
         assert ann["schedule"](10) == {name: 2.0}  # capped at the target
+
+    def test_single_annealing_epoch_uses_target_weight(self, fakes, dataset):
+        s, model, _ = _z_hat_setup(fakes, n_z_hat_annealing_epochs=1)
+        s.fit(dataset, epochs=5)
+        call = [c for c in model.fit_calls if c.epochs == 1 and callbacks_of(c, fakes.AnnealingCallback)][-1]
+        ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
+        name = f"B_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
+        assert ann["schedule"](0) == {name: 2.0}
 
     def test_training_state_and_callbacks(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes)

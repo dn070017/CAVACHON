@@ -24,9 +24,12 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
 
         stochastic: bool, optional
             whether to sample in training mode. If False, the sampler
-            returns the loc even in training mode. Stored as a
-            non-trainable tf.Variable so the scheduler can switch it
-            without retracing. Defaults to True.
+            returns the loc even in training mode. Sampling does not
+            depend on whether the layer is trainable: a frozen sampler
+            (e.g. of a frozen parent component) still samples, since it
+            has no weights to update. Stored as a non-trainable
+            tf.Variable so the scheduler can switch it without
+            retracing. Defaults to True.
         """
         super().__init__(name=name, **kwargs)
         self.stochastic = tf.Variable(
@@ -55,7 +58,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
             sampling results.
         """
         loc, scale_diag = tf.split(inputs, 2, axis=-1)
-        if training and self.trainable:
+        if training:
             epsilon = tf.random.normal(shape=tf.shape(loc))
             return self.stochastic * epsilon * scale_diag + loc
         else:

@@ -489,6 +489,23 @@ class SequentialTrainingScheduler:
         n_batches = len(x)
         history = []
         self._fit_epochs = kwargs.get("epochs", 100)
+        # z is sampled during the whole training; z_hat only from the
+        # z_hat annealing phase of its component on (see
+        # _run_z_hat_annealing_phase). The flags are stored in the
+        # weights, so they are reset here in case of resumed training.
+        self._set_samplers_stochastic(z=True, z_hat=False)
+        for name, component in self.model.components.items():
+            if (
+                getattr(component, "learn_z_hat_priors", False)
+                and getattr(component, "z_hat_prior_parameterizer", None) is not None
+                and not self._z_hat_annealing_enabled(name)
+            ):
+                warnings.warn(
+                    f"Component '{name}' has learn_z_hat_priors enabled but no "
+                    "z_hat annealing epochs: its z_hat prior is only initialized "
+                    "with k-means and is never trained. Set "
+                    "n_z_hat_annealing_epochs > 0 to learn it."
+                )
 
         self._compile_model(self.learning_rate)
         experiment = self._mlflow_experiment()
@@ -678,6 +695,9 @@ class SequentialTrainingScheduler:
                     cumulative_offset += actual
                     phase_number += 1
 
+        # training is completed: z and z_hat are the posterior means.
+        self._set_samplers_stochastic(z=False, z_hat=False)
+
         return history
 
     # ==================================================================
@@ -858,7 +878,14 @@ class SequentialTrainingScheduler:
             and getattr(component, "z_hat_prior_parameterizer", None) is not None
             and component_name in getattr(self.model, "_z_hat_density_weights", {})
         )
-        if z_hat_enabled and enable_kmeans_init:
+        # The z_hat prior is initialized once: at the start of the z_hat
+        # annealing phase (on the z_hat learned so far) if it runs,
+        # otherwise here.
+        if (
+            z_hat_enabled
+            and enable_kmeans_init
+            and not self._z_hat_annealing_enabled(component_name)
+        ):
             callbacks.append(
                 AnnealingCallback(
                     schedule=lambda epoch: {},
@@ -947,7 +974,14 @@ class SequentialTrainingScheduler:
                 component_name=component_name,
             )
         )
-        if z_hat_enabled and enable_kmeans_init:
+        # The z_hat prior is initialized once: at the start of the z_hat
+        # annealing phase (on the z_hat learned so far) if it runs,
+        # otherwise here.
+        if (
+            z_hat_enabled
+            and enable_kmeans_init
+            and not self._z_hat_annealing_enabled(component_name)
+        ):
             callbacks.append(
                 AnnealingCallback(
                     schedule=lambda epoch: {},
@@ -1054,8 +1088,10 @@ class SequentialTrainingScheduler:
             f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
         )
 
+        # epoch is 0-based, so (epoch + 1) / n makes the last annealing
+        # epoch use the full target weight (e.g. 0.25, 0.5, 0.75, 1.0).
         def schedule(epoch):
-            progress = min(1.0, epoch / n_annealing_epochs)
+            progress = min(1.0, (epoch + 1) / n_annealing_epochs)
             return {z_hat_kl_name: target_weight * progress}
 
         callbacks = deepcopy(kwargs.get("callbacks", []))
@@ -1405,12 +1441,24 @@ class SequentialTrainingScheduler:
             and component_name in getattr(self.model, "_z_hat_gmm_kl_weights", {})
         )
 
+    def _set_samplers_stochastic(self, z: bool, z_hat: bool) -> None:
+        """Set the stochastic flag of the z and z_hat samplers of every
+        component. Samplers sample in training mode regardless of
+        whether their component is frozen, so a frozen parent passes
+        sampled z (and z_hat once it is stochastic) to its children."""
+        for component in self.model.components.values():
+            for attr, value in (("z_sampler", z), ("z_hat_sampler", z_hat)):
+                sampler = getattr(component, attr, None)
+                stochastic = getattr(sampler, "stochastic", None)
+                if stochastic is not None:
+                    stochastic.assign(1.0 if value else 0.0)
+
     def _freeze_encoder_path(self, component_name):
         """Freeze the preprocessor, encoder and z prior of a component.
 
         The hierarchical encoder, decoders and z_hat prior stay
-        trainable. The samplers also stay trainable (they have no
-        weights), otherwise they return the loc instead of sampling.
+        trainable. The samplers are not affected: whether they sample
+        is controlled by their stochastic flag.
         """
         component = self.model.components.get(component_name)
         for module in (
