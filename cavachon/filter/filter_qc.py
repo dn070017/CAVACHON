@@ -20,6 +20,14 @@ class FilterQC(AnnDataFilter):
     performed inplace regardless the value of kwargs['inplace']
     (as assignment is needed for the subset).
 
+    If 'qc_vars' is not provided, the control variables default to
+    'ERCC' (features matching ^ERCC-, i.e. ERCC spike-ins) and 'MT'
+    (features matching ^MT- case-insensitively, i.e. human MT- and mouse
+    mt- mitochondrial genes). The names 'ERCC' and 'MT' are kept so that
+    the QC metrics are still named e.g. pct_counts_MT. User-provided
+    'qc_vars' are used as both the names and the regex patterns matched
+    (from the start of the feature names, case-sensitively).
+
     Attributes
     ----------
     name: str
@@ -35,6 +43,8 @@ class FilterQC(AnnDataFilter):
         proportion used to filter cells)
 
     """
+
+    default_qc_vars = {"ERCC": r"^ERCC-", "MT": r"(?i)^MT-"}
 
     def __init__(self, name, **kwargs):
         """Constructor for FilterQC
@@ -92,8 +102,18 @@ class FilterQC(AnnDataFilter):
         # (usually mitochondria)
         index_colname = adata.var.index.name.split(":")[-1]
 
-        for qc_var in kwargs_copy.setdefault("qc_vars", ["ERCC", "MT"]):
-            adata.var[qc_var] = adata.var[index_colname].str.match(qc_var)
+        # user-provided qc_vars are used both as the column names and as the
+        # regex (prefix) patterns. The default qc_vars use anchored patterns
+        # (see FilterQC.default_qc_vars) so that e.g. MTOR is not flagged as
+        # a mitochondrial gene.
+        if "qc_vars" in kwargs_copy:
+            qc_var_patterns = {qc_var: qc_var for qc_var in kwargs_copy["qc_vars"]}
+        else:
+            qc_var_patterns = dict(self.default_qc_vars)
+            kwargs_copy["qc_vars"] = list(qc_var_patterns.keys())
+
+        for qc_var, pattern in qc_var_patterns.items():
+            adata.var[qc_var] = adata.var[index_colname].str.match(pattern)
 
         # make sure calculate_qc_metrics is run inplace.
         kwargs_copy["inplace"] = True

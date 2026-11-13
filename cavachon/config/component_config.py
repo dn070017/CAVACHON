@@ -44,6 +44,9 @@ class ComponentConfig(BaseConfigModel):
     def _flatten_modalities(cls, data: Any) -> Any:
         if not isinstance(data, dict) or "modalities" not in data:
             return data
+        # copy so the caller's dict (e.g. ApplicationConfig.yaml_raw) is
+        # not mutated.
+        data = dict(data)
         modalities = data.pop("modalities")
 
         modality_names: List[str] = []

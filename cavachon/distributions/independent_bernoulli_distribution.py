@@ -43,10 +43,10 @@ class IndependentBernoulliDistribution(Distribution, tfp.distributions.Bernoulli
             Created Tensorflow Probability Bernoulli Distribution.
 
         """
-        if isinstance(params, tf.Tensor):
-            logits = params
-        elif isinstance(params, Mapping):
+        if isinstance(params, Mapping):
             logits = params.get("logits")
+        else:
+            logits = tf.convert_to_tensor(params)
 
         distribution = tfp.distributions.Bernoulli(logits=logits)
 

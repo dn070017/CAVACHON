@@ -64,7 +64,15 @@ class MixtureMultivariateNormalDiagDistribution(
             Distribution.
 
         """
-        if isinstance(params, tf.Tensor):
+        if isinstance(params, Mapping):
+            logits = params.get("logits")
+            loc = params.get("loc")
+            scale_diag = params.get("scale_diag")
+            components_distribution = MultivariateNormalDiagDistribution(
+                loc=loc, scale_diag=scale_diag
+            )
+        else:
+            params = tf.convert_to_tensor(params)
             # shape: (batch, n_components)
             logits = params[..., 0]
             # shape: (batch, n_components, event_dims * 2)
@@ -74,13 +82,6 @@ class MixtureMultivariateNormalDiagDistribution(
                 MultivariateNormalDiagDistribution.from_parameterizer_output(
                     components_params
                 )
-            )
-        elif isinstance(params, Mapping):
-            logits = params.get("logits")
-            loc = params.get("loc")
-            scale_diag = params.get("scale_diag")
-            components_distribution = MultivariateNormalDiagDistribution(
-                loc=loc, scale_diag=scale_diag
             )
 
         # batch_shape: (batch, ), event_shape: (, )

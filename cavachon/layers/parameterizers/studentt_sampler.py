@@ -5,8 +5,8 @@ import tensorflow_probability as tfp
 class StudenttSampler(tf.keras.layers.Layer):
     """Sampler for Student-T distribution."""
 
-    def __init__(self, name: str = "studentt_sampler"):
-        super().__init__(name=name)
+    def __init__(self, name: str = "studentt_sampler", **kwargs):
+        super().__init__(name=name, **kwargs)
 
     def call(self, inputs: tf.Tensor, training: bool = False, **kwargs) -> tf.Tensor:
         """

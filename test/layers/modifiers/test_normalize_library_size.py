@@ -45,13 +45,11 @@ def test_non_iterable_key_raises():
         NormalizeLibrarySize(1)({1: dense()})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: normalize_library_size.py:61 divides by libsize with no guard; all-zero row -> NaN",
-)
 def test_zero_library_size_is_finite():
+    # regression: all-zero row used to give NaN (0/0); now divide_no_nan keeps it 0
     out = NormalizeLibrarySize("rna")({"rna": tf.constant([[0.0, 0.0], [1.0, 1.0]])})
     assert np.isfinite(out["rna"].numpy()).all()
+    np.testing.assert_array_equal(out["rna"].numpy(), [[0.0, 0.0], [0.5, 0.5]])
 
 
 def test_sparsity_check_delegated_to_tensor_utils(tensor_utils):

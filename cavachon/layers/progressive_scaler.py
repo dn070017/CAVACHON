@@ -18,7 +18,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self, total_iterations: int = 5000, scale: float = 1.0, name: str = "progressive_scaler"):
+    def __init__(self, total_iterations: int = 5000, scale: float = 1.0, name: str = "progressive_scaler", **kwargs):
         """Constructor for ProgressiveScaler
 
         Parameters
@@ -33,7 +33,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
             Name for the tensorflow layer. Defaults to 'progressive_scaler'.
 
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.total_iterations = tf.Variable(total_iterations, trainable=False, dtype=tf.float32)
         self.current_iteration = tf.Variable(tf.ones(()), trainable=False)
         self.scale = tf.constant(float(scale), dtype=tf.float32)

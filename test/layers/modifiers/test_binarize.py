@@ -56,12 +56,9 @@ def test_get_config_round_trip():
     assert clone.key == "a" and clone.threshold == 0.25 and clone.name == "bin_cfg"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: binarize.py:42 uses __name___ (3 underscores) -> AttributeError instead of warning",
-)
 @pytest.mark.parametrize("thr", [2.0, -0.5])
 def test_out_of_range_threshold_warns_and_resets(thr):
+    # regression: binarize.py used __name___ (AttributeError) in the warning
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         layer = Binarize("a", threshold=thr)

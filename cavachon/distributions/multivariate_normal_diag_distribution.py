@@ -53,11 +53,12 @@ class MultivariateNormalDiagDistribution(
             Distribution.
 
         """
-        if isinstance(params, tf.Tensor):
-            loc, scale_diag = tf.split(params, 2, axis=-1)
-        elif isinstance(params, Mapping):
+        if isinstance(params, Mapping):
             loc = params.get("loc")
             scale_diag = params.get("scale_diag")
+        else:
+            params = tf.convert_to_tensor(params)
+            loc, scale_diag = tf.split(params, 2, axis=-1)
 
         # batch_shape: (batch, ), event_shape: (event_dims, )
         return cls(loc=loc, scale_diag=scale_diag, **kwargs)

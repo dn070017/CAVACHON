@@ -36,11 +36,12 @@ def test_partial_optimizer_fills_defaults():
     assert t.optimizer.learning_rate == pytest.approx(5e-4)
 
 
-def test_default_optimizer_validator_mutates_input():
-    data = {}
-    TrainingConfig.model_validate(data)
-    # documents in-place mutation of the caller's dict
-    assert "optimizer" in data
+# regression: the default optimizer is no longer injected into the caller's dict
+def test_default_optimizer_validator_does_not_mutate_input():
+    data = {"train": False}
+    t = TrainingConfig.model_validate(data)
+    assert data == {"train": False}
+    assert t.optimizer.name == "adam"
 
 
 def test_early_stopping_bool_and_dict():

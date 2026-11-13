@@ -61,3 +61,11 @@ def test_kwargs_forwarded():
 def test_last_dim_not_multiple_of_three_raises():
     with pytest.raises(Exception):
         StudenttDistribution.from_parameterizer_output(tf.zeros((1, 4)))
+
+
+@pytest.mark.parametrize("wrap", [np.asarray, tf.Variable], ids=["numpy", "tf.Variable"])
+def test_non_tensor_input_accepted(wrap):
+    loc, sr, dr = _raw()
+    packed = np.concatenate([loc, sr, dr], -1)
+    a = StudenttDistribution.from_parameterizer_output(wrap(packed))
+    np.testing.assert_allclose(a.df, _softplus(dr) + 2.0, rtol=1e-6)

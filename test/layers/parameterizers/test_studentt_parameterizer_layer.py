@@ -28,11 +28,7 @@ def test_get_config_contains_init_args():
         assert cfg[k] == v
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: studentt_parameterizer_layer.py:5 __init__ takes no **kwargs, so Keras from_config (which passes "
-    "trainable/dtype from get_config) raises TypeError; breaks clone_model / model save-load",
-)
 def test_from_config_round_trip():
+    # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
     clone = StudenttParameterizerLayer.from_config(StudenttParameterizerLayer(**dict(event_dims=3)).get_config())
     assert clone.event_dims == 3

@@ -183,13 +183,13 @@ def test_call_propagates_step_errors():
         handler({"RNA": make_adata()})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: modality present in target but without configured steps "
-    "crashes with TypeError (iterating None from steps.get)",
-)
+# regression: a modality without a steps entry used to raise TypeError
+# (iterating None from steps.get); it is now passed through unchanged.
 def test_call_modality_without_steps_is_passed_through():
     adata = make_adata()
     handler = AnnDataFilterHandler({"RNA": []})
-    out = handler({"RNA": adata, "ADT": make_adata(modality="ADT")})
+    adt = make_adata(modality="ADT")
+    out = handler({"RNA": adata, "ADT": adt})
+    assert out["ADT"] is adt
     assert out["ADT"].shape == (4, 4)
+    assert out["RNA"] is adata

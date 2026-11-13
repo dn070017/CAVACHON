@@ -95,13 +95,8 @@ def test_even_last_dim_raises():
         MixMVN.from_parameterizer_output(tf.ones((1, 3, 4)))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: a tf.Variable params (not a tf.Tensor subclass) falls "
-    "through both isinstance branches and raises UnboundLocalError; "
-    "GMMDensityLoss/GMMKLDivergence crash when given Variable y_true",
-)
 def test_tf_variable_params_accepted():
+    # regression: tf.Variable params used to raise UnboundLocalError.
     logits, loc, scale, packed = _params()
     dist = MixMVN.from_parameterizer_output(tf.Variable(packed))
     x = np.zeros((3, 2), np.float32)

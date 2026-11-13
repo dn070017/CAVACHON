@@ -100,17 +100,21 @@ class TestCheckIsCategorical:
     def test_empty_numeric_series_is_continuous(self):
         assert not DataFrameUtils.check_is_categorical(pd.Series([], dtype=float))
 
-    def test_nan_counted_once(self):
-        s = pd.Series([np.nan] * 10 + [1.0] * 10)
+    def test_nan_not_counted_as_unique_value(self):
+        # 1 non-NaN level in 10 obs: 1 < 2 -> categorical (NaN would make it 2)
+        s = pd.Series([np.nan] * 5 + [1.0] * 5)
         assert DataFrameUtils.check_is_categorical(s)
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=TypeError,
-        reason="BUG: np.unique on object Series mixing str and NaN raises TypeError",
-    )
+    def test_all_nan_numeric(self):
+        assert DataFrameUtils.check_is_categorical(pd.Series([np.nan] * 10))
+
     def test_object_with_missing_values(self):
+        # regression: np.unique raised TypeError on mixed str/NaN objects
         s = pd.Series(["a", "b", np.nan, "a"], dtype=object)
+        assert DataFrameUtils.check_is_categorical(s)
+
+    def test_object_with_none(self):
+        s = pd.Series(["a", None, "b"] * 4, dtype=object)
         assert DataFrameUtils.check_is_categorical(s)
 
     def test_boolean_small_sample_is_treated_as_continuous(self):

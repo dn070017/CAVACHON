@@ -112,10 +112,7 @@ def test_empty_intersection_yields_zero_cells():
     assert mm.n_obs == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: the caller's mapping is mutated in place (entries replaced by subset copies)",
-)
+# regression: the caller's mapping was mutated in place
 def test_input_mapping_not_mutated():
     rna = make(NAMES)
     data = {"rna": rna, "atac": make(NAMES[3:])}
@@ -124,15 +121,15 @@ def test_input_mapping_not_mutated():
     assert data["rna"].n_obs == 10
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: passing a MuData drops non-shared cells from the caller's MuData in place "
-    "(muon.pp.intersect_obs + writes into data.mod)",
-)
+# regression: non-shared cells were dropped from the caller's MuData in place
 def test_input_mudata_not_mutated():
     md = mu.MuData({"rna": make(NAMES), "atac": make(NAMES[3:])})
-    MultiModality(md)
+    rna = md["rna"]
+    mm = MultiModality(md)
+    assert md.n_obs == 10
+    assert md["rna"] is rna
     assert md["rna"].n_obs == 10
+    assert list(mm["rna"].obs_names) == NAMES[3:]
 
 
 @pytest.mark.xfail(

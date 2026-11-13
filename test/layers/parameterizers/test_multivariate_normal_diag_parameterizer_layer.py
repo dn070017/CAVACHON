@@ -42,11 +42,7 @@ def test_get_config_contains_init_args():
         assert cfg[k] == v
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: multivariate_normal_diag_parameterizer_layer.py:12 __init__ takes no **kwargs, so Keras from_config (which passes "
-    "trainable/dtype from get_config) raises TypeError; breaks clone_model / model save-load",
-)
 def test_from_config_round_trip():
+    # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
     clone = MVN.from_config(MVN(**dict(event_dims=7, name="z")).get_config())
     assert clone.event_dims == 7 and clone.name == "z"

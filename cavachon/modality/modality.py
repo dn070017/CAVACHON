@@ -92,12 +92,14 @@ class Modality(anndata.AnnData):
             )
         )
         cavachon_uns = OrderedDict((("cavachon", cavachon_config),))
-        uns = kwargs.get("uns", cavachon_uns)
+        # work on a copy so the uns provided by the caller is not modified
+        uns = OrderedDict(kwargs.pop("uns", None) or {})
         uns.update(cavachon_uns)
-        kwargs.pop("uns", None)
 
         if not isinstance(X, anndata.AnnData):
             super().__init__(X=matrix, uns=uns, *args, **kwargs)
         else:
-            X.uns.update(uns)
             super().__init__(X=X)
+            # replace (instead of update) uns so the uns of the input
+            # AnnData is not modified
+            self.uns = OrderedDict((*X.uns.items(), *uns.items()))

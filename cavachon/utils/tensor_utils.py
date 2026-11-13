@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -179,7 +180,7 @@ class TensorUtils:
     def create_tensor_from_df(
         df: pd.DataFrame,
         colnames: List[str] = [],
-        encoder_dict: Dict[str, LabelEncoder] = dict(),
+        encoder_dict: Optional[Dict[str, LabelEncoder]] = None,
     ) -> Tuple[tf.Tensor, Dict[str, LabelEncoder]]:
         """Create a Tensorflow Tensor from column data (specified with
         `colnames`) in the provided DataFrame. If the column data is a
@@ -196,7 +197,15 @@ class TensorUtils:
 
         colnames: List[str], optional
             columns of the DataFrame that are used to create the
-            Tensor. Defaults to [].
+            Tensor. Columns missing from the DataFrame are skipped with
+            a warning. Defaults to [].
+
+        encoder_dict: Dict[str, LabelEncoder], optional
+            existing encoders, updated in place. If a column already
+            has an entry, it decides the encoding (LabelEncoder:
+            one-hot, None: continuous); otherwise the column type is
+            inferred with DataFrameUtils.check_is_categorical. Defaults
+            to None (a new dictionary).
 
         Returns
         -------
@@ -208,15 +217,25 @@ class TensorUtils:
             corresponding LabelEncoder. The value will be None if the
             column data is not a continuous variable.
         """
+        if encoder_dict is None:
+            encoder_dict = dict()
+
         # if no valid batch effect column is provided, use zero vector for batch effect
         n_obs, n_features = df.shape
         tensor_list = []
 
         for colname in colnames:
             if colname not in df.columns:
+                message = f"Column '{colname}' not found in the DataFrame, skipped."
+                warnings.warn(message, RuntimeWarning)
                 continue
             coldata = df[colname]
-            if DataFrameUtils.check_is_categorical(coldata):
+            if colname in encoder_dict:
+                # reuse the encoding decided earlier (e.g. on the full data)
+                is_categorical = encoder_dict[colname] is not None
+            else:
+                is_categorical = DataFrameUtils.check_is_categorical(coldata)
+            if is_categorical:
                 # if the column is a categorical variable, use one hot encoded tensor
                 encoded_tensor, encoder = TensorUtils.create_one_hot_encoded_tensor(
                     coldata, encoder_dict.get(colname, None)
@@ -286,7 +305,7 @@ class TensorUtils:
             coo_matrix = spmatrix.tocoo()
         else:
             coo_matrix = scipy.sparse.coo_matrix(np.asarray(spmatrix))
-        indices = np.mat([coo_matrix.row, coo_matrix.col]).transpose()
+        indices = np.column_stack([coo_matrix.row, coo_matrix.col])
         sparse_tensor = tf.SparseTensor(indices, coo_matrix.data, coo_matrix.shape)
         return tf.sparse.reorder(tf.cast(sparse_tensor, tf.float32))
 

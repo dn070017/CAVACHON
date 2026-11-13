@@ -49,8 +49,7 @@ class TestGetFilenames:
         reflection_env.glob.hits[f"{SRC}/distributions**/foo_bar_distribution.py"] = [hit]
         out = ReflectionHandler._get_filenames("foo_bar_distribution.py", "distributions")
         assert out == [Path(hit)]
-        # glob is evaluated twice for the matching pattern (check + fetch)
-        assert reflection_env.glob.calls == [f"{SRC}/distributions**/foo_bar_distribution.py"] * 2
+        assert reflection_env.glob.calls == [f"{SRC}/distributions**/foo_bar_distribution.py"]
 
     def test_falls_through_to_second_depth(self, reflection_env):
         hit = f"{SRC}/layers/parameterizers/foo_layer.py"
@@ -59,7 +58,6 @@ class TestGetFilenames:
         assert out == [Path(hit)]
         assert reflection_env.glob.calls == [
             f"{SRC}/**/foo_layer.py",
-            f"{SRC}/**/**/foo_layer.py",
             f"{SRC}/**/**/foo_layer.py",
         ]
 
@@ -92,10 +90,21 @@ class TestGetFilenames:
         ReflectionHandler._get_filenames("bar.py", partial=True)
         assert reflection_env.glob.calls[0] == f"{SRC}/**/*bar.py"
 
-    def test_returns_only_first_hit(self, reflection_env):
+    def test_returns_all_hits_at_shallowest_depth_sorted(self, reflection_env):
         pattern = f"{SRC}/**/dup.py"
-        reflection_env.glob.hits[pattern] = [f"{SRC}/aaa/dup.py", f"{SRC}/bbb/dup.py"]
-        assert ReflectionHandler._get_filenames("dup.py") == [Path(f"{SRC}/aaa/dup.py")]
+        reflection_env.glob.hits[pattern] = [f"{SRC}/bbb/dup.py", f"{SRC}/aaa/dup.py"]
+        reflection_env.glob.hits[f"{SRC}/**/**/dup.py"] = [f"{SRC}/c/d/dup.py"]
+        assert ReflectionHandler._get_filenames("dup.py") == [
+            Path(f"{SRC}/aaa/dup.py"),
+            Path(f"{SRC}/bbb/dup.py"),
+        ]
+        assert reflection_env.glob.calls == [pattern]
+
+    def test_deeper_duplicate_shadowed_by_shallower_hit(self, reflection_env):
+        # only the shallowest depth with a hit is considered
+        reflection_env.glob.hits[f"{SRC}/**/x.py"] = [f"{SRC}/a/x.py"]
+        reflection_env.glob.hits[f"{SRC}/**/**/x.py"] = [f"{SRC}/b/c/x.py"]
+        assert ReflectionHandler._get_filenames("x.py") == [Path(f"{SRC}/a/x.py")]
 
     def test_patterns_built_from_settings_not_cwd(self, reflection_env, monkeypatch):
         import os
@@ -192,14 +201,18 @@ class TestGetClassByName:
         with pytest.raises((FileNotFoundError, ImportError, ValueError)):
             ReflectionHandler.get_class_by_name("NoSuchThing", "environment")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _get_filenames returns only glob()[0], so the 'more than one "
-        "file' check never fires; an arbitrary (filesystem-order) match is used",
-    )
     def test_ambiguous_lookup_rejected(self, reflection_env):
-        reflection_env.glob.hits[f"{SRC}/**/dup.py"] = [f"{SRC}/aaa/dup.py", f"{SRC}/bbb/dup.py"]
+        # regression: previously glob()[0] was taken silently
+        reflection_env.glob.hits[f"{SRC}/**/dup.py"] = [f"{SRC}/bbb/dup.py", f"{SRC}/aaa/dup.py"]
         reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(Dup=FakeDistribution)
         reflection_env.importer.modules["cavachon.bbb.dup"] = SimpleNamespace(Dup=object)
-        with pytest.raises(AssertionError, match="more than one"):
+        with pytest.raises(ValueError, match="more than one file named dup.py") as excinfo:
             ReflectionHandler.get_class_by_name("Dup")
+        assert f"{SRC}/aaa/dup.py" in str(excinfo.value)
+        assert f"{SRC}/bbb/dup.py" in str(excinfo.value)
+        assert reflection_env.importer.calls == []
+
+    def test_ambiguity_resolved_by_subdirectory(self, reflection_env):
+        reflection_env.glob.hits[f"{SRC}/aaa**/dup.py"] = [f"{SRC}/aaa/dup.py"]
+        reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(Dup=FakeDistribution)
+        assert ReflectionHandler.get_class_by_name("Dup", "aaa") is FakeDistribution

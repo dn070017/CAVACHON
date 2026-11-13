@@ -160,14 +160,61 @@ def test_running_twice_recomputes_on_filtered_data(dense_adata):
     np.testing.assert_array_equal(out.obs["total_counts"].values, [4, 6])
 
 
+# --------------------------------------------------------- default qc_vars
+
+
+def _adata_with_genes(genes, counts):
+    var = pd.DataFrame({"gene": genes}, index=pd.Index(genes, name="RNA:gene"))
+    obs = pd.DataFrame(index=[f"c{i}" for i in range(len(counts))])
+    return anndata.AnnData(X=np.asarray(counts, dtype=np.float32), obs=obs, var=var)
+
+
+# regression: default qc_vars must flag only the intended features.
+def test_default_qc_vars_flags_and_column_names():
+    genes = ["MT-CO1", "mt-Nd1", "Mt-Atp6", "MTOR", "MTHFR", "ERCC-00002",
+             "ERCC1", "GAPDH"]
+    adata = _adata_with_genes(genes, [[1, 1, 1, 1, 1, 1, 1, 3]])
+    FilterQC("qc", percent_top=None, filter_threshold=[])(adata)
+    assert list(adata.var["MT"]) == [True, True, True, False, False, False,
+                                     False, False]
+    # ERCC1 is a nuclear DNA-repair gene, not a spike-in
+    assert list(adata.var["ERCC"]) == [False, False, False, False, False, True,
+                                       False, False]
+    # QC metric names are unchanged
+    assert adata.obs.loc["c0", "pct_counts_MT"] == pytest.approx(30.0)
+    assert adata.obs.loc["c0", "pct_counts_ERCC"] == pytest.approx(10.0)
+
+
+def test_default_qc_vars_mouse_mt_filtering():
+    adata = _adata_with_genes(["mt-Co1", "Actb"], [[9, 1], [1, 9]])
+    out = FilterQC(
+        "qc",
+        percent_top=None,
+        filter_threshold=[{"field": "pct_counts_MT", "operator": "le",
+                           "threshold": 50}],
+    )(adata)
+    assert list(out.obs_names) == ["c1"]
+
+
+def test_user_qc_vars_still_unanchored_case_sensitive_prefix(dense_adata):
+    # user-provided qc_vars keep the previous semantics: name == regex prefix
+    qc([], qc_vars=["MT", "mt"])(dense_adata)
+    assert list(dense_adata.var["MT"]) == [True, True, False, False]
+    assert list(dense_adata.var["mt"]) == [False, False, False, False]
+
+
+def test_default_qc_vars_not_stored_on_filter(dense_adata):
+    f = qc([])
+    f(dense_adata)
+    assert "qc_vars" not in f.kwargs
+    assert FilterQC.default_qc_vars == {"ERCC": r"^ERCC-", "MT": r"(?i)^MT-"}
+
+
 # --------------------------------------------------------------------- bugs
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: default qc_vars 'MT' is an unanchored regex prefix; matches "
-    "non-mitochondrial genes such as MTOR",
-)
+# regression: the default 'MT' qc_var used to be the unanchored,
+# case-sensitive prefix "MT", which also flagged nuclear genes like MTOR.
 def test_default_mt_qc_var_matches_only_mitochondrial_genes(dense_adata):
     qc([])(dense_adata)
     # only MT-CO1 is mitochondrial

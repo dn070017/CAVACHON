@@ -114,3 +114,14 @@ def test_large_logit_nonzero_count_log_prob_is_accurate():
     x = np.array([[3.0]], np.float32)
     ref = _reference_log_prob(x, logits, mean, disp)  # ~ -20 + log NB(3)
     np.testing.assert_allclose(d.log_prob(x), ref, rtol=1e-3)
+
+
+@pytest.mark.parametrize("wrap", [np.asarray, tf.Variable], ids=["numpy", "tf.Variable"])
+def test_non_tensor_input_accepted(wrap):
+    # regression: numpy / tf.Variable params used to raise UnboundLocalError.
+    logits, mean, disp = _params()
+    packed = np.concatenate([logits, mean, disp], -1)
+    a = ZINB.from_parameterizer_output(wrap(packed))
+    b = ZINB.from_parameterizer_output(tf.constant(packed))
+    x = tf.constant([[0.0, 3.0, 1.0], [7.0, 0.0, 2.0]])
+    np.testing.assert_allclose(a.log_prob(x), b.log_prob(x), rtol=1e-6)

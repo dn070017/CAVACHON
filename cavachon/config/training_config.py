@@ -55,5 +55,6 @@ class TrainingConfig(BaseConfigModel):
     @classmethod
     def _default_optimizer(cls, data: object) -> object:
         if isinstance(data, dict) and "optimizer" not in data:
-            data["optimizer"] = {"name": "adam", "learning_rate": 1e-4}
+            # copy so the caller's dict is not mutated.
+            data = {**data, "optimizer": {"name": "adam", "learning_rate": 1e-4}}
         return data

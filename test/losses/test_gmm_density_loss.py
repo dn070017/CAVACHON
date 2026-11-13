@@ -84,14 +84,18 @@ def test_gradient_wrt_prior_params_and_z():
     assert np.any(gz.numpy() != 0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: docstring allows a ProgressiveScaler weight, but call() "
-    "does `loss * self.weight` (not self.weight(...)); a callable, "
-    "non-tensor weight such as a Keras Layer cannot be multiplied",
-)
 def test_progressive_scaler_weight_supported(fakes):
+    # regression: a callable weight (ProgressiveScaler) used to be multiplied
+    # directly (`loss * self.weight`) and raised; it is now called on ones(()).
     y_true, z, ref = _inputs()
     scaler = fakes.scaler_cls(total_iterations=1, scale=2.0)
     loss = GMMDensityLoss(weight=scaler)
     np.testing.assert_allclose(loss(y_true, z), -2.0 * np.mean(ref.log_prob(z)), rtol=1e-5)
+    assert scaler.call_args[-1].shape == ()
+    np.testing.assert_allclose(scaler.call_args[-1], 1.0)
+
+
+def test_float_weight():
+    y_true, z, ref = _inputs()
+    loss = GMMDensityLoss(weight=0.5)
+    np.testing.assert_allclose(loss(y_true, z), -0.5 * np.mean(ref.log_prob(z)), rtol=1e-5)

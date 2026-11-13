@@ -113,7 +113,7 @@ class FileReader:
         modality_obs_df = pd.concat(obs_df_list, axis=0)
         modality_matrix = vstack(matrix_list)
 
-        adata = AnnData(X=modality_matrix, dtype=np.float32)
+        adata = AnnData(X=modality_matrix.astype(np.float32))
         adata.obs = modality_obs_df
         adata.var = modality_var_df
 
@@ -174,6 +174,14 @@ class FileReader:
             if not isinstance(index_col, int):
                 index_col = colnames.index(index_col)
             index_name = colnames[int(index_col)]
+            df.index = pd.Index(df[index_name], name=f"{name}:{index_name}")
+        elif has_headers and index_col is not None:
+            # use the column named in the header row as index (same
+            # naming convention as when colnames are provided).
+            if isinstance(index_col, int):
+                index_name = df.columns[index_col]
+            else:
+                index_name = index_col
             df.index = pd.Index(df[index_name], name=f"{name}:{index_name}")
         else:
             df.index.name = name

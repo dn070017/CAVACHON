@@ -42,10 +42,9 @@ def test_name_sanitized():
 
 
 def test_filters_parsed():
-    with pytest.warns(RuntimeWarning):
-        m = ModalityConfig(
-            name="m", type="rna", filters=[{"step": "FilterCells", "min_genes": 5}]
-        )
+    m = ModalityConfig(
+        name="m", type="rna", filters=[{"step": "FilterCells", "min_genes": 5}]
+    )
     assert isinstance(m.filters[0], FilterConfig)
     assert m.filters[0].min_genes == 5
 
@@ -57,10 +56,12 @@ def test_samples_not_shared_between_instances():
     assert b.samples == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: unknown modality type without dist silently yields dist=''",
-)
+# regression: unknown type without dist raises
 def test_unknown_type_without_dist_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Unknown type 'protein' of modality prot"):
         ModalityConfig(name="prot", type="protein")
+
+
+def test_unknown_type_with_explicit_dist_allowed():
+    m = ModalityConfig(name="prot", type="Protein", dist="IndependentBernoulli")
+    assert (m.type, m.dist) == ("protein", "IndependentBernoulli")

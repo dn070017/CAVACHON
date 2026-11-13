@@ -12,6 +12,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
         self,
         name: str = "multivariate_normal_diag_sampler",
         stochastic: bool = True,
+        **kwargs,
     ):
         """Constructor for MultivariateNormalDiagSampler
 
@@ -27,7 +28,7 @@ class MultivariateNormalDiagSampler(tf.keras.layers.Layer):
             non-trainable tf.Variable so the scheduler can switch it
             without retracing. Defaults to True.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.stochastic = tf.Variable(
             1.0 if stochastic else 0.0,
             trainable=False,

@@ -6,8 +6,9 @@ class StudenttParameterizerLayer(tf.keras.layers.Layer):
         self,
         event_dims: int,
         name: str = "studentt_parameterizer_layer",
+        **kwargs,
     ):
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims = event_dims
 
     def build(self, input_shape: tf.TensorShape) -> None:

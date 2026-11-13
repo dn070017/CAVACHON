@@ -115,7 +115,9 @@ class DataFrameUtils:
         -------
         bool:
             True if the series is a categorical variable, otherwise
-            False.
+            False. Missing values are ignored when counting unique
+            values.
         """
         n_obs = data.size
-        return len(np.unique(data)) < n_obs * threshold or not is_numeric_dtype(data)
+        n_unique = pd.Series(data).nunique(dropna=True)
+        return n_unique < n_obs * threshold or not is_numeric_dtype(data)

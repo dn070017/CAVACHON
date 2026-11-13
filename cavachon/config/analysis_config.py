@@ -148,6 +148,14 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     batch_size: int = 128
     sort_output: bool = True
 
+    @model_validator(mode="after")
+    def _default_use_cluster(
+        self,
+    ) -> "AnalysisHierarchicalDifferentialAnalysisConfig":
+        if not self.use_cluster:
+            self.use_cluster = f"cluster_{self.component}"
+        return self
+
 
 class AnalysisEnrichmentConfig(BaseConfigModel):
     """Gene-set enrichment analysis configuration."""

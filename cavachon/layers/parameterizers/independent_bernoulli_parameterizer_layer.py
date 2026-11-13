@@ -9,7 +9,10 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
     """
 
     def __init__(
-        self, event_dims: int, name: str = "independent_bernoulli_parameterizer_layer"
+        self,
+        event_dims: int,
+        name: str = "independent_bernoulli_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for IndependentBenoulliParameterizerLayer
 
@@ -23,7 +26,7 @@ class IndependentBernoulliParameterizerLayer(tf.keras.layers.Layer):
             Name for the tensorflow layer. Defaults to
             'independent_bernoulli_parameterizer_layer'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         return
 

@@ -30,12 +30,8 @@ def test_get_config_contains_init_args():
         assert cfg[k] == v
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: independent_bernoulli_parameterizer_layer.py:11 __init__ takes no **kwargs, so Keras from_config (which passes "
-    "trainable/dtype from get_config) raises TypeError; breaks clone_model / model save-load",
-)
 def test_from_config_round_trip():
+    # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
     clone = IndependentBernoulliParameterizerLayer.from_config(IndependentBernoulliParameterizerLayer(**dict(event_dims=2, name="bern")).get_config())
     assert clone.event_dims == 2 and clone.name == "bern"
 
@@ -44,3 +40,11 @@ def test_trainable_weights():
     layer = IndependentBernoulliParameterizerLayer(event_dims=2)
     layer(tf.ones((1, 3)))
     assert len(layer.trainable_weights) == 2
+
+
+def test_keras_kwargs_forwarded():
+    # regression: **kwargs now reach keras Layer (trainable/dtype)
+    layer = IndependentBernoulliParameterizerLayer(2, trainable=False, dtype="float64")
+    out = layer(tf.ones((1, 3), tf.float64))
+    assert out.dtype == tf.float64
+    assert len(layer.trainable_weights) == 0 and len(layer.non_trainable_weights) == 2

@@ -51,11 +51,16 @@ def test_direct_constructor():
     np.testing.assert_allclose(d.mean(), [0.5, 0.5])
 
 
-def test_invalid_params_type_raises():
-    with pytest.raises(Exception):
-        IndependentBernoulliDistribution.from_parameterizer_output(
-            np.zeros((2, 3), np.float32)
-        )
+@pytest.mark.parametrize(
+    "make_params",
+    [lambda: np.zeros((2, 3), np.float32), lambda: tf.Variable(tf.zeros((2, 3)))],
+    ids=["numpy", "tf.Variable"],
+)
+def test_non_tensor_input_accepted(make_params):
+    # regression: numpy / tf.Variable params used to raise UnboundLocalError.
+    d = IndependentBernoulliDistribution.from_parameterizer_output(make_params())
+    assert d.batch_shape == (2, 3)
+    np.testing.assert_allclose(d.probs_parameter(), 0.5)
 
 
 @pytest.mark.xfail(

@@ -76,12 +76,8 @@ def test_float64_dtype_preserved():
     assert d.dtype == tf.float64
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: only tf.Tensor or Mapping params are handled; a tf.Variable "
-    "or numpy array falls through both isinstance branches and raises "
-    "UnboundLocalError (same pattern in every from_parameterizer_output)",
-)
+# regression: non-Mapping, non-tf.Tensor params (numpy, tf.Variable) used to
+# fall through both isinstance branches and raise UnboundLocalError.
 @pytest.mark.parametrize(
     "make_params",
     [lambda: np.ones((2, 4), np.float32), lambda: tf.Variable(tf.ones((2, 4)))],

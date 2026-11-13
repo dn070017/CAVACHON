@@ -16,6 +16,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         n_components: int,
         unit_variance: bool = False,
         name: str = "mixture_multivariate_normal_diag_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for MultivariateNormalDiagParameterizerLayer
 
@@ -36,7 +37,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
             'mixture_multivariate_normal_diag_parameterizer_layer'.
 
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         self.n_components: int = n_components
         self.unit_variance: bool = unit_variance

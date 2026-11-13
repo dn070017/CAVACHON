@@ -14,6 +14,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
         event_dims: int,
         use_shared_dispersion: bool = False,
         name: str = "independent_zero_inflated_negative_binomial_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for
         IndependentZeroInflatedNegativeBinomialParameterizerLayer
@@ -33,7 +34,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizerLayer(tf.keras.layers.
             Name for the tensorflow layer. Defaults to
             'independent_zero_inflated_negative_binomial_parameterizer_layer'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         self.use_shared_dispersion: bool = use_shared_dispersion
         return

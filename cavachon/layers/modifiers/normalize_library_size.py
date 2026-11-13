@@ -58,7 +58,7 @@ class NormalizeLibrarySize(tf.keras.layers.Layer):
             is_sparse = True
 
         libsize = tf.expand_dims(tf.reduce_sum(tensor, axis=-1), -1)
-        tensor = tensor / libsize
+        tensor = tf.math.divide_no_nan(tensor, libsize)
 
         if isinstance(self.key, str):
             libsize_key = f"{self.key}_{Constants.TENSOR_NAME_LIBSIZE}"

@@ -40,10 +40,12 @@ class ReflectionHandler:
             f"ReflectionHandler could not find file named {filename}. Please check ",
             "the spelling and try again.",
         )
-        assert len(filenames) == 1, (
-            f"ReflectionHandler find more than one files named {filename}. Please check ",
-            "the spelling and try again.",
-        )
+        if len(filenames) > 1:
+            paths = ", ".join(str(f) for f in filenames)
+            raise ValueError(
+                f"ReflectionHandler found more than one file named {filename}: {paths}. "
+                "Please specify the subdirectory."
+            )
         return ReflectionHandler._import_class(filenames[0], f"{class_name}{postfix}")
 
     @staticmethod
@@ -59,9 +61,10 @@ class ReflectionHandler:
             filename = (
                 f"{Settings.src_path}/{subdirectory}" + "**/" * (depth + 1) + pattern
             )
-            if len(glob.glob(filename)) != 0:
-                result.append(
-                    Path(os.path.join(Settings.src_path, glob.glob(filename)[0]))
-                )
+            matches = sorted(glob.glob(filename))
+            if len(matches) != 0:
+                # return every match at the shallowest depth so that the
+                # caller can detect ambiguous names
+                result.extend(Path(os.path.join(Settings.src_path, m)) for m in matches)
                 break
         return result

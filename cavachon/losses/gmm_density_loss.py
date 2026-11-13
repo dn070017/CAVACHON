@@ -85,6 +85,9 @@ class GMMDensityLoss(tf.keras.losses.Loss):
         log_prob = dist.log_prob(y_pred)
         # Batch-mean negative log-likelihood.
         loss = -tf.reduce_mean(log_prob)
-        if self.weight is not None:
+        if callable(self.weight):
+            # ProgressiveScaler (or any callable layer), like other losses
+            loss = self.weight(tf.ones(())) * loss
+        elif self.weight is not None:
             loss = loss * self.weight
         return loss

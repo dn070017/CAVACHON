@@ -22,5 +22,11 @@ class ModalityConfig(BaseConfigModel):
     def _set_defaults(self) -> "ModalityConfig":
         self.type = self.type.lower()
         if not self.dist:
-            self.dist = Constants.DEFAULT_MODALITY_DISTRIBUTION.get(self.type, "")
+            if self.type not in Constants.DEFAULT_MODALITY_DISTRIBUTION:
+                raise ValueError(
+                    f"Unknown type '{self.type}' of modality {self.name} and no "
+                    f"dist is provided. Please specify dist or use one of "
+                    f"{list(Constants.DEFAULT_MODALITY_DISTRIBUTION)}."
+                )
+            self.dist = Constants.DEFAULT_MODALITY_DISTRIBUTION[self.type]
         return self

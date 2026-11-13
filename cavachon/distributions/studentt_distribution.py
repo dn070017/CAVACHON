@@ -17,6 +17,7 @@ class StudenttDistribution(Distribution, tfp.distributions.StudentT):
         The last dimension is split into 3: loc, scale, and df.
         """
         # Split into 3 equal parts
+        params = tf.convert_to_tensor(params)
         loc, scale_raw, df_raw = tf.split(params, 3, axis=-1)
 
         # Scale (sigma) must be positive

@@ -84,7 +84,7 @@ class AnnDataFilterHandler(Callable):
 
         """
         for modality_name, modality in target.items():
-            for step_runner in self.steps.get(modality_name):
+            for step_runner in self.steps.get(modality_name, []):
                 modality = step_runner(modality)
             target[modality_name] = modality
 

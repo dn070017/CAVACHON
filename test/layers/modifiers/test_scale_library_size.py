@@ -52,12 +52,8 @@ def test_non_iterable_key_raises():
         ScaleLibrarySize(1)({1: dense()})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: scale_library_size.py:78 builds default libsize with tf.ones((tensor.shape[0], 1)); "
-    "fails when batch dim is unknown (tf.function with None batch)",
-)
 def test_missing_libsize_with_unknown_batch_dim():
+    # regression: fallback libsize used static tensor.shape[0] (None inside tf.function)
     layer = ScaleLibrarySize("rna")
 
     @tf.function(input_signature=[tf.TensorSpec([None, 3], tf.float32)])

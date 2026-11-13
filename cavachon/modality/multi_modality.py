@@ -45,7 +45,9 @@ class MultiModality(muon.MuData):
             data = dict(((modality_name, data),))
 
         if isinstance(data, muon.MuData):
-            muon.pp.intersect_obs(data)
+            # the cells are intersected below on copies, so the MuData
+            # provided by the caller is not modified (muon.pp.intersect_obs
+            # works inplace).
             data = data.mod
 
         if issubclass(type(data), Mapping):
@@ -57,9 +59,7 @@ class MultiModality(muon.MuData):
                     if index is None
                     else index.intersection(adata.obs.index)
                 )
-            for key in data.keys():
-                adata = data.get(key)
-                adata = adata[index].copy()
-                data[key] = adata
+            # create a new mapping so the caller's mapping is not modified
+            data = dict((key, data.get(key)[index].copy()) for key in data.keys())
 
         super().__init__(data, *args, **kwargs)

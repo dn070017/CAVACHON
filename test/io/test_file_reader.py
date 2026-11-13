@@ -116,15 +116,28 @@ def test_read_table_with_headers_keeps_columns(fake_fs):
     assert len(df) == 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: with has_headers=True (no colnames) index_col is ignored "
-    "(never passed to read_csv nor applied); index becomes 0..n-1",
-)
+# regression: has_headers=True applies index_col
 def test_read_table_with_headers_uses_index_col(fake_fs):
     fake_fs.tables["/d/h.tsv"] = "barcode\tct\nc1\tT\nc2\tB\n"
     df = FileReader.read_table("/d/h.tsv", name="RNA", has_headers=True)
     assert list(df.index) == ["c1", "c2"]
+    assert df.index.name == "RNA:barcode"
+    assert list(df.columns) == ["barcode", "ct"]
+
+
+@pytest.mark.parametrize("index_col", ["ct", 1])
+def test_read_table_with_headers_index_col_by_name_or_position(fake_fs, index_col):
+    fake_fs.tables["/d/h.tsv"] = "barcode\tct\nc1\tT\nc2\tB\n"
+    df = FileReader.read_table("/d/h.tsv", name="RNA", has_headers=True, index_col=index_col)
+    assert list(df.index) == ["T", "B"]
+    assert df.index.name == "RNA:ct"
+
+
+def test_read_table_with_headers_index_col_none_keeps_range_index(fake_fs):
+    fake_fs.tables["/d/h.tsv"] = "barcode\tct\nc1\tT\n"
+    df = FileReader.read_table("/d/h.tsv", name="RNA", has_headers=True, index_col=None)
+    assert list(df.index) == [0]
+    assert df.index.name == "RNA"
 
 
 # ---------------------------------------------------------------- read_multiomics_data
@@ -168,6 +181,8 @@ def test_read_multiomics_has_headers_drops_colnames(fake_fs, helpers):
     adata = FileReader.read_multiomics_data(cfg, "RNA")
     assert fake_fs.read_csv.call_args_list[0].kwargs["header"] == 0
     assert list(adata.obs.columns[:1]) == ["barcode"]
+    assert list(adata.obs_names) == ["c1", "c2"]
+    assert adata.obs.index.name == "RNA:barcode"
 
 
 def test_read_multiomics_transposed_matrix(fake_fs, helpers):
@@ -268,11 +283,7 @@ def test_read_multiomics_without_colnames(fake_fs, helpers):
     assert adata.shape == (2, 3)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: AnnData(dtype=...) is deprecated (FutureWarning) and "
-    "scheduled for removal",
-)
+# regression: X is cast to float32 instead of the deprecated AnnData(dtype=...)
 def test_read_multiomics_no_future_warning(fake_fs, helpers):
     fake_fs.add_sample("/data", "s1", X, ["c1", "c2"], ["g1", "g2", "g3"])
     cfg = helpers.make_config(
@@ -280,4 +291,6 @@ def test_read_multiomics_no_future_warning(fake_fs, helpers):
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error", FutureWarning)
-        FileReader.read_multiomics_data(cfg, "RNA")
+        adata = FileReader.read_multiomics_data(cfg, "RNA")
+    assert sp.issparse(adata.X)
+    assert adata.X.dtype == np.float32

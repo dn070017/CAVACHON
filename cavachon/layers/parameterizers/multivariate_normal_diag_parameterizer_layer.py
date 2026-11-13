@@ -13,6 +13,7 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         self,
         event_dims: int,
         name: str = "multivariate_normal_diag_parameterizer_layer",
+        **kwargs,
     ):
         """Constructor for MultivariateNormalDiagParameterizerLayer
 
@@ -26,7 +27,7 @@ class MultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
             Name for the tensorflow layer. Defaults to
             'multivariate_normal_diag_parameterizer_layer'.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.event_dims: int = event_dims
         return
 

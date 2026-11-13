@@ -43,11 +43,13 @@ class TestReorderOrFilterAdataObs:
         assert out.shape == (1, 3)
         np.testing.assert_array_equal(out.X, [[6, 7, 8]])
 
-    def test_output_float32(self):
-        adata = make_adata()
+    @pytest.mark.parametrize("sparse", [False, True])
+    def test_output_float32(self, sparse):
+        adata = make_adata(sparse)
         adata.X = adata.X.astype(np.int64)
         out = AnnDataUtils.reorder_or_filter_adata_obs(adata, adata.obs_names)
         assert out.X.dtype == np.float32
+        assert sp.issparse(out.X) == sparse
 
     def test_does_not_mutate_input(self):
         adata = make_adata()
@@ -84,12 +86,8 @@ class TestReorderOrFilterAdataObs:
         assert "emb" not in out.obsm
         assert "k" not in out.uns
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: passes the deprecated AnnData(dtype=...) argument (FutureWarning, "
-        "'will be removed'); will break on a newer anndata",
-    )
     def test_no_deprecation_warning(self):
+        # regression: AnnData(dtype=...) emitted a FutureWarning (removed API)
         adata = make_adata()
         with warnings.catch_warnings():
             warnings.simplefilter("error", FutureWarning)
@@ -167,15 +165,17 @@ class TestMergeMdataOnObsAnnotation:
         assert out["rna"].n_obs == 1
         np.testing.assert_allclose(to_dense(out["rna"].X), [[4.5, 5.5, 6.5]])
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: obs with NaN group label: unique() yields NaN, the '== NaN' mask "
-        "selects nothing and an all-NaN mean row is silently emitted",
-    )
-    def test_nan_group_label_not_emitted_as_nan_row(self):
+    @pytest.mark.parametrize("categorical", [False, True])
+    def test_nan_group_label_skipped(self, categorical):
+        # regression: a NaN label produced an all-NaN pseudo-bulk row
         mdata = make_mdata()
-        mdata["rna"].obs["label"] = pd.Series(["x", "x", np.nan, "y"], index=mdata["rna"].obs_names, dtype=object)
+        labels = pd.Series(["x", "x", np.nan, "y"], index=mdata["rna"].obs_names, dtype=object)
+        mdata["rna"].obs["label"] = labels.astype("category") if categorical else labels
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+            warnings.simplefilter("error", RuntimeWarning)  # no mean of empty slice
             out = AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": [], "atac": []})
-        assert not np.isnan(to_dense(out["rna"].X)).any()
+        for mod in ("rna", "atac"):
+            assert list(out[mod].obs_names) == ["x", "y"]
+            assert not np.isnan(to_dense(out[mod].X)).any()
+        np.testing.assert_allclose(to_dense(out["rna"].X), [[1.5, 2.5, 3.5], [9.0, 10.0, 11.0]])
+        np.testing.assert_allclose(to_dense(out["atac"].X), [[2.0, 0.0], [0.0, 7.0]])

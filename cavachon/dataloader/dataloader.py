@@ -133,6 +133,10 @@ class DataLoader:
         tensor_mapping = dict()
         modality_names = self.mdata.mod.keys()
         self.check_obs_aligned()
+        # reset the per-dataset bookkeeping so calling create_dataset
+        # again does not accumulate n_vars_batch_effect.
+        self.n_vars_batch_effect = dict()
+        self.batch_effect_encoder = dict()
         for modality_name in modality_names:
             adata = self.mdata[modality_name]
             data_tensor = TensorUtils.spmatrix_to_sparse_tensor(adata.X)
@@ -218,27 +222,28 @@ class DataLoader:
             # if batch_effect colname is not specified for the current
             # modality, use zero matrix as batch effect
             batch_effect_tensor = tf.zeros((adata.n_obs, 1))
-            self.n_vars_batch_effect.setdefault(modality_name, 1)
         else:
             # otherwise, create one-hot encoding tensor for categorical
             # batch effect, single vector for continuous batch effect.
-            self.n_vars_batch_effect.setdefault(modality_name, 0)
             batch_effect_tensor, encoder_mapping = TensorUtils.create_tensor_from_df(
                 adata.obs,
                 batch_effect_colnames_modality,
                 self.batch_effect_encoders.get(modality_name, dict()),
             )
-            for colnames, encoder in encoder_mapping.items():
-                self.batch_effect_encoder[f"{modality_name}_{colnames}"] = encoder
+            # only keep track of the encoders of the requested columns
+            # (the reused encoder dictionary may contain other columns).
+            for colname in batch_effect_colnames_modality:
+                if colname not in encoder_mapping:
+                    continue
+                encoder = encoder_mapping[colname]
+                self.batch_effect_encoder[f"{modality_name}_{colname}"] = encoder
                 if modality_name not in self.batch_effect_encoders:
                     self.batch_effect_encoders[modality_name] = dict()
-                self.batch_effect_encoders[modality_name][colnames] = encoder
-                if encoder is not None:
-                    # categorical batch effect
-                    self.n_vars_batch_effect[modality_name] += len(encoder.classes_)
-                else:
-                    # continuous batch effect
-                    self.n_vars_batch_effect[modality_name] += 1
+                self.batch_effect_encoders[modality_name][colname] = encoder
+
+        # the number of batch effect variables is the width of the
+        # tensor actually fed to the model.
+        self.n_vars_batch_effect[modality_name] = int(batch_effect_tensor.shape[-1])
 
         return batch_effect_tensor
 

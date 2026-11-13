@@ -183,10 +183,24 @@ class TestCreateTensorFromDf:
         assert t.shape == (12, 2)
         assert list(enc["C"].classes_) == ["x", "y"]
 
-    def test_missing_columns_skipped(self, df):
-        t, enc = TensorUtils.create_tensor_from_df(df, ["nope", "B"], dict())
+    def test_missing_columns_skipped_with_warning(self, df):
+        with pytest.warns(RuntimeWarning, match="'nope'"):
+            t, enc = TensorUtils.create_tensor_from_df(df, ["nope", "B"], dict())
         assert t.shape == (12, 1)
         assert "nope" not in enc
+
+    def test_all_columns_missing_gives_zero_vector_with_warning(self, df):
+        with pytest.warns(RuntimeWarning, match="'x1'"):
+            t, enc = TensorUtils.create_tensor_from_df(df, ["x1"], dict())
+        assert t.shape == (12, 1)
+        assert enc == {}
+
+    def test_present_columns_do_not_warn(self, df):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            TensorUtils.create_tensor_from_df(df, ["A", "B", "C"], dict())
 
     def test_no_columns_gives_zero_vector(self, df):
         t, enc = TensorUtils.create_tensor_from_df(df, [], dict())
@@ -205,33 +219,61 @@ class TestCreateTensorFromDf:
         _, out = TensorUtils.create_tensor_from_df(df, ["A"], d)
         assert out is d and "A" in d
 
-    def test_mutable_default_argument_present(self):
+    def test_encoder_dict_default_is_none(self):
         default = inspect.signature(TensorUtils.create_tensor_from_df).parameters[
             "encoder_dict"
         ].default
-        assert isinstance(default, dict)
+        assert default is None
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: mutable default encoder_dict=dict() persists across calls; an "
-        "encoder fitted in one call leaks into later unrelated calls",
-    )
     def test_default_encoder_dict_not_shared_between_calls(self):
+        # regression: mutable default dict() leaked encoders across calls
         df1 = pd.DataFrame({"batch": ["a", "b"] * 10})
         df2 = pd.DataFrame({"batch": ["c", "d", "e"] * 10})
         _, enc1 = TensorUtils.create_tensor_from_df(df1, ["batch"])
-        try:
-            _, enc2 = TensorUtils.create_tensor_from_df(df2, ["batch"])
-        finally:
-            # clean shared default so other tests are unaffected
-            inspect.signature(TensorUtils.create_tensor_from_df).parameters[
-                "encoder_dict"
-            ].default.clear()
+        _, enc2 = TensorUtils.create_tensor_from_df(df2, ["batch"])
         assert enc1 is not enc2
+        assert list(enc1["batch"].classes_) == ["a", "b"]
         assert list(enc2["batch"].classes_) == ["c", "d", "e"]
+
+    def test_existing_encoder_forces_one_hot_despite_heuristic(self):
+        # 6 unique of 6 obs would be 'continuous' by the heuristic; a stored
+        # LabelEncoder (fitted on the full data) must win so subsets match.
+        full = pd.DataFrame({"b": np.repeat(np.arange(6.0), 10)})
+        _, enc = TensorUtils.create_tensor_from_df(full, ["b"], dict())
+        assert isinstance(enc["b"], LabelEncoder)
+        subset = pd.DataFrame({"b": np.arange(6.0)})
+        t, out = TensorUtils.create_tensor_from_df(subset, ["b"], enc)
+        assert out["b"] is enc["b"]
+        assert t.shape == (6, 6)
+        np.testing.assert_array_equal(t.numpy(), np.eye(6))
+
+    def test_existing_none_forces_continuous_despite_heuristic(self):
+        # 1 unique value would be 'categorical' by the heuristic; a stored None
+        # (continuous on the full data) must win.
+        subset = pd.DataFrame({"b": [3.0] * 10})
+        enc = {"b": None}
+        t, out = TensorUtils.create_tensor_from_df(subset, ["b"], enc)
+        assert out == {"b": None}
+        assert t.shape == (10, 1)
+        np.testing.assert_array_equal(t.numpy()[:, 0], [3.0] * 10)
+
+    def test_heuristic_used_only_for_new_columns(self, df):
+        enc = {"A": None}
+        t, out = TensorUtils.create_tensor_from_df(df, ["A", "C"], enc)
+        assert out["A"] is None  # continuous kept
+        assert isinstance(out["C"], LabelEncoder)  # inferred categorical
+        assert t.shape == (12, 1 + 2)
 
 
 class TestSpmatrixToSparseTensor:
+    def test_does_not_use_np_mat(self, monkeypatch):
+        # regression: np.mat was removed in NumPy 2.0
+        monkeypatch.delattr(np, "mat", raising=False)
+        monkeypatch.delattr(np, "matrix", raising=False)
+        st = TensorUtils.spmatrix_to_sparse_tensor(sp.csr_matrix(np.eye(3)))
+        assert st.indices.dtype == tf.int64
+        np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), np.eye(3))
+
     @pytest.mark.parametrize("fmt", ["csr", "csc", "coo"])
     def test_roundtrip(self, fmt):
         dense = np.array([[0, 2, 0], [1, 0, 3]], dtype=np.int64)

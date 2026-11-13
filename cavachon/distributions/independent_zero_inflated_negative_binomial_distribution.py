@@ -51,12 +51,13 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
 
         """
 
-        if isinstance(params, tf.Tensor):
-            logits, mean, dispersion = tf.split(params, 3, axis=-1)
-        elif isinstance(params, Mapping):
+        if isinstance(params, Mapping):
             logits = params.get("logits")
             mean = params.get("mean")
             dispersion = params.get("dispersion")
+        else:
+            params = tf.convert_to_tensor(params)
+            logits, mean, dispersion = tf.split(params, 3, axis=-1)
 
         probs = tf.math.sigmoid(logits)
         probs = tf.stack([probs, 1 - probs], axis=-1)

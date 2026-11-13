@@ -39,7 +39,8 @@ class AnnDataUtils:
             )
 
         ref_adata = mdata[ref_mod]
-        for group in ref_adata.obs[group_col].unique():
+        # observations with missing group labels are not pooled
+        for group in ref_adata.obs[group_col].dropna().unique():
             ref_indices = ref_adata.obs[ref_adata.obs[group_col] == group].index
             for mod in mdata.mod.keys():
                 adata = mdata[mod]
@@ -108,7 +109,7 @@ class AnnDataUtils:
 
         selected_indices = indices.loc[obs_index, "IntegerIndex"].values
 
-        selected_adata = AnnData(X=matrix[selected_indices], dtype=np.float32)
+        selected_adata = AnnData(X=matrix[selected_indices].astype(np.float32))
         selected_adata.obs = obs_df.iloc[selected_indices]
         selected_adata.var = var_df
 

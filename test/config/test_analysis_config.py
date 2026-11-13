@@ -122,14 +122,12 @@ def test_hierarchical_defaults():
     assert AnalysisHierarchicalDifferentialAnalysisConfig().donor_components is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: hierarchical DA has no use_cluster default (''), unlike "
-    "differential_analysis ('cluster_<component>'); '' is used as an obs column",
-)
+# regression: hierarchical DA use_cluster defaults to cluster_<component>
 def test_hierarchical_use_cluster_default_matches_differential():
     h = AnalysisHierarchicalDifferentialAnalysisConfig(modality="RNA", component="RNA")
     assert h.use_cluster == "cluster_RNA"
+    explicit = AnalysisHierarchicalDifferentialAnalysisConfig(component="RNA", use_cluster="ct")
+    assert explicit.use_cluster == "ct"
 
 
 # ---------------------------------------------------------------- enrichment

@@ -60,11 +60,7 @@ def test_get_config_contains_init_args():
         assert cfg[k] == v
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: multivariate_normal_diag_sampler.py:11 __init__ takes no **kwargs, so Keras from_config (which passes "
-    "trainable/dtype from get_config) raises TypeError; breaks clone_model / model save-load",
-)
 def test_from_config_round_trip():
+    # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
     clone = Sampler.from_config(Sampler(**dict(stochastic=False, name="smp")).get_config())
     assert float(clone.stochastic) == 0.0 and clone.name == "smp"

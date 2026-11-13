@@ -98,9 +98,12 @@ def test_kl_annealing_ratio_parsed_as_tuple():
         ComponentConfig(name="c", kl_annealing_ratio=[0.5, 0.5])
 
 
-def test_model_validate_mutates_input_dict():
-    # Documents that the before-validator pops ``modalities`` from the
-    # caller's dict (see ApplicationConfig.yaml_raw test).
+# regression: the before-validator no longer pops ``modalities`` from the
+# caller's dict, so validating the same dict twice gives the same result.
+def test_model_validate_does_not_mutate_input_dict():
     data = {"name": "c", "modalities": [{"name": "RNA"}]}
-    ComponentConfig.model_validate(data)
-    assert "modalities" not in data
+    first = ComponentConfig.model_validate(data)
+    assert data == {"name": "c", "modalities": [{"name": "RNA"}]}
+    second = ComponentConfig.model_validate(data)
+    assert first == second
+    assert second.modality_names == ["RNA"]

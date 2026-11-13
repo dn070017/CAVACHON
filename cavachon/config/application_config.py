@@ -1,4 +1,5 @@
 import os
+import warnings
 from collections import OrderedDict
 from itertools import chain
 from typing import Any, Dict, List
@@ -62,6 +63,23 @@ class ApplicationConfig(BaseConfigModel):
         with open(filename, "r") as f:
             yaml_raw: Dict[str, Any] = yaml.load(f, Loader=yaml.FullLoader)
 
+        # --- unknown top-level fields (likely typos) ---
+        known_fields = (
+            Constants.CONFIG_FIELD_IO,
+            Constants.CONFIG_FIELD_MODALITY,
+            Constants.CONFIG_FIELD_SAMPLE,
+            Constants.CONFIG_FIELD_MODEL,
+            Constants.CONFIG_FIELD_ANALYSIS,
+        )
+        for key in yaml_raw:
+            if key not in known_fields:
+                warnings.warn(
+                    f"Unexpected field {key} in {cls.__name__}. "
+                    f"Please check if there is any unintentional typo. "
+                    f"Some fields might be set to default unexpectedly.",
+                    RuntimeWarning,
+                )
+
         # --- io ---
         io_data = yaml_raw.get(Constants.CONFIG_FIELD_IO, {})
 
@@ -71,6 +89,10 @@ class ApplicationConfig(BaseConfigModel):
         for m in modality_raw:
             m_copy = dict(m)
             mname = GeneralUtils.tensorflow_compatible_str(m_copy.get("name", ""))
+            if mname in modality_dict:
+                raise ValueError(
+                    f"Duplicate modality name {mname} in config file {filename}."
+                )
             modality_dict[mname] = m_copy
 
         # --- sample: list → OrderedDict ---
@@ -124,7 +146,8 @@ class ApplicationConfig(BaseConfigModel):
                         f"No configuration for modality {mname} "
                         f"of sample {sname} in the config file {self.filename}."
                     )
-                self.modality[mname].samples.append(sname)
+                if sname not in self.modality[mname].samples:
+                    self.modality[mname].samples.append(sname)
 
         # 5. Cross-validate model components ↔ modalities, inject dist
         component_by_name: Dict[str, ComponentConfig] = {}
@@ -136,7 +159,21 @@ class ApplicationConfig(BaseConfigModel):
                     )
                 modality_dist = self.modality[mname].dist
                 comp.distribution_names[mname] = modality_dist
+            if comp.name in component_by_name:
+                raise ValueError(
+                    f"Duplicate component name '{comp.name}' in the config "
+                    f"of components."
+                )
             component_by_name[comp.name] = comp
+
+        # 5b. Parents in conditioned_on_z(_hat) must be known components
+        for comp in component_by_name.values():
+            for parent in chain(comp.conditioned_on_z, comp.conditioned_on_z_hat):
+                if parent not in component_by_name:
+                    raise ValueError(
+                        f"'{parent}' (conditioned on by component "
+                        f"'{comp.name}') is not in the config of components."
+                    )
 
         # 6. Topological sort components
         comp_configs_as_dicts = {
@@ -183,10 +220,12 @@ class ApplicationConfig(BaseConfigModel):
                 )
 
         # 8. Validate analysis entries
-        # 7a. clustering, differential_analysis, conditional_attribution_scores
+        # 7a. clustering, differential_analysis,
+        # hierarchical_differential_analysis, conditional_attribution_scores
         for entry in chain(
             self.analysis.clustering,
             self.analysis.differential_analysis,
+            self.analysis.hierarchical_differential_analysis,
             self.analysis.conditional_attribution_scores,
         ):
             modality = entry.modality
@@ -232,6 +271,15 @@ class ApplicationConfig(BaseConfigModel):
                 if wrt not in comp_map:
                     raise KeyError(
                         f"'{wrt}' (with_respect_to) is not in the config "
+                        f"of components."
+                    )
+
+        # 7c'. hierarchical_differential_analysis donor_components check
+        for hier in self.analysis.hierarchical_differential_analysis:
+            for donor in hier.donor_components or []:
+                if donor not in comp_map:
+                    raise KeyError(
+                        f"'{donor}' (donor_components) is not in the config "
                         f"of components."
                     )
 

@@ -319,12 +319,7 @@ def test_passed_batch_effect_encoders_updated_inplace(sparse_counts, mock_tensor
     assert encoders == {"rna": {"batch": encoder}}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: n_vars_batch_effect is derived from the encoder dict, not from the returned "
-    "tensor width; e.g. when utils returns a zero column with no encoder (missing obs "
-    "column) n_vars is 0 while the tensor has width 1",
-)
+# regression: n_vars_batch_effect was 0 for a width-1 tensor when no encoder was returned
 def test_n_vars_matches_tensor_width_when_no_encoder_returned(sparse_counts, mock_tensor_utils):
     mock_tensor_utils.create_tensor_from_df.side_effect = batch_effect_side_effect(
         lambda df: tf.zeros((len(df), 1)), {}
@@ -335,11 +330,7 @@ def test_n_vars_matches_tensor_width_when_no_encoder_returned(sparse_counts, moc
     assert dl.n_vars_batch_effect["rna"] == width
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: n_vars_batch_effect counts every encoder in the reused encoder dict, "
-    "including encoders for columns that are not requested this time",
-)
+# regression: stale encoders of unrequested columns were counted in n_vars_batch_effect
 def test_n_vars_ignores_stale_encoders_for_unrequested_columns(sparse_counts, mock_tensor_utils):
     mock_tensor_utils.create_tensor_from_df.side_effect = batch_effect_side_effect(
         lambda df: tf.constant(df[["depth"]].to_numpy(np.float32)), {"depth": None}
@@ -350,13 +341,13 @@ def test_n_vars_ignores_stale_encoders_for_unrequested_columns(sparse_counts, mo
     width = dl.dataset.element_spec["rna_batch_effect"].shape[-1]
     assert width == 1
     assert dl.n_vars_batch_effect["rna"] == width
+    # only the requested column is tracked in the flat mapping; the reused
+    # encoder is kept in the nested dict for later loaders
+    assert dl.batch_effect_encoder == {"rna_depth": None}
+    assert "batch" in dl.batch_effect_encoders["rna"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: n_vars_batch_effect trusts the encoder's class count even when the returned "
-    "tensor is narrower (e.g. utils treats the column as continuous on a subset)",
-)
+# regression: n_vars_batch_effect used the encoder class count instead of the tensor width
 def test_n_vars_matches_tensor_width_with_reused_categorical_encoder(
     sparse_counts, mock_tensor_utils
 ):
@@ -371,11 +362,7 @@ def test_n_vars_matches_tensor_width_with_reused_categorical_encoder(
     assert dl.n_vars_batch_effect["rna"] == width
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: calling create_dataset() again accumulates n_vars_batch_effect "
-    "(setdefault + +=) so it doubles",
-)
+# regression: calling create_dataset() again doubled n_vars_batch_effect
 def test_create_dataset_idempotent_n_vars(sparse_counts, mock_tensor_utils):
     mock_tensor_utils.create_tensor_from_df.side_effect = batch_effect_side_effect(
         one_hot_batch, {"batch": fitted_encoder("ab")}
@@ -384,6 +371,18 @@ def test_create_dataset_idempotent_n_vars(sparse_counts, mock_tensor_utils):
                     batch_effect_colnames={"rna": ["batch"]}, batch_effect_encoders={})
     dl.create_dataset({"rna": ["batch"]})
     assert dl.n_vars_batch_effect["rna"] == 2
+
+
+def test_create_dataset_again_resets_bookkeeping(sparse_counts, mock_tensor_utils):
+    mock_tensor_utils.create_tensor_from_df.side_effect = batch_effect_side_effect(
+        one_hot_batch, {"batch": fitted_encoder("ab")}
+    )
+    dl = DataLoader(make_mdata({"rna": make_adata(sparse_counts)}),
+                    batch_effect_colnames={"rna": ["batch"]}, batch_effect_encoders={})
+    dl.create_dataset({"rna": []})
+    assert dl.n_vars_batch_effect == {"rna": 1}
+    assert dl.batch_effect_encoder == {}
+    assert dl.dataset.element_spec["rna_batch_effect"].shape.as_list() == [1]
 
 
 # --------------------------------------------------------------------------

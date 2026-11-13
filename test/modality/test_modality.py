@@ -93,11 +93,7 @@ def test_user_uns_is_merged(X):
     assert m.uns["cavachon"]["name"] == "m"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: the caller's `uns` dict is mutated in place (cavachon config is injected "
-    "into it via uns.update)",
-)
+# regression: the caller's `uns` dict was mutated in place
 def test_user_uns_dict_not_mutated(X):
     uns = {"other": 1}
     Modality(X, name="m", modality_type="rna", uns=uns)
@@ -120,14 +116,15 @@ def test_from_anndata_preserves_annotations(X, obs):
     np.testing.assert_array_equal(m.X.toarray(), X)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: wrapping an AnnData mutates the input's .uns (X.uns.update(uns))",
-)
+# regression: wrapping an AnnData wrote into the input's .uns
 def test_from_anndata_does_not_mutate_input(X, obs):
     adata = ad.AnnData(X=X.copy(), obs=obs.copy())
-    Modality(adata, name="m", modality_type="rna")
-    assert "cavachon" not in adata.uns
+    adata.uns["other"] = 1
+    m = Modality(adata, name="m", modality_type="rna")
+    assert dict(adata.uns) == {"other": 1}
+    # the existing uns entries are still carried over to the Modality
+    assert m.uns["other"] == 1
+    assert m.uns["cavachon"]["name"] == "m"
 
 
 def test_write_h5ad_delegates_with_cavachon_config(monkeypatch, X, obs):

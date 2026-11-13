@@ -39,7 +39,7 @@ class Binarize(tf.keras.layers.Layer):
         if threshold > 1.0 or threshold < 0.0:
             message = "".join(
                 (
-                    f"Invalid range for threshold in {self.__class__.__name___} ",
+                    f"Invalid range for threshold in {self.__class__.__name__} ",
                     f"({self.name}). Expected 0 ≤ threshold ≤ 1, get {threshold}. Set to 1.0.",
                 )
             )

@@ -104,8 +104,7 @@ def test_training_and_dataset_extracted_from_model(base_config, load_config):
 
 def test_filters_collected_per_modality(base_config, load_config):
     base_config["modalities"][0]["filters"] = [{"step": "FilterCells", "min_genes": 1}]
-    with pytest.warns(RuntimeWarning):
-        cfg = load_config(base_config)
+    cfg = load_config(base_config)
     assert [f.step for f in cfg.filter["RNA"]] == ["FilterCells"]
     assert cfg.filter["ATAC"] == []
 
@@ -126,11 +125,7 @@ def test_sample_with_unknown_modality_raises(base_config, load_config):
         load_config(base_config)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: samples listed under a modality AND in samples are "
-    "appended again -> duplicates (data read twice)",
-)
+# regression: samples already listed under a modality are not appended twice
 def test_modality_samples_not_duplicated(base_config, load_config):
     base_config["modalities"][0]["samples"] = ["s1"]
     base_config["samples"] = [_sample("s1")]
@@ -138,11 +133,7 @@ def test_modality_samples_not_duplicated(base_config, load_config):
     assert cfg.modality["RNA"].samples == ["s1"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: cross-validation is not idempotent; re-validating a dumped "
-    "config duplicates modality.samples",
-)
+# regression: re-validating a dumped config does not duplicate samples
 def test_revalidation_round_trip_idempotent(base_config, load_config):
     base_config["samples"] = [_sample("s1")]
     cfg = load_config(base_config)
@@ -204,50 +195,31 @@ def test_dependency_lists_passed_to_order_components(base_config, load_config, g
     assert passed["RNA"]["conditioned_on_z_hat"] == ["ATAC"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: config does not check that conditioned_on_z/_z_hat names "
-    "exist; unknown parents reach order_components unvalidated (which then "
-    "fails with a cryptic 'None cannot be a node')",
-)
-def test_unknown_parent_component_rejected_by_config(base_config, load_config):
-    base_config["model"]["components"][1]["conditioned_on_z_hat"] = ["Ghost"]
-    with pytest.raises((KeyError, ValueError), match="Ghost"):
+# regression: unknown parents are rejected before order_components
+@pytest.mark.parametrize("field", ["conditioned_on_z", "conditioned_on_z_hat"])
+def test_unknown_parent_component_rejected_by_config(
+    base_config, load_config, general_utils, field
+):
+    base_config["model"]["components"][1][field] = ["Ghost"]
+    with pytest.raises(ValueError, match=r"'Ghost' \(conditioned on by component 'RNA'\)"):
         load_config(base_config)
+    general_utils.order_components.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: duplicate component names silently drop the earlier component",
-)
+# regression: duplicate component names raise
 def test_duplicate_component_names_rejected(base_config, load_config):
     base_config["model"]["components"] = [
         {"name": "C", "modalities": [{"name": "RNA"}]},
         {"name": "C", "modalities": [{"name": "ATAC"}]},
     ]
-    with pytest.raises((KeyError, ValueError)):
+    with pytest.raises(ValueError, match="Duplicate component name 'C'"):
         load_config(base_config)
 
 
-def test_duplicate_component_names_current_behaviour(base_config, load_config, general_utils):
-    base_config["model"]["components"] = [
-        {"name": "C", "modalities": [{"name": "RNA"}]},
-        {"name": "C", "modalities": [{"name": "ATAC"}]},
-    ]
-    cfg = load_config(base_config)
-    # only one entry ever reaches order_components
-    (passed,), _ = general_utils.order_components.call_args
-    assert list(passed) == ["C"]
-    assert [c.modality_names for c in cfg.components] == [["ATAC"]]
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: duplicate modality names silently overwrite the earlier entry",
-)
+# regression: duplicate modality names raise
 def test_duplicate_modality_names_rejected(base_config, load_config):
     base_config["modalities"].append({"name": "RNA", "type": "atac"})
-    with pytest.raises((KeyError, ValueError)):
+    with pytest.raises(ValueError, match="Duplicate modality name RNA"):
         load_config(base_config)
 
 
@@ -305,26 +277,20 @@ def test_components_are_same_objects_as_model_components(base_config, load_confi
 
 
 # ---------------------------------------------------------------- yaml_raw / typos
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: yaml_raw is mutated by validators (components lose "
-    "'modalities', training gains 'optimizer')",
-)
+# regression: validators no longer mutate yaml_raw
 def test_yaml_raw_is_unmodified(base_config, load_config):
+    base_config["model"]["training"] = {"n_kl_annealing_epochs": 3}  # no optimizer
     original = copy.deepcopy(base_config)
     cfg = load_config(base_config)
     assert cfg.yaml_raw == original
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: unknown top-level YAML keys (e.g. typo 'sample:') are "
-    "silently dropped, without the RuntimeWarning nested models emit",
-)
+# regression: unknown top-level keys warn
 def test_unknown_top_level_key_warns(base_config, load_config):
     base_config["sample"] = [_sample("s1")]  # typo for 'samples'
-    with pytest.warns(RuntimeWarning, match="sample"):
-        load_config(base_config)
+    with pytest.warns(RuntimeWarning, match="Unexpected field sample in ApplicationConfig"):
+        cfg = load_config(base_config)
+    assert len(cfg.sample) == 0
 
 
 def test_unknown_nested_key_warns(base_config, load_config):
@@ -481,19 +447,32 @@ def test_source_gate_satisfied_by_config(base_config, load_config, fake_os):
     fake_os.isdir.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: hierarchical_differential_analysis entries are not "
-    "cross-validated (unknown modality/component/donor_components accepted)",
+# regression: hierarchical DA entries are cross-validated
+@pytest.mark.parametrize(
+    "entry, message",
+    [
+        ({"modality": "ATAC", "component": "RNA"}, "'ATAC' is not in the config of component 'RNA'"),
+        ({"modality": "RNA", "component": "YY"}, "'RNA' is not in the config of component 'YY'"),
+        (
+            {"modality": "RNA", "component": "RNA", "donor_components": ["QQ"]},
+            "'QQ' \\(donor_components\\)",
+        ),
+    ],
 )
-def test_hierarchical_entries_cross_validated(base_config, load_config):
+def test_hierarchical_entries_cross_validated(base_config, load_config, entry, message):
+    base_config["analysis"] = {"hierarchical_differential_analysis": [entry]}
+    with pytest.raises(KeyError, match=message):
+        load_config(base_config)
+
+
+def test_hierarchical_valid_entry_passes(base_config, load_config):
     base_config["analysis"] = {
         "hierarchical_differential_analysis": [
-            {"modality": "XX", "component": "YY", "donor_components": ["QQ"]}
+            {"modality": "RNA", "component": "RNA", "donor_components": ["ATAC", "RNA"]}
         ]
     }
-    with pytest.raises((KeyError, ValueError)):
-        load_config(base_config)
+    cfg = load_config(base_config)
+    assert cfg.analysis.hierarchical_differential_analysis[0].use_cluster == "cluster_RNA"
 
 
 def test_direct_construction_requires_metadata():
