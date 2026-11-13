@@ -22,7 +22,6 @@ import scipy.sparse as sp
 import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 
-from cavachon.dataloader import DataLoader
 from cavachon.dataloader.modifiers import (
     IndependentBernoulliDataModifier,
     IndependentZeroInflatedNegativeBinomialDataModifier,

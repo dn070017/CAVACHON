@@ -225,7 +225,7 @@ class FakeModel:
         for name, comp in self.components.items():
             snap[name] = dict(
                 trainable=comp.trainable,
-                layers={l.name: l.trainable for l in comp.all_layers()},
+                layers={layer.name: layer.trainable for layer in comp.all_layers()},
                 progressive=comp.progressive,
                 standard_kl=self._standard_kl_weights[name].state,
                 gmm_kl=self._gmm_kl_weights[name].state,

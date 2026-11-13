@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from cavachon.environment.constants import Constants
 from cavachon.scheduler.sequential_training_scheduler import STANDARD_KL_WEIGHT
-from test.scheduler.conftest import FakeScaler, FakeVar, make_config, make_scheduler
+from test.scheduler.conftest import FakeVar, make_config, make_scheduler
 
 STD = f"A_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
 GMM = f"A_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"

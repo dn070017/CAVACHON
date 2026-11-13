@@ -3,7 +3,7 @@ trainable-flag helpers of SequentialTrainingScheduler."""
 
 import pytest
 
-from test.scheduler.conftest import FakeScaler, FakeVar, make_config, make_scheduler
+from test.scheduler.conftest import FakeVar, make_config, make_scheduler
 
 
 # ---------------------------------------------------------------------------
@@ -253,9 +253,9 @@ class TestSetupComponentAndLossWeights:
 
         a, b = model.components["A"], model.components["B"]
         assert a.trainable is False
-        assert all(l.trainable is False for l in a.all_layers())  # incl. nested
+        assert all(layer.trainable is False for layer in a.all_layers())  # incl. nested
         assert b.trainable is True
-        assert all(l.trainable is True for l in b.all_layers())
+        assert all(layer.trainable is True for layer in b.all_layers())
 
         assert model._gmm_kl_weights["A"].state == ("pin", 0.0)
         assert model._data_loss_weights["A"]["rna"].state == ("pin", 0.0)

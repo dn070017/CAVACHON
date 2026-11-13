@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from cavachon.environment.constants import Constants
 
 from .conftest import N_LATENT, Z_HAT_SHIFT, make_batch, make_component
 

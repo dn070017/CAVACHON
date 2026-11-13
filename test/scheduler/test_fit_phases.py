@@ -594,6 +594,8 @@ class TestCumulativeEpochs:
         model.fit_calls.clear()
         s.fit(dataset, epochs=5)
         second = [callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls]
-        key = lambda v: (v["cumulative_offset"], v["cumulative_total"], v["phase_number"])
+        def key(v):
+            return (v["cumulative_offset"], v["cumulative_total"], v["phase_number"])
+
         assert [key(v) for v in first] == [key(v) for v in second]
         assert model.fit_calls[1].state["B"]["progressive"] == (0.0, 9.0)

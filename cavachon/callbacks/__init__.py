@@ -1,5 +1,5 @@
-from .periodic_tsne_callback import PeriodicTSNECallback
-from .verbose_callback import VerboseCallback
-from .annealing_callback import AnnealingCallback
-from .optimizer_state_callback import OptimizerStateCallback
-from .early_stopping_callback import EarlyStoppingCallback
+from .periodic_tsne_callback import PeriodicTSNECallback as PeriodicTSNECallback
+from .verbose_callback import VerboseCallback as VerboseCallback
+from .annealing_callback import AnnealingCallback as AnnealingCallback
+from .optimizer_state_callback import OptimizerStateCallback as OptimizerStateCallback
+from .early_stopping_callback import EarlyStoppingCallback as EarlyStoppingCallback

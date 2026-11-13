@@ -18,13 +18,9 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from cavachon.environment.constants import Constants
 from test.model.conftest import (
     FakeConfig,
     FakeGMMDensity,
-    FakeGMMKL,
-    FakeNLL,
-    FakeStandardKL,
     FakeToDense,
     PlainLoss,
     make_batch,

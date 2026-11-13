@@ -6,7 +6,6 @@ model.py dependencies are patched by the autouse ``fakes`` fixture.
 """
 
 import numpy as np
-import pytest
 import tensorflow as tf
 
 import cavachon.model.model as model_module

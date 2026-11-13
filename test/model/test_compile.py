@@ -6,9 +6,7 @@ GMMDensityLoss (-> FakeGMMDensity), ProgressiveScaler (-> FakeScaler),
 Component (-> FakeComponent), GeneralUtils. ComponentConfig -> FakeConfig.
 """
 
-import warnings
 
-import numpy as np
 import pytest
 import tensorflow as tf
 

@@ -1,7 +1,6 @@
 import operator
 from typing import Callable, Dict, Literal
 
-import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 

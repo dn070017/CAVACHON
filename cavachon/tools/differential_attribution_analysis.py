@@ -1,6 +1,6 @@
 import gc
 import warnings
-from typing import List, Mapping, Optional, Sequence, Union, cast
+from typing import List, Mapping, Optional, Sequence, Union
 
 import muon as mu
 import numpy as np

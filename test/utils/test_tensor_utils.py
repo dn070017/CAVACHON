@@ -92,23 +92,23 @@ class TestCreateBackboneLayers:
         seq = TensorUtils.create_backbone_layers()
         assert isinstance(seq, tf.keras.Sequential)
         assert seq.name == "backbone_network"
-        dense = [l for l in seq.layers if isinstance(l, tf.keras.layers.Dense)]
+        dense = [layer for layer in seq.layers if isinstance(layer, tf.keras.layers.Dense)]
         assert [d.units for d in dense] == [32, 64]
         assert all(d.get_config()["activation"] in ("swish", "silu") for d in dense)
 
     def test_alternating_dense_norm(self):
         seq = TensorUtils.create_backbone_layers(n_layers=3, base_n_neurons=2, max_n_neurons=100)
-        kinds = [type(l).__name__ for l in seq.layers]
+        kinds = [type(layer).__name__ for layer in seq.layers]
         assert kinds == ["Dense", "LayerNormalization"] * 3
-        assert [l.units for l in seq.layers[::2]] == [2, 4, 8]
+        assert [layer.units for layer in seq.layers[::2]] == [2, 4, 8]
 
     def test_max_neurons_caps(self):
         seq = TensorUtils.create_backbone_layers(n_layers=4, base_n_neurons=8, max_n_neurons=20, rate=3)
-        assert [l.units for l in seq.layers[::2]] == [8, 20, 20, 20]
+        assert [layer.units for layer in seq.layers[::2]] == [8, 20, 20, 20]
 
     def test_layer_names_unique_and_prefixed(self):
         seq = TensorUtils.create_backbone_layers(n_layers=2, name="enc")
-        names = [l.name for l in seq.layers]
+        names = [layer.name for layer in seq.layers]
         assert len(set(names)) == len(names)
         assert all(n.startswith("enc_") for n in names)
 
@@ -124,7 +124,7 @@ class TestCreateBackboneLayers:
         seq = TensorUtils.create_backbone_layers(
             n_layers=3, base_n_neurons=2, max_n_neurons=100, reverse=True
         )
-        dense_units = [l.units for l in seq.layers if isinstance(l, tf.keras.layers.Dense)]
+        dense_units = [layer.units for layer in seq.layers if isinstance(layer, tf.keras.layers.Dense)]
         assert dense_units == [8, 4, 2]
         assert seq(tf.zeros((1, 3))).shape == (1, 2)
 
@@ -133,19 +133,19 @@ class TestCreateBackboneLayers:
         # list, starting the network with a norm on the raw input and ending
         # it with a bare Dense
         seq = TensorUtils.create_backbone_layers(n_layers=2, reverse=True)
-        kinds = [type(l).__name__ for l in seq.layers]
+        kinds = [type(layer).__name__ for layer in seq.layers]
         assert kinds == ["Dense", "LayerNormalization"] * 2
 
     def test_reverse_layer_names_follow_network_order(self):
         seq = TensorUtils.create_backbone_layers(
             n_layers=3, base_n_neurons=2, max_n_neurons=100, reverse=True, name="b"
         )
-        assert [l.name for l in seq.layers] == [
+        assert [layer.name for layer in seq.layers] == [
             "b_dense_0", "b_layer_norm_0",
             "b_dense_1", "b_layer_norm_1",
             "b_dense_2", "b_layer_norm_2",
         ]
-        assert [l.units for l in seq.layers[::2]] == [8, 4, 2]
+        assert [layer.units for layer in seq.layers[::2]] == [8, 4, 2]
 
 
 class TestCreateOneHotEncodedTensor:

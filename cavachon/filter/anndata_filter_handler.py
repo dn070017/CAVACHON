@@ -1,8 +1,6 @@
 from collections.abc import Callable
-from typing import Any, Dict, List, Mapping
+from typing import Dict, List, Mapping
 
-from collections.abc import Callable
-from typing import Dict, List
 
 import anndata
 
