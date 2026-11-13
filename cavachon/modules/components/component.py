@@ -495,7 +495,7 @@ class Component(tf.keras.Model):
             n_latent_dims=n_latent_dims,
             is_conditioned_on_z=is_conditioned_on_z,
             is_conditioned_on_z_hat=is_conditioned_on_z_hat,
-            progressive_step=progressive_iterations,
+            progressive_iterations=progressive_iterations,
             use_bias=kwargs.get("use_bias", False),
             name=name,
         )

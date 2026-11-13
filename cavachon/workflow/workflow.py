@@ -246,9 +246,9 @@ class Workflow:
             learning_rate,
             early_stopping,
             self.dataloader.batch_size,
-            self.config.io.outdir,
-            self.batch_effect_colnames,
-            self.distribution_names,
+            outdir=self.config.io.outdir,
+            distribution_names=self.distribution_names,
+            batch_effect_colnames=self.batch_effect_colnames,
         )
 
         return

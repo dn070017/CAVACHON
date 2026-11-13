@@ -63,8 +63,12 @@ class HierarchicalEncoder(tf.keras.Model):
         name: str, optional:
             Name for the tensorflow model. Defaults to
             'hierarchical_encoder'.
+
+        kwargs: Mapping[str, Any]
+            additional parameters for tf.keras.Model (e.g. trainable,
+            dtype).
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)

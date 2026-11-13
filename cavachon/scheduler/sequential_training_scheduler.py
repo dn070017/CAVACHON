@@ -231,10 +231,16 @@ class SequentialTrainingScheduler:
             )  # Shape: (n_samples,)
 
             # 3. Probabilistic selection: P(x) ∝ D(x)²
-            # Points far from existing centers are more likely to be chosen
-            logits = tf.math.log(
-                tf.expand_dims(min_distances_sq, 0)
-            )  # Shape: (1, n_samples)
+            # Points far from existing centers are more likely to be chosen.
+            # If every point coincides with a center (e.g. a collapsed
+            # latent space with fewer distinct points than clusters), all
+            # D(x)² are 0, so fall back to choosing uniformly.
+            weights = tf.cond(
+                tf.reduce_sum(min_distances_sq) > 0,
+                lambda: min_distances_sq,
+                lambda: tf.ones_like(min_distances_sq),
+            )
+            logits = tf.math.log(tf.expand_dims(weights, 0))  # Shape: (1, n_samples)
             next_idx = tf.random.categorical(logits, num_samples=1, seed=seed)[0, 0]
 
             centers.append(tf.gather(X, next_idx))
@@ -726,6 +732,10 @@ class SequentialTrainingScheduler:
 
         kwargs_prog = deepcopy(kwargs)
         kwargs_prog.pop("epochs", None)
+        # callbacks are merged into callbacks_prog and verbose is set
+        # explicitly, so they must not be passed twice to fit.
+        kwargs_prog.pop("callbacks", None)
+        kwargs_prog.pop("verbose", None)
         callbacks_prog = deepcopy(kwargs.get("callbacks", []))
 
         callbacks_prog.append(
@@ -860,6 +870,10 @@ class SequentialTrainingScheduler:
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
+        # callbacks are merged into callbacks above and verbose is set
+        # explicitly, so they must not be passed twice to fit.
+        kwargs_copy.pop("callbacks", None)
+        kwargs_copy.pop("verbose", None)
         history.append(
             self.model.fit(
                 x,
@@ -951,6 +965,10 @@ class SequentialTrainingScheduler:
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
+        # callbacks are merged into callbacks above and verbose is set
+        # explicitly, so they must not be passed twice to fit.
+        kwargs_copy.pop("callbacks", None)
+        kwargs_copy.pop("verbose", None)
         history.append(
             self.model.fit(
                 x,
@@ -1059,6 +1077,10 @@ class SequentialTrainingScheduler:
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
+        # callbacks are merged into callbacks above and verbose is set
+        # explicitly, so they must not be passed twice to fit.
+        kwargs_copy.pop("callbacks", None)
+        kwargs_copy.pop("verbose", None)
         history.append(
             self.model.fit(
                 x,
@@ -1129,6 +1151,10 @@ class SequentialTrainingScheduler:
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
+        # callbacks are merged into callbacks above and verbose is set
+        # explicitly, so they must not be passed twice to fit.
+        kwargs_copy.pop("callbacks", None)
+        kwargs_copy.pop("verbose", None)
         history.append(
             self.model.fit(
                 x,

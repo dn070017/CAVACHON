@@ -56,7 +56,7 @@ class DecoderDataParameterizer(tf.keras.Model):
         )
 
         self.backbone_network = TensorUtils.create_backbone_layers(
-            n_layers=2,
+            n_layers=n_layers,
             base_n_neurons=32,
             activation="swish",
             name=f"{self.name}_{Constants.MODULE_BACKBONE}",
