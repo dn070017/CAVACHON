@@ -28,8 +28,11 @@ Packages that import from exactly 4 other cavachon packages were added later, un
 | scheduler | `test/scheduler` | 72 | 8 | 96% |
 | modules (base, parameterizers, preprocessors) | `test/modules/{base,parameterizers,preprocessors}` | 80 | 7 | 99% (modules overall) |
 | modules (components) | `test/modules/components` | 93 | 11 | (included above) |
-| workflow (`setup_train_scheduler` only) | `test/workflow` | 2 | 0 | not measured |
-| **Whole suite (latest)** | | **1255** | **32** | |
+| model | `test/model` | 91 | 6 | 99% |
+| workflow | `test/workflow` | 86 | 3 | 100% |
+| **Whole suite (latest)** | | **1430** | **41** | |
+
+`tools` is the only package without tests; it was deferred on purpose.
 
 ### Isolation (mocking policy)
 
@@ -341,6 +344,50 @@ Code inside the package stays real. For example, `Component` tests may use the r
   - it freezes the model and relies on the scheduler to unfreeze it;
   - loss patterns match anywhere in the name, not as a prefix.
 - ✅ Fixed: `Component.train_step` didn't drop NaN gradients, unlike `Model.train_step`. It now passes them through `TensorUtils.remove_nan_gradients`.
+
+## Model and workflow
+
+**Rules:** the same isolation rules apply.
+
+- **model:**
+  - `Component` is replaced by a tiny real Keras model with deterministic z / z_hat, so the parent → child wiring can be checked.
+  - The losses, `ProgressiveScaler`, `DataLoader`, `GeneralUtils` and `TensorUtils` are fakes.
+  - A real SGD optimizer checks `train_step` against a hand-computed update.
+- **workflow:**
+  - All 16 cavachon names it imports are mocked, including every `tools` class.
+  - `os.makedirs`, `read_h5ad` and `to_csv` are recorders.
+  - A few tests read other packages' constructor signatures with `inspect`, to catch argument-order mistakes like the earlier M5 swap.
+
+**Checked and correct:**
+- **Wiring:** parent z / z_hat reach the right children, including grandchildren, and multiple parents are concatenated in config order.
+- **Loss weighting:** each loss is counted once, and the per-loss metrics are unweighted.
+- **Gradients:** the output of `remove_nan_gradients` is what the optimizer applies, and frozen components are excluded.
+- **`predict`:** rows stay in order, and each output is written to the correct modality's `.obsm`.
+- **Argument passing:** `batch_effect_colnames` and `distribution_names` are passed correctly throughout the workflow.
+
+### Bugs (strict xfails)
+
+| # | Location | Issue | Production impact |
+|---|---|---|---|
+| W1 | `workflow.py:572-596` | **Differential attribution uses every DEG/HDEG table in the folder**, including tables from other components and modalities, and runs them through its own component and `use_cluster`. | **Yes**: silently wrong attribution output when 2+ DEG/HDEG entries for different components exist |
+| MD3 | `model.py:389` (+ `self(data)` in `train_step`) | Batch keys aren't filtered to the model's inputs. Keras matches dict inputs by position, so a MuData with an unused modality feeds e.g. `atac_matrix` in as `rna_matrix`. | Yes, when the MuData carries a modality no component uses ✅ **Fixed:** `Model.select_inputs` restricts each batch to the model's input names in `predict` and `train_step`. |
+| W7 | `workflow.py:377-390` | A `color_by` of the form `<obsm_key>/<index>` puts a `/` in the embedding filename, so the write fails before the h5mu is saved. | Only with that `color_by` form |
+| W2 | `workflow.py:609-629`, `441-443` | Group labels from DEG tables are converted to `str`, but the obs column isn't, so integer-coded or zero-padded labels give empty groups. | Only with non-string annotations |
+| MD1 | `model.py:645-654` | A component compiled with only the standard KL never trains it: y_true/y_pred are stored under the GMM key. | No (the scheduler always passes both) |
+| MD2 | `model.py:414` | `super.__predict__(...)` should be `super().predict`, so `predict` on non-MuData input always raises. | No (the workflow passes MuData) ✅ **Fixed:** the call is now `super().predict(...)`, with the inputs filtered too. |
+| MD4 | `model.py:940-952`, `1090-1107` | `hierarchical_encode(strict=False)` still concatenates `None` for a missing parent. | No (analysis API only) |
+| MD5 | `model.py:362-366` | `predict_x` isn't reset per modality, so x_parameters are computed for `save_x=False` modalities. Whether it happens depends on modality order. | Wasted memory only |
+| MD6–MD8 | `model.py:471-497`, `734-736`, `462/522` | A weight of 0 still creates the loss; its scaler metric divides by 0 and gives NaN; `compile` pops entries from the caller's `loss_weights`. | No |
+| W3–W6 | `workflow.py:426-502` | Smaller workflow bugs: <ul><li>DEG filenames keep spaces;</li><li>a `/` in a label crashes pairwise DEG;</li><li>single-pair DEG results on different annotations overwrite each other;</li><li>empty DEG/HDEG directories are always created, which lets a later enrichment-only config pass validation.</li></ul> | Cosmetic / edge cases ✅ **Fixed:**<ul><li>no spaces in filenames;</li><li>`GroupA`/`GroupB` are taken from the tool instead of re-parsed from `A/B` keys;</li><li>single-pair results are keyed by (modality, component, `use_cluster`) like pairwise mode, so they're no longer overwritten. Filenames change from `rna_comp_a_b_a_b.tsv` to `rna_comp_<use_cluster>_a_b.tsv`;</li><li>the output folders are only created when that analysis is configured.</li></ul> |
+
+### Worth a look (not marked as bugs)
+- `train_model` (`workflow.py:308`) calls `self.model.compile()` **inside** the per-component freeze loop, so it compiles once per component. This looks like an indentation slip. It's harmless but wasteful.
+- `load_model_weights` swallows OSError with only a warning. With `load_weights: true, train: false`, the run then continues on random weights.
+- `run()` calls `predict()` before `load_model_weights()`, probably to build the variables, at the cost of a full predict pass.
+- In `Model`:
+  - `save_z_hat` is built from `save_z` and never used; this is dead code.
+  - Recompiling reuses the existing losses, so new weights for existing losses are ignored. The scheduler relies on this.
+  - The losses are evaluated twice per training step, once for the loss and once for the metrics.
 
 ## Suspicious but not marked as bugs
 
