@@ -71,16 +71,20 @@ class TestRemoveNanGradients:
 
         np.testing.assert_allclose(f(tf.constant([np.nan, 11.0])).numpy(), [0.0, 10.0])
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG (minor): input list is mutated in place; the caller's gradient "
-        "list is overwritten",
-    )
     def test_does_not_mutate_input(self):
+        # regression: the caller's list used to be overwritten in place
         original = tf.constant([np.nan])
-        g = [original]
-        TensorUtils.remove_nan_gradients(g)
-        assert g[0] is original
+        g = [original, None]
+        out = TensorUtils.remove_nan_gradients(g)
+        assert out is not g
+        assert g[0] is original and g[1] is None
+        np.testing.assert_array_equal(out[0].numpy(), [0.0])
+        assert out[1] is None
+
+    def test_accepts_tuple(self):
+        out = TensorUtils.remove_nan_gradients((tf.constant([20.0]),))
+        assert isinstance(out, list)
+        np.testing.assert_array_equal(out[0].numpy(), [10.0])
 
 
 class TestCreateBackboneLayers:
@@ -312,14 +316,38 @@ class TestSpmatrixToSparseTensor:
         st = TensorUtils.spmatrix_to_sparse_tensor(dense)
         np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), dense)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: non-canonical sparse input with duplicate entries is not summed",
-    )
-    def test_duplicate_entries_summed(self):
-        m = sp.coo_matrix(([1.0, 2.0], ([0, 0], [0, 0])), shape=(1, 2))
+    @pytest.mark.parametrize("fmt", ["coo", "csr"])
+    def test_duplicate_entries_summed(self, fmt):
+        # regression: TF rejected the repeated indices of non-canonical input
+        m = sp.coo_matrix(([1.0, 2.0, 4.0], ([0, 0, 1], [0, 0, 1])), shape=(2, 2))
+        if fmt == "csr":
+            m = sp.csr_matrix((m.data, (m.row, m.col)), shape=m.shape)
+            m.has_canonical_format = False
         st = TensorUtils.spmatrix_to_sparse_tensor(m)
-        np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), [[3.0, 0.0]])
+        np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), [[3.0, 0.0], [0.0, 4.0]])
+        np.testing.assert_array_equal(st.indices.numpy(), [[0, 0], [1, 1]])
+
+    def test_input_not_mutated(self):
+        m = sp.coo_matrix(([1.0, 2.0], ([0, 0], [0, 0])), shape=(1, 2))
+        data, row, col = m.data.copy(), m.row.copy(), m.col.copy()
+        TensorUtils.spmatrix_to_sparse_tensor(m)
+        assert m.nnz == 2
+        np.testing.assert_array_equal(m.data, data)
+        np.testing.assert_array_equal(m.row, row)
+        np.testing.assert_array_equal(m.col, col)
+
+    def test_csr_input_not_mutated(self):
+        m = sp.csr_matrix(np.array([[0.0, 1.0], [2.0, 0.0]]))
+        data = m.data.copy()
+        st = TensorUtils.spmatrix_to_sparse_tensor(m)
+        st.values.numpy()
+        np.testing.assert_array_equal(m.data, data)
+
+    def test_dense_input(self):
+        dense = np.array([[0.0, 1.5], [2.0, 0.0]])
+        st = TensorUtils.spmatrix_to_sparse_tensor(dense)
+        np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), dense)
+        assert st.values.shape[0] == 2
 
 
 class TestSplit:
@@ -336,11 +364,22 @@ class TestSplit:
         parts = TensorUtils.split(tf.zeros((5, 2, 3)), batch_size=2)
         assert all(p.shape[1:] == (2, 3) for p in parts)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: when n_obs is a multiple of batch_size an extra empty "
-        "(0-row) chunk is appended",
-    )
     def test_even_split_has_no_empty_chunk(self):
+        # regression: an extra 0-row chunk was appended
         parts = TensorUtils.split(tf.range(8), batch_size=4)
         assert [int(p.shape[0]) for p in parts] == [4, 4]
+
+    def test_equal_to_batch_size(self):
+        parts = TensorUtils.split(tf.zeros((4, 2)), batch_size=4)
+        assert [int(p.shape[0]) for p in parts] == [4]
+
+    def test_empty_input_returns_one_empty_chunk(self):
+        x = tf.zeros((0, 3))
+        parts = TensorUtils.split(x, batch_size=4)
+        assert len(parts) == 1
+        assert parts[0].shape == (0, 3)
+
+    def test_input_not_mutated(self):
+        x = tf.range(5)
+        TensorUtils.split(x, batch_size=2)
+        np.testing.assert_array_equal(x.numpy(), np.arange(5))

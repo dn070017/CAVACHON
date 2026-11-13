@@ -54,6 +54,13 @@ class MultiModality(muon.MuData):
             index = None
             for key in data.keys():
                 adata = data.get(key)
+                if not adata.obs.index.is_unique:
+                    duplicated = adata.obs.index[adata.obs.index.duplicated()].unique()
+                    raise ValueError(
+                        f"obs_names of modality '{key}' are not unique (e.g. "
+                        f"{', '.join(map(str, duplicated[:5]))}). Make them unique "
+                        "first, e.g. with adata.obs_names_make_unique()."
+                    )
                 index = (
                     adata.obs.index
                     if index is None

@@ -132,15 +132,10 @@ def test_input_mudata_not_mutated():
     assert list(mm["rna"].obs_names) == NAMES[3:]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: duplicated obs_names in one modality crash with an opaque pandas "
-    "InvalidIndexError from the intersection/reindex step instead of being handled or "
-    "rejected with a clear message",
-)
-def test_duplicate_obs_names_keep_modalities_same_length():
-    names = ["c0", "c1", "c1", "c2"]
-    rna = make(names)
-    atac = make(["c0", "c1", "c2"])
-    mm = MultiModality({"rna": rna, "atac": atac})
-    assert mm["rna"].n_obs == mm["atac"].n_obs
+# regression: duplicated obs_names crashed with an opaque pandas InvalidIndexError
+@pytest.mark.parametrize("dup_key", ["rna", "atac"])
+def test_duplicate_obs_names_raise_clear_error(dup_key):
+    data = {"rna": make(["c0", "c1", "c2"]), "atac": make(["c0", "c1", "c2"])}
+    data[dup_key] = make(["c0", "c1", "c1", "c2"])
+    with pytest.raises(ValueError, match=rf"modality '{dup_key}'.*not unique.*c1"):
+        MultiModality(data)

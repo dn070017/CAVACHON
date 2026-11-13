@@ -28,6 +28,10 @@ class GeneralUtils:
             if the dependencies between components is not a directed
             acyclic graph.
 
+        ValueError
+            if component names are duplicated, or if a component is
+            conditioned on an unknown component.
+
         Returns
         -------
         List[str, Dict[str, Any]]:
@@ -42,17 +46,25 @@ class GeneralUtils:
 
         component_id_mapping = dict()
         id_component_mapping = dict()
+        id_name_mapping = dict()
         if issubclass(type(component_configs), Mapping):
             for i, (component_name, component_config) in enumerate(
                 component_configs.items()
             ):
                 component_id_mapping.setdefault(component_name, i)
                 id_component_mapping.setdefault(i, component_config)
+                id_name_mapping.setdefault(i, component_name)
         else:
             for i, component_config in enumerate(component_configs):
                 component_name = _get(component_config, "name")
+                if component_name in component_id_mapping:
+                    raise ValueError(
+                        f"Duplicate component name '{component_name}'. Component "
+                        "names must be unique."
+                    )
                 component_id_mapping.setdefault(component_name, i)
                 id_component_mapping.setdefault(i, component_config)
+                id_name_mapping.setdefault(i, component_name)
 
         n_components = len(component_configs)
         component_ids = list(range(n_components))
@@ -74,6 +86,11 @@ class GeneralUtils:
                     conditioned_on_component_id = component_id_mapping.get(
                         conditioned_on_name
                     )
+                    if conditioned_on_component_id is None:
+                        raise ValueError(
+                            f"Component '{id_name_mapping[component_id]}' is conditioned "
+                            f"on unknown component '{conditioned_on_name}'."
+                        )
                     G.add_edge(component_id, conditioned_on_component_id)
 
         if not nx.is_directed_acyclic_graph(G):
@@ -129,7 +146,8 @@ class GeneralUtils:
         """
         valid_full_regex = re.compile(Constants.TENSORFLOW_NAME_REGEX)
         valid_start_regex = re.compile(Constants.TENSORFLOW_NAME_START_REGEX)
-        if not valid_full_regex.match(string):
+        # fullmatch: '$' with match() would also accept a trailing newline
+        if not valid_full_regex.fullmatch(string):
             if valid_start_regex.match(string):
                 return re.sub(r"[^A-Za-z0-9_.\\/>-]", "_", string)
             else:

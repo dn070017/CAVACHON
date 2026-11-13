@@ -152,9 +152,6 @@ def test_modifier_traceable_inside_dataset_map(cls):
     np.testing.assert_array_equal(rows, expected)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: StudenttDataModifier does not set `modality_name`, unlike the other modifiers",
-)
+# regression: StudenttDataModifier did not set `modality_name`
 def test_studentt_modifier_exposes_modality_name():
     assert getattr(StudenttDataModifier("m"), "modality_name", None) == "m"

@@ -40,14 +40,18 @@ def test_read_mtx_missing_file_propagates(fake_fs):
         FileReader.read_mtx("/d/missing.mtx")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: dense (array-format) MatrixMarket returns ndarray; "
-    ".tocsr() raises AttributeError",
-)
+# regression: dense array-format MatrixMarket is converted to CSR
 def test_read_mtx_dense_array_format(fake_fs):
     fake_fs.matrices["/d/dense.mtx"] = X.copy()  # mmread returns ndarray
     m = FileReader.read_mtx("/d/dense.mtx")
+    assert sp.isspmatrix_csr(m)
+    np.testing.assert_array_equal(m.toarray(), X)
+
+
+def test_read_mtx_dense_array_format_transpose(fake_fs):
+    fake_fs.matrices["/d/dense.mtx"] = X.T.copy()
+    m = FileReader.read_mtx("/d/dense.mtx", transpose=True)
+    assert sp.isspmatrix_csr(m)
     np.testing.assert_array_equal(m.toarray(), X)
 
 

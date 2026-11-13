@@ -208,8 +208,9 @@ class FileReader:
 
         """
         filename = os.path.realpath(filename)
+        # mmread returns a sparse matrix for coordinate format and a
+        # numpy.ndarray for (dense) array format.
+        matrix = mmread(filename)
         if transpose:
-            matrix = mmread(filename).transpose().tocsr()
-        else:
-            matrix = mmread(filename).tocsr()
-        return matrix
+            matrix = matrix.transpose()
+        return csr_matrix(matrix)

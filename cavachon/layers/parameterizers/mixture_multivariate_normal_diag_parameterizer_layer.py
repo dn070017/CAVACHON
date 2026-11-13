@@ -44,11 +44,22 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
         return
 
+    @staticmethod
+    def _grid_side(n_components: int, event_dims: int) -> int:
+        """Smallest integer side with side ** event_dims >= n_components
+        (integer arithmetic, avoids float error in K ** (1 / D))."""
+        side = int(round(n_components ** (1.0 / event_dims)))
+        while side > 0 and (side - 1) ** event_dims >= n_components:
+            side -= 1
+        while side**event_dims < n_components:
+            side += 1
+        return side
+
     def _make_grid_positions(self, radius: float = 1.5) -> np.ndarray:
         K = self.n_components
         D = self.event_dims
         # side length of the grid along each dimension (hypercube)
-        side = int(np.ceil(K ** (1.0 / D)))
+        side = self._grid_side(K, D)
         if side < 1:
             side = 1
 

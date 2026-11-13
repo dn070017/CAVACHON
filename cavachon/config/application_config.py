@@ -150,8 +150,18 @@ class ApplicationConfig(BaseConfigModel):
                     self.modality[mname].samples.append(sname)
 
         # 5. Cross-validate model components ↔ modalities, inject dist
+        if not self.model.components:
+            raise ValueError(
+                f"No component found in the config of model in config file "
+                f"{self.filename}."
+            )
         component_by_name: Dict[str, ComponentConfig] = {}
         for comp in self.model.components:
+            if not comp.modality_names:
+                raise ValueError(
+                    f"Component '{comp.name}' has no modalities in config "
+                    f"file {self.filename}."
+                )
             for mname in comp.modality_names:
                 if mname not in self.modality:
                     raise KeyError(
@@ -228,27 +238,7 @@ class ApplicationConfig(BaseConfigModel):
             self.analysis.hierarchical_differential_analysis,
             self.analysis.conditional_attribution_scores,
         ):
-            modality = entry.modality
-            component_name = entry.component
-            found_component = False
-            found_modality = False
-            for comp_cfg in self.components:
-                if component_name == comp_cfg.name:
-                    found_component = True
-                    if modality in comp_cfg.modality_names:
-                        found_modality = True
-                        break
-                if found_modality and found_component:
-                    break
-            if not found_modality:
-                raise KeyError(
-                    f"'{modality}' is not in the config of component "
-                    f"'{component_name}'."
-                )
-            if not found_component:
-                raise KeyError(
-                    f"'{component_name}' is not in the config of components."
-                )
+            self._check_component_modality(entry, comp_map)
 
         # 7b. visualize_embedding (modality only)
         for viz in self.analysis.visualize_embedding:
@@ -285,27 +275,7 @@ class ApplicationConfig(BaseConfigModel):
 
         # 7d. differential_attribution_analysis gate
         for diff_attr in self.analysis.differential_attribution_analysis:
-            modality = diff_attr.modality
-            component_name = diff_attr.component
-            found_component = False
-            found_modality = False
-            for comp_cfg in self.components:
-                if component_name == comp_cfg.name:
-                    found_component = True
-                    if modality in comp_cfg.modality_names:
-                        found_modality = True
-                        break
-                if found_modality and found_component:
-                    break
-            if not found_modality:
-                raise KeyError(
-                    f"'{modality}' is not in the config of component "
-                    f"'{component_name}'."
-                )
-            if not found_component:
-                raise KeyError(
-                    f"'{component_name}' is not in the config of components."
-                )
+            self._check_component_modality(diff_attr, comp_map)
             for wrt in diff_attr.with_respect_to:
                 if wrt not in comp_map:
                     raise KeyError(
@@ -358,6 +328,23 @@ class ApplicationConfig(BaseConfigModel):
         self._validate_enrichment_sources(self.analysis, self.io.outdir)
 
         return self
+
+    @staticmethod
+    def _check_component_modality(
+        entry: Any, comp_map: Dict[str, ComponentConfig]
+    ) -> None:
+        """Check that the component of an analysis entry exists and
+        contains the modality of the entry."""
+        comp_cfg = comp_map.get(entry.component)
+        if comp_cfg is None:
+            raise KeyError(
+                f"'{entry.component}' is not in the config of components."
+            )
+        if entry.modality not in comp_cfg.modality_names:
+            raise KeyError(
+                f"'{entry.modality}' is not in the config of component "
+                f"'{entry.component}'."
+            )
 
     @staticmethod
     def _validate_enrichment_sources(

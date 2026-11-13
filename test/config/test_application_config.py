@@ -223,25 +223,27 @@ def test_duplicate_modality_names_rejected(base_config, load_config):
         load_config(base_config)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: missing model.components (documented as required) is "
-    "silently accepted -> model with zero components",
-)
-def test_missing_components_rejected(base_config, load_config):
-    base_config["model"].pop("components")
-    with pytest.raises((KeyError, ValueError)):
+# regression: missing model.components raises
+@pytest.mark.parametrize("empty", [None, []])
+def test_missing_components_rejected(base_config, load_config, empty):
+    if empty is None:
+        base_config["model"].pop("components")
+    else:
+        base_config["model"]["components"] = empty
+    with pytest.raises(ValidationError, match="No component found"):
         load_config(base_config)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: component without modalities (required per Constants/"
-    "docs) is silently accepted",
-)
+# regression: component without modalities raises
 def test_component_without_modalities_rejected(base_config, load_config):
     base_config["model"]["components"].append({"name": "Empty"})
-    with pytest.raises((KeyError, ValueError)):
+    with pytest.raises(ValidationError, match="Component 'Empty' has no modalities"):
+        load_config(base_config)
+
+
+def test_component_with_empty_modalities_list_rejected(base_config, load_config):
+    base_config["model"]["components"].append({"name": "Empty", "modalities": []})
+    with pytest.raises(ValidationError, match="Component 'Empty' has no modalities"):
         load_config(base_config)
 
 
@@ -349,17 +351,32 @@ def test_analysis_modality_not_in_component(base_config, load_config, section):
         load_config(base_config)
 
 
-def test_analysis_unknown_component_raises(base_config, load_config):
-    base_config["analysis"] = {"clustering": [{"modality": "RNA", "component": "Nope"}]}
-    with pytest.raises(KeyError):
+@pytest.mark.parametrize(
+    "section",
+    [
+        "clustering",
+        "differential_analysis",
+        "hierarchical_differential_analysis",
+        "conditional_attribution_scores",
+        "differential_attribution_analysis",
+    ],
+)
+def test_analysis_unknown_component_raises(base_config, load_config, section):
+    base_config["analysis"] = {section: [{"modality": "RNA", "component": "Nope"}]}
+    with pytest.raises(KeyError, match="'Nope' is not in the config of components"):
         load_config(base_config)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: unknown analysis component reports a misleading "
-    "'modality not in component' error (modality check runs first)",
-)
+@pytest.mark.parametrize("section", ["differential_attribution_analysis"])
+def test_analysis_modality_not_in_component_differential_attribution(
+    base_config, load_config, section
+):
+    base_config["analysis"] = {section: [{"modality": "ATAC", "component": "RNA"}]}
+    with pytest.raises(KeyError, match="'ATAC' is not in the config of component 'RNA'"):
+        load_config(base_config)
+
+
+# regression: unknown analysis component is reported as such
 def test_analysis_unknown_component_error_message(base_config, load_config):
     base_config["analysis"] = {"clustering": [{"modality": "RNA", "component": "Nope"}]}
     with pytest.raises(KeyError, match="'Nope' is not in the config of components"):
@@ -452,7 +469,7 @@ def test_source_gate_satisfied_by_config(base_config, load_config, fake_os):
     "entry, message",
     [
         ({"modality": "ATAC", "component": "RNA"}, "'ATAC' is not in the config of component 'RNA'"),
-        ({"modality": "RNA", "component": "YY"}, "'RNA' is not in the config of component 'YY'"),
+        ({"modality": "RNA", "component": "YY"}, "'YY' is not in the config of components"),
         (
             {"modality": "RNA", "component": "RNA", "donor_components": ["QQ"]},
             "'QQ' \\(donor_components\\)",

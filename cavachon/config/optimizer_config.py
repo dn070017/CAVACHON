@@ -12,4 +12,9 @@ class OptimizerConfig(BaseConfigModel):
     @field_validator("learning_rate", mode="before")
     @classmethod
     def _coerce_learning_rate(cls, v: object) -> float:
-        return float(v)
+        # float() raises TypeError for e.g. None, which pydantic would not
+        # convert into a ValidationError.
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"learning_rate should be a number, got {v!r}")

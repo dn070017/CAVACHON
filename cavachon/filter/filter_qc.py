@@ -26,7 +26,15 @@ class FilterQC(AnnDataFilter):
     mt- mitochondrial genes). The names 'ERCC' and 'MT' are kept so that
     the QC metrics are still named e.g. pct_counts_MT. User-provided
     'qc_vars' are used as both the names and the regex patterns matched
-    (from the start of the feature names, case-sensitively).
+    (from the start of the feature names, case-sensitively). The patterns
+    are matched against the adata.var column referenced by the var index
+    name ('Modality:colname', as created by FileReader); if the index is
+    unnamed or the column does not exist, adata.var_names is used instead.
+
+    If 'percent_top' is not provided, scanpy's default (50, 100, 200, 500)
+    is used without the values larger than the number of features (None
+    if no value remains). An explicitly provided 'percent_top' is passed
+    to scanpy.pp.calculate_qc_metrics() unchanged.
 
     Attributes
     ----------
@@ -35,9 +43,10 @@ class FilterQC(AnnDataFilter):
 
     kwargs: Mapping[str, Any]
         additional parameters used for scanpy.pp.calculate_qc_metrics().
-        In addition, 'filter_threshold' could be used to specify the
-        filtering thresholds. The values for 'filter_threshold' is a
-        mapping with keys 'field' (column name for qc metrics in
+        In addition, 'filter_threshold' (optional) could be used to specify
+        the filtering thresholds; if it is not provided, the QC metrics are
+        computed and all cells are kept. The values for 'filter_threshold'
+        is a mapping with keys 'field' (column name for qc metrics in
         adata.obs), 'operator' (string representation for python
         operators) and 'threshold' (float number specifying the
         proportion used to filter cells)
@@ -45,6 +54,7 @@ class FilterQC(AnnDataFilter):
     """
 
     default_qc_vars = {"ERCC": r"^ERCC-", "MT": r"(?i)^MT-"}
+    default_percent_top = (50, 100, 200, 500)
 
     def __init__(self, name, **kwargs):
         """Constructor for FilterQC
@@ -57,7 +67,7 @@ class FilterQC(AnnDataFilter):
         kwargs: Mapping[str, Any]
             additional parameters used for
             scanpy.pp.calculate_qc_metrics(). In addition,
-            'filter_threshold' could be used to specify the filtering
+            'filter_threshold' (optional) could be used to specify the filtering
             thresholds. The values for 'filter_threshold' is a
             mapping with keys 'field' (column name for qc metrics in
             adata.obs), 'operator' (string representation for python
@@ -95,12 +105,19 @@ class FilterQC(AnnDataFilter):
         # scanpy.pp.calculate_qc_metrics, so we create a copy of self.args
         # and pop filter_threshold field.
         kwargs_copy = copy.deepcopy(self.kwargs)
-        filter_criteria_list = kwargs_copy.pop("filter_threshold")
+        filter_criteria_list = kwargs_copy.pop("filter_threshold", [])
 
         # the index columns will be 'Modality.name:colname', the colname
         # (usually gene name) will be used to check the control variables
-        # (usually mitochondria)
-        index_colname = adata.var.index.name.split(":")[-1]
+        # (usually mitochondria). Fall back to var_names otherwise.
+        index_name = adata.var.index.name
+        index_colname = None
+        if isinstance(index_name, str) and ":" in index_name:
+            index_colname = index_name.split(":")[-1]
+        if index_colname in adata.var:
+            feature_names = adata.var[index_colname]
+        else:
+            feature_names = pd.Series(adata.var_names, index=adata.var.index)
 
         # user-provided qc_vars are used both as the column names and as the
         # regex (prefix) patterns. The default qc_vars use anchored patterns
@@ -113,7 +130,15 @@ class FilterQC(AnnDataFilter):
             kwargs_copy["qc_vars"] = list(qc_var_patterns.keys())
 
         for qc_var, pattern in qc_var_patterns.items():
-            adata.var[qc_var] = adata.var[index_colname].str.match(pattern)
+            adata.var[qc_var] = feature_names.str.match(pattern)
+
+        # scanpy's default percent_top raises IndexError if any value is
+        # larger than the number of features.
+        if "percent_top" not in kwargs_copy:
+            percent_top = tuple(
+                n for n in self.default_percent_top if n <= adata.n_vars
+            )
+            kwargs_copy["percent_top"] = percent_top if percent_top else None
 
         # make sure calculate_qc_metrics is run inplace.
         kwargs_copy["inplace"] = True

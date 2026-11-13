@@ -62,15 +62,31 @@ def test_grid_positions_distinct_and_bounded(k, d):
     assert np.abs(coords).max() <= 2.0 + 1e-6
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: mixture_..._parameterizer_layer.py:50 int(np.ceil(K ** (1/D))) suffers float error "
-    "(3125**(1/5)=5.000000000000001 -> side 6), so a perfect-power grid is no longer centred/symmetric",
-)
 def test_grid_perfect_power_is_centred():
+    # regression: float K ** (1/D) gave side 6 for 3125 = 5**5, off-centring the grid
     coords = Mixture(event_dims=5, n_components=3125)._make_grid_positions()
     np.testing.assert_allclose(coords.mean(0), 0.0, atol=1e-6)
     assert coords.min() == -1.5 and coords.max() == 1.5
+
+
+@pytest.mark.parametrize(
+    "k,d",
+    [
+        (5**5, 5), (6**5, 5), (7**5, 5), (2**10, 10), (3**3, 3), (1, 1), (1, 4),
+        (2, 1), (7, 1), (5, 2), (10, 3), (3126, 5), (3124, 5), (1025, 10), (26, 3), (28, 3),
+    ],
+)
+def test_grid_side_is_minimal_integer(k, d):
+    side = Mixture._grid_side(k, d)
+    assert isinstance(side, int)
+    assert side**d >= k
+    assert (side - 1) ** d < k
+
+
+@pytest.mark.parametrize("k,d", [(3, 2), (10, 3), (7, 2), (2, 8), (5, 1)])
+def test_grid_unchanged_for_non_exact_powers(k, d):
+    # the integer side must match the previous float formula when no rounding error occurs
+    assert Mixture._grid_side(k, d) == int(np.ceil(k ** (1.0 / d)))
 
 
 def test_parameters_property_shape():

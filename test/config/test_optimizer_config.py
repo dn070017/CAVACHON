@@ -41,11 +41,8 @@ def test_optimizer_learning_rate_invalid_string():
         OptimizerConfig(learning_rate="fast")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: float(None) raises raw TypeError in before-validator "
-    "instead of a pydantic ValidationError",
-)
-def test_optimizer_learning_rate_none_raises_validation_error():
-    with pytest.raises(ValidationError):
-        OptimizerConfig(learning_rate=None)
+# regression: learning_rate None raises ValidationError, not TypeError
+@pytest.mark.parametrize("value", [None, [1e-4], {"lr": 1}])
+def test_optimizer_learning_rate_none_raises_validation_error(value):
+    with pytest.raises(ValidationError, match="learning_rate should be a number"):
+        OptimizerConfig(learning_rate=value)

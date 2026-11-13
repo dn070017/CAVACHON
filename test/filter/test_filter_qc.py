@@ -210,23 +210,10 @@ def test_default_qc_vars_not_stored_on_filter(dense_adata):
     assert FilterQC.default_qc_vars == {"ERCC": r"^ERCC-", "MT": r"(?i)^MT-"}
 
 
-# --------------------------------------------------------------------- bugs
+# --------------------------------------------------- feature-name lookup
 
 
-# regression: the default 'MT' qc_var used to be the unanchored,
-# case-sensitive prefix "MT", which also flagged nuclear genes like MTOR.
-def test_default_mt_qc_var_matches_only_mitochondrial_genes(dense_adata):
-    qc([])(dense_adata)
-    # only MT-CO1 is mitochondrial
-    assert list(dense_adata.var["MT"]) == [True, False, False, False]
-    # c3: MT-CO1=1 of 10 counts; MTOR counts must not count as mitochondrial
-    assert dense_adata.obs.loc["c3", "pct_counts_MT"] == pytest.approx(10.0)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: FilterQC crashes (AttributeError) when var index has no name",
-)
+# regression: an unnamed var index used to raise AttributeError.
 def test_works_when_var_index_unnamed():
     adata = anndata.AnnData(
         X=COUNTS.copy(),
@@ -237,23 +224,54 @@ def test_works_when_var_index_unnamed():
         qc_vars=["MT-"],
     )(adata)
     assert out.n_obs == 3
+    assert list(adata.var["MT-"]) == [True, False, False, False]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: filter_threshold documented as optional but omitting it "
-    "raises KeyError",
+@pytest.mark.parametrize(
+    "index_name, columns",
+    [
+        ("gene", {"gene": ["X", "X", "X", "X"]}),  # no ':' -> var_names
+        ("RNA:symbol", {}),  # referenced column missing -> var_names
+        ("RNA:symbol", {"other": ["X", "X", "X", "X"]}),
+    ],
 )
+def test_falls_back_to_var_names(index_name, columns):
+    var = pd.DataFrame(
+        columns, index=pd.Index(["MT-CO1", "MTOR", "GAPDH", "ACTB"], name=index_name)
+    )
+    adata = anndata.AnnData(X=COUNTS.copy(), var=var)
+    qc([])(adata)
+    assert list(adata.var["MT"]) == [True, False, False, False]
+    assert adata.obs["pct_counts_MT"].iloc[3] == pytest.approx(10.0)
+
+
+def test_filereader_style_uses_referenced_column(dense_adata):
+    # var index 'RNA:gene' -> patterns matched against var['gene'], not the
+    # index values: make them differ to prove which one is used.
+    dense_adata.var["gene"] = ["GAPDH", "ACTB", "MT-CO1", "MTOR"]
+    qc([])(dense_adata)
+    assert list(dense_adata.var["MT"]) == [False, False, True, False]
+    assert dense_adata.var.index.name == "RNA:gene"
+    # c0 counts: GAPDH(col 2)=3 of 4
+    assert dense_adata.obs.loc["c0", "pct_counts_MT"] == pytest.approx(75.0)
+
+
+# --------------------------------------------------------- filter_threshold
+
+
+# regression: omitting filter_threshold used to raise KeyError.
 def test_filter_threshold_optional(dense_adata):
     out = FilterQC("qc", percent_top=None)(dense_adata)
     assert out.n_obs == 4
+    assert "pct_counts_MT" in out.obs
+    assert "total_counts" in out.obs
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: inherited scanpy default percent_top=(50,100,200,500) makes "
-    "FilterQC crash (IndexError) on modalities with < 500 features",
-)
+# --------------------------------------------------------------- percent_top
+
+
+# regression: scanpy's default percent_top used to raise IndexError on
+# modalities with < 500 features.
 def test_default_percent_top_on_small_feature_set(dense_adata):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -262,8 +280,44 @@ def test_default_percent_top_on_small_feature_set(dense_adata):
             filter_threshold=[{"field": "total_counts", "threshold": 1}],
         )(dense_adata)
     assert out.n_obs == 3
+    assert not any("pct_counts_in_top" in c for c in out.obs)
 
 
-def test_selection_mask_built_via_general_utils(dense_adata, mock_general_utils):
-    qc([{"field": "total_counts", "operator": "ge", "threshold": 6}])(dense_adata)
-    mock_general_utils.duplicate_obj_to_list.assert_called_once_with(True, 4)
+def test_default_percent_top_keeps_possible_values():
+    n_vars = 120
+    rng = np.random.default_rng(0)
+    genes = [f"G{i}" for i in range(n_vars)]
+    var = pd.DataFrame({"gene": genes}, index=pd.Index(genes, name="RNA:gene"))
+    adata = anndata.AnnData(
+        X=rng.integers(1, 5, size=(3, n_vars)).astype(np.float32), var=var
+    )
+    f = FilterQC("qc")
+    f(adata)
+    top = sorted(c for c in adata.obs if c.startswith("pct_counts_in_top"))
+    assert top == ["pct_counts_in_top_100_genes", "pct_counts_in_top_50_genes"]
+    assert "percent_top" not in f.kwargs
+
+
+def test_default_percent_top_boundary_equal_to_n_vars(monkeypatch):
+    import cavachon.filter.filter_qc as mod
+    from unittest.mock import MagicMock
+
+    spy = MagicMock()
+    monkeypatch.setattr(mod.scanpy.pp, "calculate_qc_metrics", spy)
+    genes = [f"G{i}" for i in range(50)]
+    var = pd.DataFrame({"gene": genes}, index=pd.Index(genes, name="RNA:gene"))
+    FilterQC("qc", filter_threshold=[])(
+        anndata.AnnData(X=np.ones((2, 50), dtype=np.float32), var=var)
+    )
+    assert spy.call_args.kwargs["percent_top"] == (50,)
+
+
+def test_explicit_percent_top_passed_through_unchanged(dense_adata):
+    # explicit bad values still surface scanpy's error
+    with pytest.raises(IndexError):
+        FilterQC("qc", percent_top=[50], filter_threshold=[])(dense_adata)
+
+
+def test_explicit_percent_top_used(dense_adata):
+    qc([], percent_top=[2])(dense_adata)
+    assert "pct_counts_in_top_2_genes" in dense_adata.obs

@@ -79,9 +79,11 @@ class TensorUtils:
         Returns
         -------
         List[tf.Tensor]
-            processed gradients.
+            processed gradients (a new list, the input list is not
+            modified).
 
         """
+        gradients = list(gradients)
         for i, g in enumerate(gradients):
             if gradients[i] is None:
                 continue
@@ -300,7 +302,8 @@ class TensorUtils:
         ----------
         spmatrix: sparse matrix
             the provided matrix. Dense array-like inputs are converted
-            to sparse matrix first.
+            to sparse matrix first. Duplicate entries are summed (as in
+            scipy); the provided matrix is not modified.
 
         Returns
         -------
@@ -309,9 +312,11 @@ class TensorUtils:
 
         """
         if scipy.sparse.issparse(spmatrix):
-            coo_matrix = spmatrix.tocoo()
+            coo_matrix = spmatrix.tocoo(copy=True)
         else:
             coo_matrix = scipy.sparse.coo_matrix(np.asarray(spmatrix))
+        # tf.SparseTensor rejects repeated indices
+        coo_matrix.sum_duplicates()
         indices = np.column_stack([coo_matrix.row, coo_matrix.col])
         sparse_tensor = tf.SparseTensor(indices, coo_matrix.data, coo_matrix.shape)
         return tf.sparse.reorder(tf.cast(sparse_tensor, tf.float32))
@@ -332,11 +337,15 @@ class TensorUtils:
         Returns
         -------
         List[tf.Tensor]
-            List of splitted tensors.
+            List of splitted tensors. No empty chunk is appended when
+            the number of observations is divisible by batch_size. An
+            empty input returns a list with one empty tensor.
         """
         n_obs = x.shape[0]
         # if batch_size = 128, n_obs = 1000
         # split_batch = [128, 128, 128, 128, 128, 128, 128, 104]
-        split_batch = [batch_size] * (n_obs // batch_size) + [n_obs % batch_size]
+        split_batch = [batch_size] * (n_obs // batch_size)
+        if n_obs % batch_size != 0 or n_obs == 0:
+            split_batch.append(n_obs % batch_size)
 
         return tf.keras.layers.Lambda(lambda x: tf.split(x, split_batch))(x)

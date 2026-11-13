@@ -104,28 +104,44 @@ class TestOrderComponents:
         with pytest.raises(AttributeError):
             GeneralUtils.order_components([{"name": "a", Z: ["a"]}])
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: unknown conditioned_on name maps to None and fails deep in "
-        "networkx with 'None cannot be a node' instead of a clear error naming it",
-    )
     def test_unknown_parent_reports_name(self, timeout):
-        with pytest.raises(Exception, match="missing_parent"):
+        # regression: failed in networkx with 'None cannot be a node'
+        with pytest.raises(ValueError, match="'a' is conditioned on unknown component 'missing_parent'"):
             GeneralUtils.order_components([{"name": "a", Z: ["missing_parent"]}])
 
-    def test_unknown_parent_raises_something(self, timeout):
-        with pytest.raises(ValueError):
-            GeneralUtils.order_components([{"name": "a", Z: ["missing_parent"]}])
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: duplicate component names are silently accepted; edges "
-        "resolve to the first one only",
-    )
-    def test_duplicate_names_rejected(self, timeout):
-        cfg = [{"name": "a"}, {"name": "a"}, {"name": "b", Z: ["a"]}]
-        with pytest.raises(Exception):
+    def test_unknown_z_hat_parent_reports_name(self, timeout):
+        cfg = [{"name": "p"}, {"name": "c", Z: ["p"], ZH: ["ghost"]}]
+        with pytest.raises(ValueError, match="'c' is conditioned on unknown component 'ghost'"):
             GeneralUtils.order_components(cfg)
+
+    def test_unknown_parent_in_mapping_input(self, timeout):
+        with pytest.raises(ValueError, match="'x' is conditioned on unknown component 'nope'"):
+            GeneralUtils.order_components({"x": {Z: ["nope"]}})
+
+    def test_unknown_parent_on_object_config(self, timeout):
+        a = SimpleNamespace(name="a", conditioned_on_z=["zz"], conditioned_on_z_hat=[])
+        with pytest.raises(ValueError, match="unknown component 'zz'"):
+            GeneralUtils.order_components([a])
+
+    def test_duplicate_names_rejected(self, timeout):
+        # regression: duplicates were accepted and edges hit the first one only
+        cfg = [{"name": "a"}, {"name": "a"}, {"name": "b", Z: ["a"]}]
+        with pytest.raises(ValueError, match="Duplicate component name 'a'"):
+            GeneralUtils.order_components(cfg)
+
+    def test_duplicate_names_on_object_configs(self, timeout):
+        cfg = [SimpleNamespace(name="dup"), SimpleNamespace(name="dup")]
+        with pytest.raises(ValueError, match="'dup'"):
+            GeneralUtils.order_components(cfg)
+
+    def test_error_paths_do_not_mutate_input(self, timeout):
+        cfg = [{"name": "a", Z: ["ghost"]}, {"name": "b"}]
+        import copy
+
+        snapshot = copy.deepcopy(cfg)
+        with pytest.raises(ValueError):
+            GeneralUtils.order_components(cfg)
+        assert cfg == snapshot
 
     def test_explicit_none_conditioned_on_raises_typeerror(self, timeout):
         # key present with value None (e.g. YAML 'conditioned_on_z:' left blank)
@@ -165,13 +181,11 @@ class TestTensorflowCompatibleStr:
         once = GeneralUtils.tensorflow_compatible_str("_a b")
         assert GeneralUtils.tensorflow_compatible_str(once) == once
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: regex uses match() with '$', which also matches before a "
-        "trailing newline, so 'abc\\n' is returned unchanged (invalid TF name)",
-    )
-    def test_trailing_newline_sanitized(self):
-        out = GeneralUtils.tensorflow_compatible_str("abc\n")
+    @pytest.mark.parametrize("s,expected", [("abc\n", "abc_"), ("_a\n", "t__a_"), ("a\nb", "a_b")])
+    def test_trailing_newline_sanitized(self, s, expected):
+        # regression: match() with '$' accepted 'abc\n' unchanged
+        out = GeneralUtils.tensorflow_compatible_str(s)
+        assert out == expected
         assert re.fullmatch(Constants.TENSORFLOW_NAME_REGEX, out)
 
 

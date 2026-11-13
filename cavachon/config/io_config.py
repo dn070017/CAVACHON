@@ -1,6 +1,6 @@
 import os
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from cavachon.config.base import BaseConfigModel
 
@@ -8,9 +8,10 @@ from cavachon.config.base import BaseConfigModel
 class IOConfig(BaseConfigModel):
     """IO path configuration model."""
 
-    checkpointdir: str = "./"
-    datadir: str = "./"
-    outdir: str = "./"
+    # validate_default so the default "./" is resolved like explicit paths.
+    checkpointdir: str = Field("./", validate_default=True)
+    datadir: str = Field("./", validate_default=True)
+    outdir: str = Field("./", validate_default=True)
 
     @field_validator("checkpointdir", "datadir", "outdir", mode="after")
     @classmethod

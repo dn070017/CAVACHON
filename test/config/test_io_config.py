@@ -16,7 +16,7 @@ def test_absolute_paths_normalized(fake_os):
 )
 def test_trailing_slash_stripped_before_realpath(fake_os, value, passed):
     IOConfig(datadir=value)
-    fake_os.realpath.assert_called_once_with(passed)
+    fake_os.realpath.assert_any_call(passed)
 
 
 def test_realpath_result_is_stored(fake_os):
@@ -35,15 +35,12 @@ def test_relative_paths_resolved_without_any_base_dir(fake_os):
 def test_tilde_not_expanded(fake_os):
     # Documents current behaviour: ``~`` is passed literally.
     IOConfig(datadir="~/x")
-    fake_os.realpath.assert_called_once_with("~/x")
+    fake_os.realpath.assert_any_call("~/x")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: defaults ('./') bypass the path validator and stay "
-    "relative, unlike an explicit './' which is resolved",
-)
+# regression: default './' paths are resolved like explicit ones
 def test_default_paths_resolved_like_explicit(fake_os):
     default = IOConfig()
     explicit = IOConfig(checkpointdir="./", datadir="./", outdir="./")
     assert default.model_dump() == explicit.model_dump()
+    assert default.datadir == "/cwd"
