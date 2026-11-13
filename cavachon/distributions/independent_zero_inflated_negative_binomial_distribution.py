@@ -43,6 +43,14 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
             1.  The batch_shape should be the same as [..., p].
             2.  The event_shape should be [].
 
+        Notes
+        -----
+        The zero component is a negative binomial with mean 1e-7,
+        not an exact point mass at 0. Hence mean() includes a
+        sigmoid(logits) * 1e-7 term and log_prob(0) is close to, but
+        not exactly, log(sigmoid(logits) + (1 - sigmoid(logits)) *
+        NB(0; mean, dispersion)).
+
         Returns
         -------
         tfp.distributions.Distribution
@@ -59,12 +67,17 @@ class IndependentZeroInflatedNegativeBinomialDistribution(
             params = tf.convert_to_tensor(params)
             logits, mean, dispersion = tf.split(params, 3, axis=-1)
 
-        probs = tf.math.sigmoid(logits)
-        probs = tf.stack([probs, 1 - probs], axis=-1)
+        # the mixture weights are [sigmoid(logits), 1 - sigmoid(logits)],
+        # i.e. softmax([logits, 0]). They are passed as logits so they
+        # are computed in log space: with probs, 1 - sigmoid(logits)
+        # rounds to 0 in float32 for logits >= ~17, which made
+        # log_prob(x > 0) wrong (stuck around -78.5) and its gradient
+        # w.r.t. logits NaN.
+        cat_logits = tf.stack([logits, tf.zeros_like(logits)], axis=-1)
 
         # batch_shape: (batch, ), event_shape: (event_dims, )
         return cls(
-            cat=tfp.distributions.Categorical(probs=probs),
+            cat=tfp.distributions.Categorical(logits=cat_logits),
             components=(
                 tfp.distributions.NegativeBinomial.experimental_from_mean_dispersion(
                     1e-7 * tf.ones_like(mean), dispersion

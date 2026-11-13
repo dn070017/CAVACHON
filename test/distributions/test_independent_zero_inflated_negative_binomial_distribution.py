@@ -98,22 +98,43 @@ def test_last_dim_not_multiple_of_three_raises():
         ZINB.from_parameterizer_output(tf.ones((2, 4)))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: dropout probs are built as sigmoid(logits) then 1-probs, "
-    "so for moderately large logits 1-probs underflows to 0 in float32 and "
-    "the NB component is dropped entirely (should use logits / log_sigmoid)",
-)
-def test_large_logit_nonzero_count_log_prob_is_accurate():
-    logits = np.array([[20.0]], np.float32)
+@pytest.mark.parametrize("logit", [15.0, 17.0, 20.0, 30.0, -20.0])
+def test_large_logit_nonzero_count_log_prob_is_accurate(logit):
+    # regression: the dropout probs were built as sigmoid(logits) and
+    # 1 - probs, so for logits >= ~17 1 - probs rounded to 0 in float32 and
+    # log_prob(x > 0) was stuck around -78.5 instead of ~ -logit + log NB(x)
+    logits = np.array([[logit]], np.float32)
     mean = np.array([[5.0]], np.float32)
     disp = np.array([[1.0]], np.float32)
     d = ZINB.from_parameterizer_output(
         {"logits": logits, "mean": mean, "dispersion": disp}
     )
     x = np.array([[3.0]], np.float32)
-    ref = _reference_log_prob(x, logits, mean, disp)  # ~ -20 + log NB(3)
+    ref = _reference_log_prob(x, logits, mean, disp)
     np.testing.assert_allclose(d.log_prob(x), ref, rtol=1e-3)
+
+
+@pytest.mark.parametrize("logit", [0.0, 20.0, 30.0])
+def test_large_logit_gradient_is_finite(logit):
+    # regression: with probs, d log_prob / d logits was NaN for logits >= ~17
+    logits = tf.Variable([[logit]])
+    with tf.GradientTape() as tape:
+        d = ZINB.from_parameterizer_output(
+            {"logits": logits, "mean": tf.constant([[5.0]]), "dispersion": tf.constant([[1.0]])}
+        )
+        lp = d.log_prob(tf.constant([[3.0]]))
+    grad = tape.gradient(lp, logits).numpy()
+    # d/dl log(1 - sigmoid(l)) = -sigmoid(l)
+    np.testing.assert_allclose(grad, [[-1 / (1 + np.exp(-logit))]], rtol=1e-4)
+
+
+def test_mixture_weights_match_sigmoid_of_logits():
+    logits, mean, disp = _params()
+    d = ZINB.from_parameterizer_output(tf.concat([logits, mean, disp], -1))
+    pi = 1 / (1 + np.exp(-logits))
+    np.testing.assert_allclose(
+        d.cat.probs_parameter(), np.stack([pi, 1 - pi], -1), rtol=1e-6
+    )
 
 
 @pytest.mark.parametrize("wrap", [np.asarray, tf.Variable], ids=["numpy", "tf.Variable"])

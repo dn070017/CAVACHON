@@ -48,6 +48,4 @@ class IndependentBernoulliDistribution(Distribution, tfp.distributions.Bernoulli
         else:
             logits = tf.convert_to_tensor(params)
 
-        distribution = tfp.distributions.Bernoulli(logits=logits)
-
-        return distribution
+        return cls(logits=logits, **kwargs)

@@ -43,10 +43,6 @@ def test_package_exports_concrete_distributions(name):
     assert issubclass(cls, tfp.distributions.Distribution)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: MixtureMultivariateNormalDiagDistribution is not exported "
-    "from cavachon.distributions/__init__.py",
-)
 def test_package_exports_mixture_distribution():
+    # regression: fixed bug, see UNIT_TEST_REPORT.md
     assert hasattr(dists, "MixtureMultivariateNormalDiagDistribution")

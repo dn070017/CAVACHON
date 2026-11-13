@@ -63,22 +63,14 @@ def test_non_tensor_input_accepted(make_params):
     np.testing.assert_allclose(d.probs_parameter(), 0.5)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: from_parameterizer_output returns a plain "
-    "tfp.distributions.Bernoulli instead of cls (inconsistent with "
-    "other Distribution subclasses)",
-)
 def test_returns_instance_of_cls():
+    # regression: fixed bug, see UNIT_TEST_REPORT.md
     d = IndependentBernoulliDistribution.from_parameterizer_output(tf.zeros((2, 3)))
     assert isinstance(d, IndependentBernoulliDistribution)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: **kwargs are silently ignored by from_parameterizer_output",
-)
 def test_kwargs_forwarded():
+    # regression: fixed bug, see UNIT_TEST_REPORT.md
     d = IndependentBernoulliDistribution.from_parameterizer_output(
         tf.zeros((2, 3)), validate_args=True, name="my_bern"
     )
