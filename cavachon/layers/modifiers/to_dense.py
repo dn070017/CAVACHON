@@ -32,8 +32,8 @@ class ToDense(tf.keras.layers.Layer):
         self.key = key
 
     def call(
-        self, inputs: MutableMapping[str, tf.Tensor]
-    ) -> MutableMapping[str, tf.Tensor]:
+        self, inputs: MutableMapping[Hashable, tf.Tensor]
+    ) -> MutableMapping[Hashable, tf.Tensor]:
         """Transform tf.SparseTensor stored in inputs to tf.Tensor.
 
         Parameters

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Optional
 
 import tensorflow as tf
 
@@ -78,7 +78,7 @@ class DecoderDataParameterizer(tf.keras.Model):
         result = self.backbone_network(
             inputs.get(Constants.TENSOR_NAME_X), training=False
         )
-        x_parameterizer_inputs = dict()
+        x_parameterizer_inputs: Dict[str, tf.Tensor] = dict()
         x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
         if self.x_parameterizer.libsize_scaling:
             x_parameterizer_inputs.setdefault(
@@ -118,7 +118,7 @@ class DecoderDataParameterizer(tf.keras.Model):
         result = self.backbone_network(
             inputs.get(Constants.TENSOR_NAME_X), training=training, mask=mask
         )
-        x_parameterizer_inputs = dict()
+        x_parameterizer_inputs: Dict[str, tf.Tensor] = dict()
         x_parameterizer_inputs.setdefault(Constants.TENSOR_NAME_X, result)
         if self.x_parameterizer.libsize_scaling:
             x_parameterizer_inputs.setdefault(

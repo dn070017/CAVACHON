@@ -1,7 +1,12 @@
+from typing import TYPE_CHECKING, Type, Union
+
 import tensorflow as tf
 
 from cavachon.layers.progressive_scaler import ProgressiveScaler
 from cavachon.utils.reflection_handler import ReflectionHandler
+
+if TYPE_CHECKING:
+    from cavachon.distributions.distribution import Distribution
 
 
 class NegativeLogDataLikelihood(tf.keras.losses.Loss):
@@ -13,7 +18,7 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
 
     def __init__(
         self,
-        dist_x_z: str,
+        dist_x_z: Union[str, Type["Distribution"]],
         weight: float = 1.0,
         name: str = "negative_log_data_likelihood",
         **kwargs,
@@ -22,9 +27,9 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
 
         Parameters
         ----------
-        dist_x_z: str
+        dist_x_z: Union[str, Type[Distribution]]
             the name for the distributions implemented in
-            cavachon.distributions
+            cavachon.distributions, or the Distribution class itself.
 
         weight: float, optional
             the scaling factor for the loss. The output will be
@@ -46,11 +51,14 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
+        dist_x_z_class: Type["Distribution"]
         if isinstance(dist_x_z, str):
-            dist_x_z = ReflectionHandler.get_class_by_name(
+            dist_x_z_class = ReflectionHandler.get_class_by_name(
                 dist_x_z, "distributions", "Distribution"
             )
-        self.dist_x_z_class = dist_x_z
+        else:
+            dist_x_z_class = dist_x_z
+        self.dist_x_z_class = dist_x_z_class
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Compute the NegativeLogDataLikelihood loss

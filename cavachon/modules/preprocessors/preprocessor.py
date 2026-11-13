@@ -1,4 +1,4 @@
-from typing import Any, List, Mapping
+from typing import Any, Dict, List, Mapping, cast
 
 import tensorflow as tf
 
@@ -98,12 +98,12 @@ class Preprocessor(tf.keras.Model):
 
         """
 
-        inputs = dict()
-        outputs = dict()
+        inputs: Dict[str, tf.Tensor] = dict()
+        outputs: Dict[str, tf.Tensor] = dict()
         processed_matrix = list()
 
         for modality_name in modality_names:
-            distribution_name = distribution_names.get(modality_name)
+            distribution_name = cast(str, distribution_names.get(modality_name))
             modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
             libsize_key = f"{modality_name}_{Constants.TENSOR_NAME_X}_{Constants.TENSOR_NAME_LIBSIZE}"
             modality_input = tf.keras.Input(

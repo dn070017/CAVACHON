@@ -1,5 +1,15 @@
 import warnings
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 import muon as mu
 import numpy as np
@@ -78,7 +88,7 @@ class Model(tf.keras.Model):
 
         """
         super().__init__(inputs=inputs, outputs=outputs, name=name)
-        self.components: List[Component] = components
+        self.components: Mapping[str, Component] = components
         self.component_configs: List[ComponentConfig] = component_configs
 
     @classmethod
@@ -120,7 +130,7 @@ class Model(tf.keras.Model):
             values are the tf.keras.Input.
 
         """
-        inputs = dict()
+        inputs: Dict[str, Any] = dict()
         for modality_name in modality_names:
             modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
             modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
@@ -173,8 +183,8 @@ class Model(tf.keras.Model):
 
         """
         component_configs = GeneralUtils.order_components(component_configs)
-        components = dict()
-        modality_names = set()
+        components: Dict[str, Component] = dict()
+        modality_names: set = set()
         distributions = dict()
         n_vars = dict()
         n_vars_batch_effect = dict()
@@ -211,7 +221,7 @@ class Model(tf.keras.Model):
     def setup_outputs(
         cls,
         inputs: Mapping[Any, tf.keras.Input],
-        components: List[Component],
+        components: Mapping[str, Component],
         component_configs: List[ComponentConfig],
         **kwargs,
     ) -> Mapping[Any, tf.Tensor]:
@@ -239,12 +249,13 @@ class Model(tf.keras.Model):
             functional API.
 
         """
-        z_conditional = dict()
-        z_hat_conditional = dict()
-        outputs = dict()
+        z_conditional: Dict[str, Any] = dict()
+        z_hat_conditional: Dict[str, Any] = dict()
+        outputs: Dict[str, Any] = dict()
         for component_config in component_configs:
             component_name = component_config.name
             component = components.get(component_name)
+            assert component is not None
             component_inputs = Model.prepare_component_inputs(
                 inputs,
                 component_config,
@@ -323,7 +334,7 @@ class Model(tf.keras.Model):
     def predict(
         self,
         x: Union[Mapping[str, tf.Tensor], mu.MuData],
-        batch_size: int = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ):
         """Predict based on Mapping[str, tf.Tensor] (with the same
@@ -347,11 +358,13 @@ class Model(tf.keras.Model):
         if batch_size is None:
             batch_size = 1
         if issubclass(type(x), mu.MuData):
-            outputs = dict()
-            use_which_component = dict()
-            save_x = dict()
-            save_z = dict()
-            save_z_hat = dict()
+            # issubclass(type(x), ...) does not narrow the Union for mypy.
+            mdata = cast(mu.MuData, x)
+            outputs: Dict[str, Any] = dict()
+            use_which_component: Dict[str, List[str]] = dict()
+            save_x: Dict[str, Optional[bool]] = dict()
+            save_z: Dict[str, Optional[bool]] = dict()
+            save_z_hat: Dict[str, Optional[bool]] = dict()
             for component_config in self.component_configs:
                 component_name = component_config.name
                 outputs.setdefault(f"{component_name}_z", list())
@@ -364,7 +377,7 @@ class Model(tf.keras.Model):
                         predict_x = True
 
                     use_which_component.setdefault(modality_name, [])
-                    use_which_component.get(modality_name).append(component_name)
+                    use_which_component[modality_name].append(component_name)
                     save_x.setdefault(
                         f"{component_name}_{modality_name}",
                         component_config.save_x.get(modality_name),
@@ -382,7 +395,7 @@ class Model(tf.keras.Model):
                             f"{component_name}_{modality_name}_x_parameters", list()
                         )
 
-            dataloader = DataLoader(x, batch_size=batch_size)
+            dataloader = DataLoader(mdata, batch_size=batch_size)
             for batch in tqdm(dataloader):
                 result = self.predict_on_batch(self.select_inputs(batch))
                 for key in outputs:
@@ -393,18 +406,18 @@ class Model(tf.keras.Model):
             for modality_name, component_names in use_which_component.items():
                 for component_name in component_names:
                     if save_z.get(f"{component_name}_{modality_name}"):
-                        x.mod[modality_name].obsm[f"z_{component_name}"] = outputs.get(
-                            f"{component_name}_z"
+                        mdata.mod[modality_name].obsm[f"z_{component_name}"] = (
+                            outputs.get(f"{component_name}_z")
                         )
                     if save_z.get(f"{component_name}_{modality_name}"):
-                        x.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
+                        mdata.mod[modality_name].obsm[f"z_hat_{component_name}"] = (
                             outputs.get(f"{component_name}_z_hat")
                         )
                     if save_x.get(f"{component_name}_{modality_name}"):
-                        x.mod[modality_name].obsm[f"x_parameters_{component_name}"] = (
-                            outputs.get(
-                                f"{component_name}_{modality_name}_x_parameters"
-                            )
+                        mdata.mod[modality_name].obsm[
+                            f"x_parameters_{component_name}"
+                        ] = outputs.get(
+                            f"{component_name}_{modality_name}_x_parameters"
                         )
 
             return outputs
@@ -455,7 +468,7 @@ class Model(tf.keras.Model):
         if not hasattr(self, "_gmm_kl_weights"):
             self._gmm_kl_weights = {}
         if not hasattr(self, "_z_hat_density_weights"):
-            self._z_hat_density_weights = {}
+            self._z_hat_density_weights: Dict[str, tf.Variable] = {}
         if not hasattr(self, "_z_hat_gmm_kl_weights"):
             self._z_hat_gmm_kl_weights = {}
 
@@ -510,7 +523,7 @@ class Model(tf.keras.Model):
 
                 # scheduler index (per-component, per-modality ProgressiveScaler)
                 if not hasattr(self, "_data_loss_weights"):
-                    self._data_loss_weights = {}
+                    self._data_loss_weights: Dict[str, Dict[str, Any]] = {}
                 if component_name not in self._data_loss_weights:
                     self._data_loss_weights[component_name] = {}
                 distribution_names = component_config.distribution_names
@@ -523,7 +536,7 @@ class Model(tf.keras.Model):
                     loss.setdefault(
                         nldl_name,
                         NegativeLogDataLikelihood(
-                            distribution_names.get(modality_name),
+                            cast(str, distribution_names.get(modality_name)),
                             weight,
                             name=nldl_name,
                         ),
@@ -535,6 +548,7 @@ class Model(tf.keras.Model):
 
                 # z_hat GMM density loss (deterministic prior density)
                 component = self.components.get(component_name)
+                assert component is not None
                 if (
                     component.learn_z_hat_priors
                     and component.z_hat_prior_parameterizer is not None
@@ -640,8 +654,8 @@ class Model(tf.keras.Model):
         """
         with tf.GradientTape() as tape:
             results = self(self.select_inputs(data), training=True)
-            y_true = dict()
-            y_pred = dict()
+            y_true: Dict[str, Any] = dict()
+            y_pred: Dict[str, Any] = dict()
 
             for component_config in self.component_configs:
                 component_name = component_config.name
@@ -795,8 +809,8 @@ class Model(tf.keras.Model):
     @staticmethod
     def prepare_conditionals(
         for_dims: bool = True,
-        z_conditional: Mapping[str, tf.Tensor] = None,
-        z_hat_conditional: Mapping[str, tf.Tensor] = None,
+        z_conditional: Optional[Mapping[str, tf.Tensor]] = None,
+        z_hat_conditional: Optional[Mapping[str, tf.Tensor]] = None,
     ) -> Iterable:
         """Prepare iterable conditionals used in
         `prepare_conditional_dims_config` and
@@ -850,6 +864,7 @@ class Model(tf.keras.Model):
         ]
 
         conditional_tensor_dicts = [z_conditional, z_hat_conditional]
+        conditionals: Iterable[Tuple[Any, ...]]
         if for_dims:
             conditionals = zip(conditional_config_keys, conditional_dims_keys)
         else:
@@ -864,7 +879,7 @@ class Model(tf.keras.Model):
     @staticmethod
     def prepare_conditional_dims_config(
         component_config: ComponentConfig, components: Mapping[str, Component]
-    ) -> Dict[str, int]:
+    ) -> Dict[str, Optional[int]]:
         """Prepare the config for conditional dimensions used in
         `setup_components`. This function should not be used directly
         by the user.
@@ -885,7 +900,7 @@ class Model(tf.keras.Model):
             Tensor dimensions.
 
         """
-        conditional_dims_config = dict()
+        conditional_dims_config: Dict[str, Optional[int]] = dict()
 
         conditionals = Model.prepare_conditionals()
         for config_key, dims_key in conditionals:
@@ -898,6 +913,7 @@ class Model(tf.keras.Model):
                 conditional_dims = 0
                 for conditional_component_name in conditional_component_names:
                     component = components.get(conditional_component_name)
+                    assert component is not None
                     conditional_dims += component.z_prior_parameterizer.event_dims
                 conditional_dims_config.setdefault(dims_key, conditional_dims)
 
@@ -906,7 +922,7 @@ class Model(tf.keras.Model):
     @staticmethod
     def prepare_component_inputs(
         batch: Mapping[str, tf.Tensor],
-        component_config: ComponentConfig,
+        component_config: Union[ComponentConfig, Mapping[str, Any]],
         target_component: str,
         components: Mapping[str, Component],
         z_conditional: Mapping[str, tf.Tensor] = dict(),
@@ -945,8 +961,10 @@ class Model(tf.keras.Model):
             `z_hat_conditional`, values are the corresponding Tensors.
 
         """
-        component_inputs = dict()
-        for modality_name in components.get(target_component).modality_names:
+        component_inputs: Dict[str, Any] = dict()
+        target = components.get(target_component)
+        assert target is not None
+        for modality_name in target.modality_names:
             modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
             modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
             component_inputs.setdefault(
@@ -1013,7 +1031,7 @@ class Model(tf.keras.Model):
         if unknown_components:
             raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
-        outputs = {
+        outputs: Dict[str, Dict[str, Any]] = {
             Constants.MODEL_OUTPUTS_Z_PARAMS: dict(),
             Constants.MODEL_OUTPUTS_Z: dict(),
         }
@@ -1038,6 +1056,7 @@ class Model(tf.keras.Model):
                 {},
             )
             component = self.components.get(component_name)
+            assert component is not None
             component_outputs = component.encode(
                 component_batch, training=training and component.trainable
             )
@@ -1100,7 +1119,7 @@ class Model(tf.keras.Model):
             raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
         accumulated_z_hat = dict(z_hat_seed or {})
-        outputs = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
+        outputs: Dict[str, Dict[str, Any]] = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
         for component_config in self.component_configs:
             component_name = component_config.name
             if component_name not in requested_components:
@@ -1138,6 +1157,7 @@ class Model(tf.keras.Model):
                 z_hat_conditional,
             )
             component = self.components.get(component_name)
+            assert component is not None
             component_outputs = component.hierarchical_encode(
                 component_batch,
                 z=z.get(component_name),
@@ -1196,7 +1216,7 @@ class Model(tf.keras.Model):
         if unknown_components:
             raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
-        outputs = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
+        outputs: Dict[str, Dict[str, Any]] = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
         for component_config in self.component_configs:
             component_name = component_config.name
             if component_name not in requested_components:
@@ -1224,6 +1244,7 @@ class Model(tf.keras.Model):
                 {},
             )
             component = self.components.get(component_name)
+            assert component is not None
             component_outputs = component.decode(
                 component_batch,
                 component_z_hat,

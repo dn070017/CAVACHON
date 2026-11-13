@@ -63,7 +63,7 @@ class IndependentBernoulliParameterizer(Parameterizer):
         return tf.keras.activations.sigmoid(outputs)
 
     @classmethod
-    def make(
+    def make(  # type: ignore[override]  # does not accept extra **kwargs
         cls,
         input_dims: int,
         event_dims: int,

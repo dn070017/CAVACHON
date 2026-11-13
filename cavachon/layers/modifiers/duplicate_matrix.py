@@ -1,4 +1,4 @@
-from typing import Hashable, Iterable, MutableMapping
+from typing import Hashable, Iterable, MutableMapping, Tuple, cast
 
 import tensorflow as tf
 
@@ -60,9 +60,11 @@ class DuplicateMatrix(tf.keras.layers.Layer):
             is_sparse = True
 
         if isinstance(self.key, str):
-            duplicate_key = f"{self.key}_{Constants.TENSOR_NAME_ORIGINAL_X}"
+            duplicate_key: Hashable = f"{self.key}_{Constants.TENSOR_NAME_ORIGINAL_X}"
         elif isinstance(self.key, Iterable):
-            duplicate_key = self.key[:-1] + (Constants.TENSOR_NAME_ORIGINAL_X,)
+            duplicate_key = cast(Tuple[Hashable, ...], self.key)[:-1] + (
+                Constants.TENSOR_NAME_ORIGINAL_X,
+            )
         else:
             raise NotImplementedError(
                 f"Expected key to be str or a hashable Iterable, get {type(self.key)}"

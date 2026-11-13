@@ -26,6 +26,9 @@ class ComponentConfig(BaseConfigModel):
     save_z: Dict[str, bool] = {}
     n_vars: Dict[str, int] = {}
     n_vars_batch_effect: Dict[str, int] = {}
+    # set by Model from the latent dimensions of the parent components
+    z_conditional_dims: Optional[int] = None
+    z_hat_conditional_dims: Optional[int] = None
     n_latent_dims: int = Field(5, ge=1)
     # 0 means 2 * n_latent_dims + 1 (see _default_n_latent_priors)
     n_latent_priors: int = Field(0, ge=0)

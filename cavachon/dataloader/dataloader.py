@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Iterator, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 import muon as mu
 import tensorflow as tf
@@ -130,7 +130,7 @@ class DataLoader:
             1. `modality`_'matrix': (tf.SparseTensor)
             2. `modality`_'batch_effect': (tf.Tensor)
         """
-        tensor_mapping = dict()
+        tensor_mapping: Dict[str, Any] = dict()
         modality_names = self.mdata.mod.keys()
         self.check_obs_aligned()
         # reset the per-dataset bookkeeping so calling create_dataset
@@ -282,6 +282,7 @@ class DataLoader:
                     distribution_name, "dataloader/modifiers", "DataModifier"
                 )
                 modifier = modifier_class(modality_name=modality_name)
+                assert self.dataset is not None
                 self.dataset = self.dataset.map(modifier)
 
         return
@@ -301,6 +302,7 @@ class DataLoader:
             1. (`modality`, 'matrix') (tf.SparseTensor) and
             2. (`modality`, 'batch_effect') (tf.Tensor)
         """
+        assert self.dataset is not None
         for batch in self.dataset.batch(self.batch_size):
             yield batch
 
@@ -358,6 +360,7 @@ class DataLoader:
         """
         datadir = os.path.realpath(datadir)
         os.makedirs(datadir, exist_ok=True)
+        assert self.dataset is not None
         self.dataset.save(datadir)
 
         return

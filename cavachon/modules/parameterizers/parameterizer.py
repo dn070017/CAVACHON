@@ -1,4 +1,4 @@
-from typing import Mapping
+from typing import Dict, Mapping
 
 import tensorflow as tf
 
@@ -120,7 +120,7 @@ class Parameterizer(tf.keras.Model):
             Inputs for building tf.keras.Model using Tensorflow
             functional API.
         """
-        inputs = dict()
+        inputs: Dict[str, tf.Tensor] = dict()
         inputs.setdefault(Constants.TENSOR_NAME_X, tf.keras.Input(shape=(input_dims,)))
         if libsize_scaling:
             inputs.setdefault(Constants.TENSOR_NAME_LIBSIZE, tf.keras.Input(shape=(1,)))

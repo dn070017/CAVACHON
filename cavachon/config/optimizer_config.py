@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import field_validator
 
 from cavachon.config.base import BaseConfigModel
@@ -11,7 +13,7 @@ class OptimizerConfig(BaseConfigModel):
 
     @field_validator("learning_rate", mode="before")
     @classmethod
-    def _coerce_learning_rate(cls, v: object) -> float:
+    def _coerce_learning_rate(cls, v: Any) -> float:
         # float() raises TypeError for e.g. None, which pydantic would not
         # convert into a ValidationError.
         try:

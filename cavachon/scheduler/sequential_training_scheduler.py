@@ -3,7 +3,7 @@ import os
 import warnings
 from collections import defaultdict
 from copy import deepcopy
-from typing import List, Mapping, Optional, Union
+from typing import Dict, List, Mapping, Optional, Union
 
 import mlflow
 import numpy as np
@@ -46,12 +46,11 @@ class SequentialTrainingScheduler:
         early stopping settings (EarlyStoppingConfig), or False if early
         stopping is disabled.
 
-    training_order: Mapping[int, List[str]]
-        the training order of the components, the keys are the training
-        order, the values are lists of the components trained in the
-        corresponding order.
+    training_order: List[List[str]]
+        the training order of the components, each element is a list
+        of the components trained in the corresponding order.
 
-    modality_weight: Mapping[str, Mapping[str, int]]
+    modality_weight: Mapping[str, Mapping[str, float]]
         the weight of the data distribution by component. The keys are
         the component names, the values are the mapping where the keys
         are the modality names and the values are the weight.
@@ -113,19 +112,18 @@ class SequentialTrainingScheduler:
         self.distribution_names = distribution_names
         self.batch_effect_colnames = batch_effect_colnames
 
-    def compute_component_training_order(self) -> Mapping[int, List[str]]:
+    def compute_component_training_order(self) -> List[List[str]]:
         """Compute the training order of the components based on the
         order of topological sort of the input dependency graph.
 
         Returns
         -------
-        Mapping[int, List[str]]
-            the training order of the components, the keys are the
-            training order, the values are lists of the components
-            trained in the corresponding order.
+        List[List[str]]
+            the training order of the components, each element is a
+            list of the components trained in the corresponding order.
         """
-        training_order = list()
-        component_order = dict()
+        training_order: List[List[str]] = list()
+        component_order: Dict[str, int] = dict()
         self.run_progressive_training = dict()
         component_configs = self.component_configs
         training_order.append([])
@@ -149,7 +147,7 @@ class SequentialTrainingScheduler:
 
     def compute_modality_weight(
         self, constant: bool = False
-    ) -> Mapping[str, Mapping[str, int]]:
+    ) -> Mapping[str, Mapping[str, float]]:
         """Compute the weight of the data distribution for each
         modality.
 
@@ -161,16 +159,18 @@ class SequentialTrainingScheduler:
 
         Returns
         -------
-        Mapping[str, Mapping[str, int]]
+        Mapping[str, Mapping[str, float]]
             the weight of the data distribution by component. The keys
             are the component names, the values are the mapping where
             the keys are the modality names and the values are the
             weight.
         """
-        modality_weight_by_component = defaultdict(dict)
+        modality_weight_by_component: defaultdict[str, Dict[str, float]] = defaultdict(
+            dict
+        )
         for component_config in self.component_configs:
             component_name = component_config.name
-            modality_weight = dict()
+            modality_weight: Dict[str, float] = dict()
             if not constant:
                 n_vars = component_config.n_vars
                 total_vars = 0
@@ -191,7 +191,7 @@ class SequentialTrainingScheduler:
         return modality_weight_by_component
 
     def _kmeans_plus_plus(
-        self, X: tf.Tensor, n_clusters: int, seed: int = None
+        self, X: tf.Tensor, n_clusters: int, seed: Optional[int] = None
     ) -> tf.Tensor:
         """K-Means++ seeding using TensorFlow ops.
 
@@ -493,7 +493,7 @@ class SequentialTrainingScheduler:
             history of model.fit in each step.
         """
         n_batches = len(x)
-        history = []
+        history: List[tf.keras.callbacks.History] = []
         self._fit_epochs = kwargs.get("epochs", 100)
         # z is sampled during the whole training; z_hat only from the
         # z_hat annealing phase of its component on (see

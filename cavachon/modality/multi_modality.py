@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from typing import Mapping as MappingType
-from typing import Union
+from typing import Union, cast
 
 import anndata
 import muon
@@ -54,6 +54,7 @@ class MultiModality(muon.MuData):
             index = None
             for key in data.keys():
                 adata = data.get(key)
+                assert adata is not None
                 if not adata.obs.index.is_unique:
                     duplicated = adata.obs.index[adata.obs.index.duplicated()].unique()
                     raise ValueError(
@@ -67,6 +68,9 @@ class MultiModality(muon.MuData):
                     else index.intersection(adata.obs.index)
                 )
             # create a new mapping so the caller's mapping is not modified
-            data = dict((key, data.get(key)[index].copy()) for key in data.keys())
+            data = dict(
+                (key, cast(anndata.AnnData, data.get(key))[index].copy())
+                for key in data.keys()
+            )
 
         super().__init__(data, *args, **kwargs)

@@ -7,7 +7,15 @@ class StudenttParameterizer(Parameterizer):
     default_libsize_scaling = False
 
     @classmethod
-    def make(cls, input_dims: int, event_dims: int, name: str = "student_t", **kwargs):
+    def make(
+        cls,
+        input_dims: int,
+        event_dims: int,
+        name: str = "student_t",
+        libsize_scaling: bool = False,
+        exp_transform: bool = False,
+        **kwargs,
+    ):
         # We call the parent make, which handles the Keras functional setup
         return super().make(
             input_dims=input_dims,

@@ -56,7 +56,7 @@ class ReflectionHandler:
         partial=False,
     ):
         pattern = f"*{filename}" if partial else f"{filename}"
-        result = []
+        result: list[Path] = []
         for depth in range(max_depth):
             filename = (
                 f"{Settings.src_path}/{subdirectory}" + "**/" * (depth + 1) + pattern

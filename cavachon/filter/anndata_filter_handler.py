@@ -1,5 +1,4 @@
-from collections.abc import Callable
-from typing import Dict, List, Mapping
+from typing import Dict, List, MutableMapping
 
 
 import anndata
@@ -8,7 +7,7 @@ from cavachon.filter.anndata_filter import AnnDataFilter
 from cavachon.utils.reflection_handler import ReflectionHandler
 
 
-class AnnDataFilterHandler(Callable):
+class AnnDataFilterHandler:
     """AnnDataFilterHandler
 
     Handler for AnnDataFilter used to create a series of filter steps
@@ -68,13 +67,13 @@ class AnnDataFilterHandler(Callable):
 
         return cls(steps)
 
-    def __call__(self, target: Mapping[str, anndata.AnnData]):
+    def __call__(self, target: MutableMapping[str, anndata.AnnData]):
         """Perform preprocessing to all AnnDatas in the provided target.
         Note that the values in the target will be filtered.
 
         Parameters
         ----------
-        target: Mapping[str, anndata.AnnData]
+        target: MutableMapping[str, anndata.AnnData]
             Mapping of AnnData to preprocessed.
 
         Returns

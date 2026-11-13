@@ -31,8 +31,8 @@ class ToSparse(tf.keras.layers.Layer):
         self.key = key
 
     def call(
-        self, inputs: MutableMapping[str, tf.Tensor]
-    ) -> MutableMapping[str, tf.Tensor]:
+        self, inputs: MutableMapping[Hashable, tf.Tensor]
+    ) -> MutableMapping[Hashable, tf.Tensor]:
         """Transform tf.Tensor stored in inputs to tf.SparseTensor.
 
         Parameters

@@ -1,9 +1,19 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, overload
 
 from pydantic import Field, field_validator, model_validator
 
 from cavachon.config.base import BaseConfigModel
 from cavachon.config.optimizer_config import OptimizerConfig
+
+
+@overload
+def validate_kl_annealing_ratio(
+    v: Tuple[float, float, float],
+) -> Tuple[float, float, float]: ...
+
+
+@overload
+def validate_kl_annealing_ratio(v: None) -> None: ...
 
 
 def validate_kl_annealing_ratio(
@@ -96,15 +106,15 @@ class TrainingConfig(BaseConfigModel):
     optimizer: OptimizerConfig = Field(
         default_factory=lambda: OptimizerConfig(name="adam", learning_rate=1e-4)
     )
-    max_regular_training_epochs: int = Field(500, ge=0)
-    n_parent_annealing_epochs: int = Field(1, ge=0)
-    n_kl_annealing_epochs: int = Field(25, ge=0)
+    max_regular_training_epochs: int = Field(default=500, ge=0)
+    n_parent_annealing_epochs: int = Field(default=1, ge=0)
+    n_kl_annealing_epochs: int = Field(default=25, ge=0)
     enable_kmeans_init: bool = True
     learn_z_hat_priors: bool = False
     kl_annealing_ratio: Tuple[float, float, float] = (0.5, 0.2, 0.3)
-    n_z_hat_annealing_epochs: int = Field(0, ge=0)
-    n_z_hat_training_epochs: int = Field(0, ge=0)
-    z_hat_kl_weight: float = Field(1.0, ge=0)
+    n_z_hat_annealing_epochs: int = Field(default=0, ge=0)
+    n_z_hat_training_epochs: int = Field(default=0, ge=0)
+    z_hat_kl_weight: float = Field(default=1.0, ge=0)
     train: bool = True
     early_stopping: Union[bool, EarlyStoppingConfig] = True
 

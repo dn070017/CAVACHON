@@ -1,6 +1,6 @@
 import warnings
 from collections import OrderedDict
-from typing import Any, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Union, cast
 
 import tensorflow as tf
 
@@ -207,7 +207,7 @@ class Component(tf.keras.Model):
         z_conditional_dims: Optional[int] = None,
         z_hat_conditional_dims: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[Mapping[Any, tf.keras.Input]]:
+    ) -> Mapping[Any, tf.keras.Input]:
         """Builder function for setting up inputs. Developers can
         overwrite this function to create custom Component.
 
@@ -243,13 +243,11 @@ class Component(tf.keras.Model):
 
         Returns
         -------
-        Tuple[Mapping[Any, tf.keras.Input]]:
-            the first element in the tuple is the inputs (for the
-            entire component) and the second element is the inputs for
-            the HierarchicalEncoder.
+        Mapping[Any, tf.keras.Input]:
+            the inputs for the entire component.
 
         """
-        inputs = dict()
+        inputs: Dict[Any, tf.keras.Input] = dict()
 
         for modality_name in modality_names:
             modality_matrix_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
@@ -389,7 +387,7 @@ class Component(tf.keras.Model):
 
         """
 
-        decoders = dict()
+        decoders: Dict[Any, tf.keras.Model] = dict()
 
         if isinstance(n_decoder_layers, int):
             default_n_decoder_layers = n_decoder_layers
@@ -401,8 +399,8 @@ class Component(tf.keras.Model):
             decoders.setdefault(
                 modality_name,
                 DecoderDataParameterizer(
-                    distribution_name=distribution_names.get(modality_name),
-                    n_vars=n_vars.get(modality_name),
+                    distribution_name=cast(str, distribution_names.get(modality_name)),
+                    n_vars=cast(int, n_vars.get(modality_name)),
                     n_layers=n_decoder_layers.get(
                         modality_name, default_n_decoder_layers
                     ),
@@ -695,7 +693,7 @@ class Component(tf.keras.Model):
             functional API.
 
         """
-        outputs = dict()
+        outputs: Dict[Any, tf.Tensor] = dict()
 
         preprocessor_inputs = Component.prepare_preprocessor_inputs(
             inputs, modality_names
@@ -712,6 +710,7 @@ class Component(tf.keras.Model):
                 inputs, z
             )
             z_hat_parameters = hierarchical_encoder(hierarchical_encoder_inputs)
+            assert z_hat_sampler is not None
             z_hat = z_hat_sampler(z_hat_parameters)
 
         outputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
@@ -740,7 +739,9 @@ class Component(tf.keras.Model):
             decoder_inputs = Component.prepare_decoder_inputs(
                 inputs, modality_name, z_hat, preprocessor_outputs
             )
-            x_parameters = decoders.get(modality_name)(decoder_inputs)
+            decoder = decoders.get(modality_name)
+            assert decoder is not None
+            x_parameters = decoder(decoder_inputs)
             outputs.setdefault(
                 f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}", x_parameters
             )
@@ -1041,6 +1042,7 @@ class Component(tf.keras.Model):
         z_hat_parameters = self.hierarchical_encoder(
             hierarchical_encoder_inputs, training=training
         )
+        assert self.z_hat_sampler is not None
         z_hat = self.z_hat_sampler(z_hat_parameters, training=training)
         return {
             Constants.MODEL_OUTPUTS_Z_HAT_PARAMS: z_hat_parameters,
@@ -1147,16 +1149,16 @@ class Component(tf.keras.Model):
         gmm_kl_weights = gmm_kl_weights or {}
 
         if not hasattr(self, "_standard_kl_weights"):
-            self._standard_kl_weights = {}
+            self._standard_kl_weights: Dict[str, tf.Variable] = {}
         if not hasattr(self, "_gmm_kl_weights"):
-            self._gmm_kl_weights = {}
+            self._gmm_kl_weights: Dict[str, tf.Variable] = {}
         if not hasattr(self, "_z_hat_density_weights"):
-            self._z_hat_density_weights = {}
+            self._z_hat_density_weights: Dict[str, tf.Variable] = {}
 
         loss_weights = kwargs.pop("loss_weights", None) or {}
 
         if "loss" not in kwargs:
-            loss = OrderedDict()
+            loss: OrderedDict[str, tf.keras.losses.Loss] = OrderedDict()
 
             # Default component name for weight dicts and Variable storage
             comp_name = self.name or "component"
@@ -1226,7 +1228,7 @@ class Component(tf.keras.Model):
                 )
 
             if not hasattr(self, "_data_loss_weights"):
-                self._data_loss_weights = {}
+                self._data_loss_weights: Dict[str, Dict[str, tf.Variable]] = {}
             if comp_name not in self._data_loss_weights:
                 self._data_loss_weights[comp_name] = {}
 
@@ -1242,7 +1244,7 @@ class Component(tf.keras.Model):
                 loss.setdefault(
                     nldl_name,
                     NegativeLogDataLikelihood(
-                        self.distribution_names.get(modality_name),
+                        cast(str, self.distribution_names.get(modality_name)),
                         var,
                         name=nldl_name,
                     ),
@@ -1288,8 +1290,8 @@ class Component(tf.keras.Model):
         """
         with tf.GradientTape() as tape:
             results = self(data, training=True)
-            y_true = dict()
-            y_pred = dict()
+            y_true: Dict[str, tf.Tensor] = dict()
+            y_pred: Dict[str, tf.Tensor] = dict()
             prior_params = results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
 
             z_key = Constants.MODEL_OUTPUTS_Z
@@ -1389,17 +1391,17 @@ class Component(tf.keras.Model):
         return
 
     def set_progressive_scaler_iteration(
-        self, current_iteration: int = 1, total_iterations: int = 1
+        self, current_iteration: float = 1, total_iterations: float = 1
     ) -> None:
         """Set the alpha values (current iteration and total
         iterations) for the hierarchical encoder.
 
         Parameters
         ----------
-        current_iteration: int, optional
+        current_iteration: float, optional
             current iteration. Defaults to 1.
 
-        total_iterations: int, optional
+        total_iterations: float, optional
             total iterations, Defaults to 1.
         """
         total_iterations = float(total_iterations)
@@ -1432,7 +1434,7 @@ class Component(tf.keras.Model):
             keys are `modality_name`_matrix, values are the
             corresponding tensors.
         """
-        preprocessor_inputs = dict()
+        preprocessor_inputs: Dict[str, tf.Tensor] = dict()
         preprocessor_inputs.update(batch)
         preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z, None)
         preprocessor_inputs.pop(Constants.MODULE_INPUTS_CONDITIONED_Z_HAT, None)
@@ -1466,7 +1468,7 @@ class Component(tf.keras.Model):
             `z_hat_conditional` (if applicable). values are the
             corresponding tensors.
         """
-        hierarchical_encoder_inputs = dict()
+        hierarchical_encoder_inputs: Dict[str, tf.Tensor] = dict()
         hierarchical_encoder_inputs.setdefault(Constants.MODEL_OUTPUTS_Z, z)
         if Constants.MODULE_INPUTS_CONDITIONED_Z in batch:
             hierarchical_encoder_inputs.setdefault(
@@ -1516,7 +1518,7 @@ class Component(tf.keras.Model):
 
         """
 
-        decoder_inputs = dict()
+        decoder_inputs: Dict[str, tf.Tensor] = dict()
         modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
         decoder_inputs.setdefault(
             Constants.TENSOR_NAME_X,

@@ -1,7 +1,7 @@
 import os
 import warnings
 from pathlib import Path
-from typing import List, Mapping, MutableMapping, Optional, Tuple
+from typing import Dict, List, MutableMapping, Optional, Tuple, cast
 
 import anndata
 import muon as mu
@@ -82,7 +82,7 @@ class Workflow:
         self.train_history: List[tf.keras.callbacks.History] = list()
         self.outputs: MutableMapping[str, tf.Tensor] = dict()
         self.differential_analysis_results: MutableMapping[
-            Tuple[str, ...], Mapping[str, pd.DataFrame]
+            Tuple[str, ...], MutableMapping[str, pd.DataFrame]
         ] = dict()
 
         return
@@ -108,6 +108,7 @@ class Workflow:
 
         outdir = os.path.join(self.config.io.outdir, "mdata")
         os.makedirs(outdir, exist_ok=True)
+        assert self.mdata is not None
         self.mdata.write(f"{outdir}/mdata.h5mu")
 
         self.visualize_conditional_attribution_scores()
@@ -138,7 +139,7 @@ class Workflow:
             corresponding AnnData.
 
         """
-        modalities = dict()
+        modalities: Dict[str, anndata.AnnData] = dict()
         for modality_name in config.modality_names:
             modality_config = config.modality[modality_name]
             h5ad = modality_config.h5ad
@@ -182,8 +183,9 @@ class Workflow:
         """Update the number of variables in the config after filtering AnnData"""
         processed_component_configs = list()
         for component_config in self.config.components:
-            component_vars = dict()
+            component_vars: Dict[str, int] = dict()
             for modality_name in component_config.modality_names:
+                assert self.mdata is not None
                 component_vars.setdefault(
                     modality_name, self.mdata[modality_name].n_vars
                 )
@@ -199,8 +201,8 @@ class Workflow:
     def setup_dataloader(self) -> None:
         """Setup mdata and update n_vars_batch_effect in the component config."""
         batch_size = self.config.dataset.batch_size
-        self.distribution_names = dict()
-        self.batch_effect_colnames = dict()
+        self.distribution_names: Dict[str, str] = dict()
+        self.batch_effect_colnames: Dict[str, List[str]] = dict()
         for modality_name, modality_config in self.config.modality.items():
             self.distribution_names.setdefault(modality_name, modality_config.dist)
             self.batch_effect_colnames.setdefault(
@@ -218,11 +220,13 @@ class Workflow:
     def update_nvars_batch_effect(self) -> None:
         """Update the number of batch effect variables after creating DataLoader"""
         processed_component_configs = list()
+        assert self.dataloader is not None
         nvars = self.dataloader.n_vars_batch_effect
         for component_config in self.config.components:
-            component_vars = dict()
+            component_vars: Dict[str, int] = dict()
             for modality_name in component_config.modality_names:
-                component_vars[modality_name] = nvars.get(modality_name)
+                # DataLoader sets n_vars_batch_effect for every modality.
+                component_vars[modality_name] = cast(int, nvars.get(modality_name))
             component_config.n_vars_batch_effect = component_vars
             processed_component_configs.append(component_config)
 
@@ -237,6 +241,7 @@ class Workflow:
         optimizer = optimizer_config.name
         learning_rate = optimizer_config.learning_rate
         early_stopping = self.config.training.early_stopping
+        assert self.dataloader is not None
         self.train_scheduler = SequentialTrainingScheduler(
             self.model,
             self.mdata,
@@ -253,6 +258,7 @@ class Workflow:
 
     def load_model_weights(self) -> None:
         """Load the pretrained model weights"""
+        assert self.model is not None
         try:
             self.model.load_weights(
                 os.path.join(
@@ -278,19 +284,23 @@ class Workflow:
         max_epochs = self.config.training.max_regular_training_epochs
 
         # shuffle dataset if needed
+        assert self.dataloader is not None
+        dataset = self.dataloader.dataset
+        assert dataset is not None
         if self.config.dataset.shuffle:
-            train_dataset = self.dataloader.dataset.shuffle(self.mdata.n_obs).batch(
-                batch_size
-            )
+            assert self.mdata is not None
+            train_dataset = dataset.shuffle(self.mdata.n_obs).batch(batch_size)
         else:
-            train_dataset = self.dataloader.dataset.batch(batch_size)
+            train_dataset = dataset.batch(batch_size)
 
         # train the model
+        assert self.train_scheduler is not None
         self.train_history = self.train_scheduler.fit(train_dataset, epochs=max_epochs)
 
         # save the weights if needed
         if self.config.model.save_weights:
             os.makedirs(self.config.io.checkpointdir, exist_ok=True)
+            assert self.model is not None
             self.model.save_weights(
                 os.path.join(
                     f"{self.config.io.checkpointdir}", f"{self.model.name}.weights.h5"
@@ -298,6 +308,7 @@ class Workflow:
             )
 
         # change the training states to False
+        assert self.model is not None
         for component in self.model.components.values():
             component.trainable = False
             component.set_progressive_scaler_iteration(
@@ -309,6 +320,7 @@ class Workflow:
 
     def predict(self) -> None:
         """Predict generative process for self.mdata."""
+        assert self.model is not None
         self.model.trainable = False
         self.model.compile()
         batch_size = self.config.dataset.batch_size
@@ -326,6 +338,7 @@ class Workflow:
             use_rep = clustering_config.use_rep
             min_n_obs = clustering_config.min_n_obs
             if use_rep == "z_hat":
+                assert self.model is not None
                 component_obj = self.model.components[component]
                 if (
                     getattr(component_obj, "learn_z_hat_priors", False)
@@ -371,6 +384,7 @@ class Workflow:
             modality_name = config.modality
             use_rep = config.use_rep
             interactive = config.interactive
+            assert self.mdata is not None
             adata = self.mdata[modality_name]
             title = (
                 f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
@@ -394,6 +408,7 @@ class Workflow:
         os.makedirs(outdir, exist_ok=True)
 
         targets = list()
+        assert self.mdata is not None
         for modality_name in self.mdata.mod.keys():
             adata = self.mdata[modality_name]
             for latent_representation in adata.obsm.keys():
@@ -425,6 +440,7 @@ class Workflow:
             return
         outdir = os.path.join(self.config.io.outdir, "differential_analysis")
         os.makedirs(outdir, exist_ok=True)
+        assert self.dataloader is not None
         analysis = DifferentialAnalysis(
             self.mdata,
             self.model,
@@ -438,6 +454,7 @@ class Workflow:
             use_cluster = analysis_config.use_cluster
             if analysis_config.group_a and analysis_config.group_b:
                 # Single-pair mode: explicit group_a vs group_b
+                assert self.mdata is not None
                 obs = self.mdata[modality_name].obs
                 index_a = obs[obs[use_cluster] == analysis_config.group_a].index
                 index_b = obs[obs[use_cluster] == analysis_config.group_b].index
@@ -460,7 +477,7 @@ class Workflow:
                     ]
                 # keyed like the pairwise mode, so comparisons on different
                 # annotations (use_cluster) do not overwrite each other.
-                target = (modality_name, component, use_cluster)
+                target: Tuple[str, ...] = (modality_name, component, use_cluster)
                 self.differential_analysis_results.setdefault(target, dict())[
                     f"{analysis_config.group_a}/{analysis_config.group_b}"
                 ] = result
@@ -501,6 +518,7 @@ class Workflow:
             self.config.io.outdir, "hierarchical_differential_analysis"
         )
         os.makedirs(outdir, exist_ok=True)
+        assert self.dataloader is not None
         analysis = HierarchicalDifferentialAnalysis(
             self.mdata,
             self.model,
@@ -527,7 +545,7 @@ class Workflow:
                     donor_components=analysis_config.donor_components,
                     sort_output=analysis_config.sort_output,
                 )
-                target = (
+                target: Tuple[str, ...] = (
                     analysis_config.modality,
                     "from",
                     analysis_config.component,
@@ -589,6 +607,7 @@ class Workflow:
             component = analysis_config.component
             use_cluster = analysis_config.use_cluster
 
+            assert self.dataloader is not None
             analysis = DifferentialAttributionAnalysis(
                 self.mdata,
                 self.model,
@@ -638,6 +657,7 @@ class Workflow:
                         ].iloc[0]
                     )
 
+                assert self.mdata is not None
                 obs = self.mdata[modality_name].obs
                 group_a_index = obs[obs[use_cluster] == group_a].index
                 group_b_index = obs[obs[use_cluster] == group_b].index
@@ -739,6 +759,7 @@ class Workflow:
             for wrt in with_respect_to:
                 title = f"{modality_name} {component} attribution wrt {wrt} colored by {use_cluster}"
                 file_label = f"{title}.html".lower().replace(" ", "_")
+                assert self.dataloader is not None
                 InteractiveVisualization.attribution_score(
                     mdata=AnnDataUtils.merge_mdata_on_obs_annotation(
                         self.mdata, use_cluster, self.batch_effect_colnames

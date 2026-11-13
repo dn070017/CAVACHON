@@ -61,7 +61,7 @@ class MixtureMultivariateNormalDiagParameterizer(Parameterizer):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def make(
+    def make(  # type: ignore[override]  # n_components is a required extra parameter
         cls,
         input_dims: int,
         event_dims: int,

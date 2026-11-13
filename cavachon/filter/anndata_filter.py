@@ -1,9 +1,7 @@
-from collections.abc import Callable
-
 import anndata
 
 
-class AnnDataFilter(Callable):
+class AnnDataFilter:
     """AnnDataFilter
 
     Filter for AnnData. Used as an adaptor between the scanpy

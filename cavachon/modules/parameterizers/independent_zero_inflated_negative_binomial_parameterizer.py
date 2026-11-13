@@ -140,7 +140,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
         )
 
     @classmethod
-    def make(
+    def make(  # type: ignore[override]  # does not accept extra **kwargs
         cls,
         input_dims: int,
         event_dims: int,

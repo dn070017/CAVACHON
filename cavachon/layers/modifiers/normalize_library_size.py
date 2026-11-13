@@ -1,4 +1,4 @@
-from typing import Hashable, Iterable, MutableMapping
+from typing import Hashable, Iterable, MutableMapping, Tuple, cast
 
 import tensorflow as tf
 
@@ -61,9 +61,11 @@ class NormalizeLibrarySize(tf.keras.layers.Layer):
         tensor = tf.math.divide_no_nan(tensor, libsize)
 
         if isinstance(self.key, str):
-            libsize_key = f"{self.key}_{Constants.TENSOR_NAME_LIBSIZE}"
+            libsize_key: Hashable = f"{self.key}_{Constants.TENSOR_NAME_LIBSIZE}"
         elif isinstance(self.key, Iterable):
-            libsize_key = self.key[:-1] + (Constants.TENSOR_NAME_LIBSIZE,)
+            libsize_key = cast(Tuple[Hashable, ...], self.key)[:-1] + (
+                Constants.TENSOR_NAME_LIBSIZE,
+            )
         else:
             raise NotImplementedError(
                 f"Expected key to be str or a hashable Iterable, get {type(self.key)}"

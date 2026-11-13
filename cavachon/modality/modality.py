@@ -73,6 +73,14 @@ class Modality(anndata.AnnData):
             addtional parameters for initializing anndata.AnnData.
         """
 
+        matrix: Union[
+            np.ndarray,
+            scipy.sparse.spmatrix,
+            pd.DataFrame,
+            tf.Tensor,
+            anndata.AnnData,
+            None,
+        ]
         if isinstance(X, tf.Tensor):
             matrix = np.array(X)
         else:

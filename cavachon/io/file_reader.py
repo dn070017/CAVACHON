@@ -49,6 +49,7 @@ class FileReader:
         matrix_list = []
         for sample_name in config_sample_list:
             config_sample = config.sample.get(sample_name)
+            assert config_sample is not None
             config_sample_modality = list(
                 filter(
                     lambda x: x.name == modality_name,
@@ -168,7 +169,7 @@ class FileReader:
         if colnames:
             df.columns = colnames
             if not isinstance(index_col, int):
-                index_col = colnames.index(index_col)
+                index_col = colnames.index(index_col)  # type: ignore[arg-type]  # None raises ValueError (see report)
             index_name = colnames[int(index_col)]
             df.index = pd.Index(df[index_name], name=f"{name}:{index_name}")
         elif has_headers and index_col is not None:

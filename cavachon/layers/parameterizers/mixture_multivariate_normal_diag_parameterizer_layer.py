@@ -63,17 +63,17 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
         if side < 1:
             side = 1
 
-        coords = []
+        coord_list: list[np.ndarray] = []
         for idx in range(K):
             # represent idx in base `side` with D digits
-            digits = []
+            digit_list: list[int] = []
             tmp = idx
             for _ in range(D):
-                digits.append(tmp % side)
+                digit_list.append(tmp % side)
                 tmp //= side
             # digits is in reverse order; reverse back
-            digits = digits[::-1]
-            digits = np.array(digits, dtype=np.float32)
+            digit_list = digit_list[::-1]
+            digits = np.array(digit_list, dtype=np.float32)
 
             # center the grid around 0 and scale to roughly [-1, 1]* radius (depends on radius)
             center = (side - 1) / 2.0
@@ -83,9 +83,9 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
                 coord = np.zeros_like(digits)
 
             coord = coord * radius
-            coords.append(coord)
+            coord_list.append(coord)
 
-        coords = np.stack(coords, axis=0)  # (K, D)
+        coords = np.stack(coord_list, axis=0)  # (K, D)
         return coords
 
     def build(self, input_shape: tf.TensorShape) -> None:
@@ -197,7 +197,7 @@ class MixtureMultivariateNormalDiagParameterizerLayer(tf.keras.layers.Layer):
 
             mean = tf.matmul(inputs, loc_weight) + loc_bias
 
-            (means.append(mean),)
+            means.append(mean)
             if not self.unit_variance:
                 scale_diag.append(
                     tf.math.softplus(
