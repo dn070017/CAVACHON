@@ -29,7 +29,7 @@ Packages that import from exactly 4 other cavachon packages were added later, un
 | modules (base, parameterizers, preprocessors) | `test/modules/{base,parameterizers,preprocessors}` | 80 | 7 | 99% (modules overall) |
 | modules (components) | `test/modules/components` | 93 | 11 | (included above) |
 | workflow (`setup_train_scheduler` only) | `test/workflow` | 2 | 0 | not measured |
-| **Whole suite (after M1/M2/M5/M6/M7 fixes)** | | **1211** | **32** | |
+| **Whole suite (after M1/M2/M5/M6/M7 and early-stopping fixes)** | | **1222** | **32** | |
 
 ### Isolation (mocking policy)
 
@@ -322,9 +322,11 @@ Code inside the package stays real. For example, `Component` tests may use the r
 ### Worth a look (not marked as bugs)
 
 - **ZINB library size semantics.** The library size is the row sum of *log1p* counts, because NormalizeLibrarySize runs after LogTransform. The decoder computes `exp(min(mean·libsize, 7)) − 1`, so the expected count is capped at about 1,096. This may be intended; worth confirming.
-- **`EarlyStoppingConfig`:**
-  - its monitor, mode and patience are ignored, and `min_delta=5` is hard-coded;
-  - patience comes from `fit(epochs=…)`.
+- ✅ **`EarlyStoppingConfig` is now used (fixed 2026-11-13).** The scheduler had ignored the config: it hard-coded `monitor="loss"` and `min_delta=5`, and set patience to `max(10, epochs/20)` from the global `max_regular_training_epochs`. Your `patience: 50` became 10.
+  - The callback is now built from `monitor`, `mode`, `patience` and a new `min_delta` field (default 5).
+  - `early_stopping: true` uses the documented defaults (loss, min, patience 25), and `false` disables it.
+  - `mode`, `patience` and `min_delta` are validated.
+  - An end-to-end run with `patience: 2` stopped each regular phase after 3 epochs.
 - **z_hat annealing:**
   - the KL ramp only reaches its target if `n_z_hat_training_epochs > 0`;
   - the z_hat sampler is left stochastic after annealing;
@@ -347,7 +349,7 @@ Most of these are pinned by passing tests that record the current behaviour.
 - `n_latent_priors ≤ 0` is silently replaced by `2*dims+1`.
 - Negative `kl_annealing_ratio` and dims values are accepted.
 - An empty YAML file raises AttributeError.
-- `EarlyStoppingConfig` is parsed but never used.
+- ✅ Fixed: `EarlyStoppingConfig` was parsed but never used (see the coupled-packages section).
 
 **Filter**
 

@@ -316,6 +316,15 @@ def fakes(monkeypatch):
     ns.VerboseCallback._BOLD = "<b>"
     ns.VerboseCallback._RESET = "<r>"
     monkeypatch.setattr(sts_module, "ProgressiveScaler", FakeScaler)
+    # EarlyStoppingConfig lives in cavachon.config: a fake with the same
+    # documented defaults stands in for it.
+    ns.EarlyStoppingConfig = MagicMock(
+        name="EarlyStoppingConfig",
+        side_effect=lambda: SimpleNamespace(
+            monitor="loss", mode="min", patience=25, min_delta=5.0
+        ),
+    )
+    monkeypatch.setattr(sts_module, "EarlyStoppingConfig", ns.EarlyStoppingConfig)
     ns.mlflow = MagicMock(name="mlflow")
     ns.mlflow.get_experiment_by_name.return_value = SimpleNamespace(experiment_id="exp-1")
     monkeypatch.setattr(sts_module, "mlflow", ns.mlflow)

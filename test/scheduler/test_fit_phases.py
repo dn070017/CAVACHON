@@ -3,6 +3,7 @@ what is trained/frozen in each, the annealing values, the fit arguments,
 the callbacks passed and what is logged to mlflow."""
 
 import warnings
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -62,20 +63,37 @@ class TestSingleRoot:
         assert fakes.mlflow.start_run.call_args.kwargs["experiment_id"] == "exp-1"
         assert fakes.mlflow.end_run.call_count == 1
 
-    def test_early_stopping_arguments(self, fakes, dataset):
+    def test_early_stopping_true_uses_config_defaults(self, fakes, dataset):
+        # regression: early stopping used hard-coded monitor/min_delta and
+        # patience = max(10, epochs / 20), ignoring the configuration
         s, model = make_scheduler([make_config("A", max_regular_training_epochs=2)])
         s.fit(dataset, epochs=400)
+        fakes.EarlyStoppingConfig.assert_called_once_with()
         es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0].kwargs
         assert es == dict(
-            cumulative_offset=0, monitor="loss", min_delta=5, patience=20,
-            restore_best_weights=True, verbose=0,
+            cumulative_offset=0, monitor="loss", mode="min", min_delta=5.0,
+            patience=25, restore_best_weights=True, verbose=0,
         )
 
-    def test_early_stopping_patience_floor(self, fakes, dataset):
+    @pytest.mark.parametrize("epochs", [2, 40, 400])
+    def test_early_stopping_patience_independent_of_epochs(self, fakes, dataset, epochs):
         s, model = make_scheduler([make_config("A", max_regular_training_epochs=2)])
-        s.fit(dataset, epochs=40)
+        s.fit(dataset, epochs=epochs)
         es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0]
-        assert es.kwargs["patience"] == 10
+        assert es.kwargs["patience"] == 25
+
+    def test_early_stopping_config_values_are_used(self, fakes, dataset):
+        config = SimpleNamespace(monitor="A_negative_log_data_likelihood", mode="max", patience=50, min_delta=0.5)
+        s, model = make_scheduler(
+            [make_config("A", max_regular_training_epochs=2)], early_stopping=config
+        )
+        s.fit(dataset, epochs=400)
+        fakes.EarlyStoppingConfig.assert_not_called()
+        es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0].kwargs
+        assert es == dict(
+            cumulative_offset=0, monitor="A_negative_log_data_likelihood", mode="max",
+            min_delta=0.5, patience=50, restore_best_weights=True, verbose=0,
+        )
 
     def test_early_stopping_disabled(self, fakes, dataset):
         s, model = make_scheduler(

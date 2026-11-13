@@ -746,7 +746,11 @@ The configs for the training process. See also [Optimizer](#optimizer).
   * required: `False`.
   * defaults: `True`.
   * type: `bool | EarlyStoppingConfig`
-  * description: whether or not to use early stopping when training the model. Ignored if `train=False`. Can be a boolean or a dict with `monitor`, `mode`, and `patience` (e.g. `{monitor: loss, mode: min, patience: 25}`).
+  * description: early stopping for the regular (GMM) training phase and the z_hat training phase. Ignored if `train=False`. `false` disables it; `true` uses the defaults below; a dict overrides any of them (e.g. `{monitor: loss, mode: min, patience: 25, min_delta: 5}`). The best weights are restored when training stops early.
+    * `monitor`: logged quantity to monitor, e.g. `loss` or `<component>_negative_log_data_likelihood`. Defaults to `loss`.
+    * `mode`: `min`, `max` or `auto`. Defaults to `min`.
+    * `patience`: epochs without improvement before stopping. Defaults to `25`.
+    * `min_delta`: minimum change of the monitored quantity (in its own units) that counts as an improvement. Defaults to `5`.
 * `max_regular_training_epochs`:
   * required: `False`.
   * defaults: `500`.

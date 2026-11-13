@@ -42,8 +42,9 @@ class SequentialTrainingScheduler:
         optimizer used to train the model (only the attributes of the
         optimizer will be used)
 
-    early_stopping: bool
-        whether or not to use early stopping when training the model.
+    early_stopping: Union[bool, EarlyStoppingConfig]
+        early stopping settings (EarlyStoppingConfig), or False if early
+        stopping is disabled.
 
     training_order: Mapping[int, List[str]]
         the training order of the components, the keys are the training
@@ -92,7 +93,9 @@ class SequentialTrainingScheduler:
             learning rate for the optimizer. Defaults to 1e-4.
 
         early_stopping: Union[bool, EarlyStoppingConfig], optional
-            whether or not to use early stopping when training the model.
+            early stopping settings for the regular (GMM) training phase
+            and the z_hat training phase. True uses the defaults of
+            EarlyStoppingConfig, False disables early stopping.
 
         """
         self.model = model
@@ -100,6 +103,8 @@ class SequentialTrainingScheduler:
         self.component_configs = self.model.component_configs
         self.optimizer = optimizer
         self.learning_rate = learning_rate
+        if early_stopping is True:
+            early_stopping = EarlyStoppingConfig()
         self.early_stopping = early_stopping
         self.training_order = self.compute_component_training_order()
         self.modality_weight = self.compute_modality_weight()
@@ -1433,14 +1438,14 @@ class SequentialTrainingScheduler:
                 )
             )
         if self.early_stopping:
+            early_stopping = self.early_stopping
             callbacks.append(
                 EarlyStoppingCallback(
                     cumulative_offset=cumulative_offset,
-                    monitor="loss",
-                    min_delta=5,
-                    patience=max(
-                        10, int(kwargs.get("epochs", 1) / 20)
-                    ),
+                    monitor=early_stopping.monitor,
+                    mode=early_stopping.mode,
+                    min_delta=early_stopping.min_delta,
+                    patience=early_stopping.patience,
                     restore_best_weights=True,
                     verbose=0,
                 )

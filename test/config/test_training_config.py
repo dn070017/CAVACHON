@@ -53,7 +53,33 @@ def test_early_stopping_bool_and_dict():
 
 def test_early_stopping_config_defaults():
     es = EarlyStoppingConfig()
-    assert (es.monitor, es.mode, es.patience) == ("loss", "min", 25)
+    assert (es.monitor, es.mode, es.patience, es.min_delta) == ("loss", "min", 25, 5.0)
+
+
+def test_early_stopping_min_delta_configurable():
+    es = TrainingConfig(early_stopping={"min_delta": 0.5, "patience": 50}).early_stopping
+    assert (es.min_delta, es.patience) == (0.5, 50)
+
+
+@pytest.mark.parametrize("mode", ["min", "max", "auto"])
+def test_early_stopping_valid_modes(mode):
+    assert EarlyStoppingConfig(mode=mode).mode == mode
+
+
+@pytest.mark.parametrize(
+    "field,value", [("mode", "minimum"), ("patience", -1), ("min_delta", -0.1)]
+)
+def test_early_stopping_invalid_values_rejected(field, value):
+    with pytest.raises(ValidationError):
+        EarlyStoppingConfig(**{field: value})
+
+
+def test_early_stopping_known_fields_do_not_warn():
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        EarlyStoppingConfig(monitor="loss", mode="min", patience=3, min_delta=1.0)
 
 
 def test_kl_annealing_ratio_length_checked():

@@ -1,6 +1,6 @@
 from typing import Tuple, Union
 
-from pydantic import model_validator, Field
+from pydantic import Field, field_validator, model_validator
 
 from cavachon.config.base import BaseConfigModel
 from cavachon.config.optimizer_config import OptimizerConfig
@@ -9,14 +9,53 @@ from cavachon.config.optimizer_config import OptimizerConfig
 class EarlyStoppingConfig(BaseConfigModel):
     """Early stopping configuration model.
 
-    Note: the scheduler currently constructs the callback with its own
-    hard-coded parameters, so these values are accepted and stored but
-    not consumed by the training loop yet.
+    Used by the scheduler for the regular (GMM) training phase and the
+    z_hat training phase. ``early_stopping: true`` in the training
+    configuration uses these defaults. The best weights are always
+    restored when training stops early.
+
+    Attributes
+    ----------
+    monitor: str
+        the logged quantity to monitor, e.g. 'loss'. Defaults to 'loss'.
+
+    mode: str
+        one of 'min', 'max' or 'auto'. Defaults to 'min'.
+
+    patience: int
+        number of epochs without improvement after which training is
+        stopped. Defaults to 25.
+
+    min_delta: float
+        minimum change of the monitored quantity (in its own units) that
+        counts as an improvement. Defaults to 5.0.
     """
 
     monitor: str = "loss"
     mode: str = "min"
     patience: int = 25
+    min_delta: float = 5.0
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v: str) -> str:
+        if v not in ("min", "max", "auto"):
+            raise ValueError(f"mode should be one of 'min', 'max' or 'auto', got {v!r}")
+        return v
+
+    @field_validator("patience")
+    @classmethod
+    def _validate_patience(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"patience should be a non-negative integer, got {v}")
+        return v
+
+    @field_validator("min_delta")
+    @classmethod
+    def _validate_min_delta(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError(f"min_delta should be non-negative, got {v}")
+        return v
 
 
 class TrainingConfig(BaseConfigModel):
