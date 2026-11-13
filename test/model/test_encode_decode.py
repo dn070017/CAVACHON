@@ -100,15 +100,21 @@ class TestHierarchicalEncode:
         np.testing.assert_allclose(call_b["z"], z["b"])
         np.testing.assert_allclose(call_b["batch"]["z_conditional"], z["a"])
         # z_hat_conditional is a's freshly computed z_hat, not its z
-        np.testing.assert_allclose(call_b["batch"]["z_hat_conditional"], np.full((3, 2), 11.0))
+        np.testing.assert_allclose(
+            call_b["batch"]["z_hat_conditional"], np.full((3, 2), 11.0)
+        )
         assert {"atac_matrix", "atac_batch_effect"} <= set(call_b["batch"])
 
     def test_seed_supplies_parent_z_hat(self, model, batch):
         seed = {"a": tf.fill((3, 2), -5.0)}
-        out = model.hierarchical_encode(batch, self._z(), z_hat_seed=seed, components=["b"])
+        out = model.hierarchical_encode(
+            batch, self._z(), z_hat_seed=seed, components=["b"]
+        )
         assert set(out["z_hat"]) == {"b"}
         call_b = _rec(model, "b").hierarchical_encode_calls[-1]
-        np.testing.assert_allclose(call_b["batch"]["z_hat_conditional"], np.full((3, 2), -5.0))
+        np.testing.assert_allclose(
+            call_b["batch"]["z_hat_conditional"], np.full((3, 2), -5.0)
+        )
         assert _rec(model, "a").hierarchical_encode_calls == []
         # seed dict is copied, not mutated
         assert set(seed) == {"a"}
@@ -117,7 +123,9 @@ class TestHierarchicalEncode:
         seed = {"a": tf.fill((3, 2), -5.0)}
         model.hierarchical_encode(batch, self._z(), z_hat_seed=seed)
         call_b = _rec(model, "b").hierarchical_encode_calls[-1]
-        np.testing.assert_allclose(call_b["batch"]["z_hat_conditional"], np.full((3, 2), 11.0))
+        np.testing.assert_allclose(
+            call_b["batch"]["z_hat_conditional"], np.full((3, 2), 11.0)
+        )
 
     def test_strict_missing_parent_z_raises(self, model, batch):
         with pytest.raises(ValueError, match="parent z for component 'b': 'a'"):
@@ -171,8 +179,12 @@ class TestDecode:
         out = model.decode(batch, z_hat)
         assert set(out) == {Constants.MODEL_OUTPUTS_X_PARAMS}
         assert set(out["x_parameters"]) == {"a_rna_x_parameters", "b_atac_x_parameters"}
-        np.testing.assert_allclose(out["x_parameters"]["a_rna_x_parameters"], np.full((3, 2), 2.0))
-        np.testing.assert_allclose(out["x_parameters"]["b_atac_x_parameters"], np.full((3, 3), 4.0))
+        np.testing.assert_allclose(
+            out["x_parameters"]["a_rna_x_parameters"], np.full((3, 2), 2.0)
+        )
+        np.testing.assert_allclose(
+            out["x_parameters"]["b_atac_x_parameters"], np.full((3, 3), 4.0)
+        )
         call_b = _rec(model, "b").decode_calls[-1]
         assert call_b["z_hat"] is z_hat["b"]
         assert set(call_b["batch"]) == {"atac_matrix", "atac_batch_effect"}

@@ -57,7 +57,9 @@ def test_clustering_z_uses_cluster_log_probability(deps):
 
 def test_clustering_z_hat_with_learned_prior(deps):
     comp = SimpleNamespace(learn_z_hat_priors=True, z_hat_prior_parameterizer=object())
-    wf = clustering_workflow([clustering_cfg("child", use_rep="z_hat")], {"child": comp})
+    wf = clustering_workflow(
+        [clustering_cfg("child", use_rep="z_hat")], {"child": comp}
+    )
     wf.perform_clustering_analysis()
 
     analysis = deps.ClusterAnalysis.return_value
@@ -197,16 +199,19 @@ def attribution_cfg(with_respect_to):
 def test_conditional_attribution_one_plot_per_wrt(deps, makedirs):
     config = make_config()
     config.dataset.batch_size = 8
-    config.analysis.conditional_attribution_scores = [attribution_cfg(["parent", "child"])]
+    config.analysis.conditional_attribution_scores = [
+        attribution_cfg(["parent", "child"])
+    ]
     wf = make_workflow(config)
 
     wf.visualize_conditional_attribution_scores()
 
     makedirs.assert_called_once_with("/out/attribution", exist_ok=True)
     merged = deps.AnnDataUtils.merge_mdata_on_obs_annotation
-    assert merged.call_args_list == [
-        mock.call(wf.mdata, "cluster_child", wf.batch_effect_colnames)
-    ] * 2
+    assert (
+        merged.call_args_list
+        == [mock.call(wf.mdata, "cluster_child", wf.batch_effect_colnames)] * 2
+    )
     calls = deps.InteractiveVisualization.attribution_score.call_args_list
     assert len(calls) == 2
     for call, wrt in zip(calls, ["parent", "child"]):
@@ -267,4 +272,6 @@ def test_visualize_knn_targets_only_z_representations(deps, makedirs):
     assert first.kwargs["filename"] == (
         "/out/knn/z_a_of_rna_colored_with_cluster_a_[5,_10]_neighbors.html"
     )
-    assert all(c == mock.call("/out/knn", exist_ok=True) for c in makedirs.call_args_list)
+    assert all(
+        c == mock.call("/out/knn", exist_ok=True) for c in makedirs.call_args_list
+    )

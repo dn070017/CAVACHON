@@ -6,7 +6,6 @@ GMMDensityLoss (-> FakeGMMDensity), ProgressiveScaler (-> FakeScaler),
 Component (-> FakeComponent), GeneralUtils. ComponentConfig -> FakeConfig.
 """
 
-
 import pytest
 import tensorflow as tf
 
@@ -141,7 +140,8 @@ class TestDataLosses:
         assert seen["loss"] is not None
 
     @pytest.mark.xfail(
-        strict=True, reason="BUG: compile() pops entries from the caller's loss_weights dict"
+        strict=True,
+        reason="BUG: compile() pops entries from the caller's loss_weights dict",
     )
     def test_loss_weights_dict_of_caller_not_mutated(self, two_component_model):
         lw = {f"b_atac_{NLL}": 3.0}
@@ -191,7 +191,9 @@ class TestZHatLosses:
 
     def test_no_z_hat_losses_without_parameterizer(self, make_model):
         m = make_model(
-            FakeConfig("a", learn_z_hat_priors=True, has_z_hat_prior_parameterizer=False)
+            FakeConfig(
+                "a", learn_z_hat_priors=True, has_z_hat_prior_parameterizer=False
+            )
         )
         m.compile()
         assert f"a_{ZD}" not in m.loss and f"a_{ZKL}" not in m.loss

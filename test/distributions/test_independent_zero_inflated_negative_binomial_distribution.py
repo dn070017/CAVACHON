@@ -120,7 +120,11 @@ def test_large_logit_gradient_is_finite(logit):
     logits = tf.Variable([[logit]])
     with tf.GradientTape() as tape:
         d = ZINB.from_parameterizer_output(
-            {"logits": logits, "mean": tf.constant([[5.0]]), "dispersion": tf.constant([[1.0]])}
+            {
+                "logits": logits,
+                "mean": tf.constant([[5.0]]),
+                "dispersion": tf.constant([[1.0]]),
+            }
         )
         lp = d.log_prob(tf.constant([[3.0]]))
     grad = tape.gradient(lp, logits).numpy()
@@ -137,7 +141,9 @@ def test_mixture_weights_match_sigmoid_of_logits():
     )
 
 
-@pytest.mark.parametrize("wrap", [np.asarray, tf.Variable], ids=["numpy", "tf.Variable"])
+@pytest.mark.parametrize(
+    "wrap", [np.asarray, tf.Variable], ids=["numpy", "tf.Variable"]
+)
 def test_non_tensor_input_accepted(wrap):
     # regression: numpy / tf.Variable params used to raise UnboundLocalError.
     logits, mean, disp = _params()

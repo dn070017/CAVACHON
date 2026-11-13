@@ -30,9 +30,7 @@ def qc(criteria, **kwargs):
     ],
 )
 def test_operators_and_boundaries(adata, op, threshold, expected):
-    out = qc([{"field": "total_counts", "operator": op, "threshold": threshold}])(
-        adata
-    )
+    out = qc([{"field": "total_counts", "operator": op, "threshold": threshold}])(adata)
     assert list(out.obs_names) == expected
 
 
@@ -113,9 +111,7 @@ def test_empty_result_raises(adata):
 
 
 def test_returns_new_actual_object_not_view(dense_adata):
-    out = qc([{"field": "total_counts", "operator": "gt", "threshold": 6}])(
-        dense_adata
-    )
+    out = qc([{"field": "total_counts", "operator": "gt", "threshold": 6}])(dense_adata)
     assert out is not dense_adata
     assert not out.is_view
     # input is NOT subset (only annotated with QC columns)
@@ -145,16 +141,12 @@ def test_does_not_mutate_own_kwargs_and_is_reusable(dense_adata):
 
 def test_chained_after_filter_cells(dense_adata):
     out = FilterCells("fc", min_counts=1)(dense_adata)
-    out = qc([{"field": "n_genes_by_counts", "operator": "ge", "threshold": 3}])(
-        out
-    )
+    out = qc([{"field": "n_genes_by_counts", "operator": "ge", "threshold": 3}])(out)
     assert list(out.obs_names) == ["c2", "c3"]
 
 
 def test_running_twice_recomputes_on_filtered_data(dense_adata):
-    out = qc([{"field": "total_counts", "operator": "ge", "threshold": 4}])(
-        dense_adata
-    )
+    out = qc([{"field": "total_counts", "operator": "ge", "threshold": 4}])(dense_adata)
     out = qc([{"field": "total_counts", "operator": "le", "threshold": 6}])(out)
     assert list(out.obs_names) == ["c0", "c2"]
     np.testing.assert_array_equal(out.obs["total_counts"].values, [4, 6])
@@ -171,15 +163,39 @@ def _adata_with_genes(genes, counts):
 
 # regression: default qc_vars must flag only the intended features.
 def test_default_qc_vars_flags_and_column_names():
-    genes = ["MT-CO1", "mt-Nd1", "Mt-Atp6", "MTOR", "MTHFR", "ERCC-00002",
-             "ERCC1", "GAPDH"]
+    genes = [
+        "MT-CO1",
+        "mt-Nd1",
+        "Mt-Atp6",
+        "MTOR",
+        "MTHFR",
+        "ERCC-00002",
+        "ERCC1",
+        "GAPDH",
+    ]
     adata = _adata_with_genes(genes, [[1, 1, 1, 1, 1, 1, 1, 3]])
     FilterQC("qc", percent_top=None, filter_threshold=[])(adata)
-    assert list(adata.var["MT"]) == [True, True, True, False, False, False,
-                                     False, False]
+    assert list(adata.var["MT"]) == [
+        True,
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
     # ERCC1 is a nuclear DNA-repair gene, not a spike-in
-    assert list(adata.var["ERCC"]) == [False, False, False, False, False, True,
-                                       False, False]
+    assert list(adata.var["ERCC"]) == [
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+        False,
+        False,
+    ]
     # QC metric names are unchanged
     assert adata.obs.loc["c0", "pct_counts_MT"] == pytest.approx(30.0)
     assert adata.obs.loc["c0", "pct_counts_ERCC"] == pytest.approx(10.0)
@@ -190,8 +206,9 @@ def test_default_qc_vars_mouse_mt_filtering():
     out = FilterQC(
         "qc",
         percent_top=None,
-        filter_threshold=[{"field": "pct_counts_MT", "operator": "le",
-                           "threshold": 50}],
+        filter_threshold=[
+            {"field": "pct_counts_MT", "operator": "le", "threshold": 50}
+        ],
     )(adata)
     assert list(out.obs_names) == ["c1"]
 

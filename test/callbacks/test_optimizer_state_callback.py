@@ -44,9 +44,7 @@ def test_snapshot_taken_each_epoch():
     assert [int(v[0]) for v in cb._opt_states.values()] == [1, 2, 3]
 
 
-@pytest.mark.parametrize(
-    "model", [SimpleNamespace(), SimpleNamespace(optimizer=None)]
-)
+@pytest.mark.parametrize("model", [SimpleNamespace(), SimpleNamespace(optimizer=None)])
 def test_no_snapshot_without_optimizer(model):
     cb = OptimizerStateCallback()
     cb.set_model(model)

@@ -37,7 +37,9 @@ class TestCamelToSnake:
         "split, producing 'zinbdistribution' instead of 'zinb_distribution'",
     )
     def test_acronym_followed_by_word(self):
-        assert ReflectionHandler._camel_to_snake("ZINBDistribution") == "zinb_distribution"
+        assert (
+            ReflectionHandler._camel_to_snake("ZINBDistribution") == "zinb_distribution"
+        )
 
 
 SRC = "/fake/root/cavachon"
@@ -46,10 +48,16 @@ SRC = "/fake/root/cavachon"
 class TestGetFilenames:
     def test_first_depth_pattern_and_hit(self, reflection_env):
         hit = f"{SRC}/distributions/foo_bar_distribution.py"
-        reflection_env.glob.hits[f"{SRC}/distributions**/foo_bar_distribution.py"] = [hit]
-        out = ReflectionHandler._get_filenames("foo_bar_distribution.py", "distributions")
+        reflection_env.glob.hits[f"{SRC}/distributions**/foo_bar_distribution.py"] = [
+            hit
+        ]
+        out = ReflectionHandler._get_filenames(
+            "foo_bar_distribution.py", "distributions"
+        )
         assert out == [Path(hit)]
-        assert reflection_env.glob.calls == [f"{SRC}/distributions**/foo_bar_distribution.py"]
+        assert reflection_env.glob.calls == [
+            f"{SRC}/distributions**/foo_bar_distribution.py"
+        ]
 
     def test_falls_through_to_second_depth(self, reflection_env):
         hit = f"{SRC}/layers/parameterizers/foo_layer.py"
@@ -125,8 +133,12 @@ class FakeDistribution:
 
 class TestImportClass:
     def test_module_path_from_last_cavachon_part(self, fake_import):
-        fake_import.modules["cavachon.layers.foo"] = SimpleNamespace(Foo=FakeDistribution)
-        cls = ReflectionHandler._import_class(Path("/home/cavachon/cavachon/layers/foo.py"), "Foo")
+        fake_import.modules["cavachon.layers.foo"] = SimpleNamespace(
+            Foo=FakeDistribution
+        )
+        cls = ReflectionHandler._import_class(
+            Path("/home/cavachon/cavachon/layers/foo.py"), "Foo"
+        )
         assert cls is FakeDistribution
         assert fake_import.calls == ["cavachon.layers.foo"]
 
@@ -150,8 +162,10 @@ class TestGetClassByName:
     def test_lookup_with_postfix(self, reflection_env):
         self._register(
             reflection_env,
-            ("distributions**/independent_bernoulli_distribution.py",
-             "distributions/independent_bernoulli_distribution.py"),
+            (
+                "distributions**/independent_bernoulli_distribution.py",
+                "distributions/independent_bernoulli_distribution.py",
+            ),
             "cavachon.distributions.independent_bernoulli_distribution",
             "IndependentBernoulliDistribution",
             FakeDistribution,
@@ -167,13 +181,17 @@ class TestGetClassByName:
     def test_lookup_camel_case_postfix(self, reflection_env):
         self._register(
             reflection_env,
-            ("dataloader/modifiers**/foo_data_modifier.py",
-             "dataloader/modifiers/foo_data_modifier.py"),
+            (
+                "dataloader/modifiers**/foo_data_modifier.py",
+                "dataloader/modifiers/foo_data_modifier.py",
+            ),
             "cavachon.dataloader.modifiers.foo_data_modifier",
             "FooDataModifier",
             FakeDistribution,
         )
-        cls = ReflectionHandler.get_class_by_name("Foo", "dataloader/modifiers", "DataModifier")
+        cls = ReflectionHandler.get_class_by_name(
+            "Foo", "dataloader/modifiers", "DataModifier"
+        )
         assert cls is FakeDistribution
 
     def test_lookup_without_postfix(self, reflection_env):
@@ -188,7 +206,9 @@ class TestGetClassByName:
 
     def test_not_found_raises_assertion_with_filename(self, reflection_env):
         with pytest.raises(AssertionError, match="no_such_thing_distribution.py"):
-            ReflectionHandler.get_class_by_name("NoSuchThing", "distributions", "Distribution")
+            ReflectionHandler.get_class_by_name(
+                "NoSuchThing", "distributions", "Distribution"
+            )
         assert reflection_env.importer.calls == []
 
     @pytest.mark.xfail(
@@ -203,10 +223,19 @@ class TestGetClassByName:
 
     def test_ambiguous_lookup_rejected(self, reflection_env):
         # regression: previously glob()[0] was taken silently
-        reflection_env.glob.hits[f"{SRC}/**/dup.py"] = [f"{SRC}/bbb/dup.py", f"{SRC}/aaa/dup.py"]
-        reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(Dup=FakeDistribution)
-        reflection_env.importer.modules["cavachon.bbb.dup"] = SimpleNamespace(Dup=object)
-        with pytest.raises(ValueError, match="more than one file named dup.py") as excinfo:
+        reflection_env.glob.hits[f"{SRC}/**/dup.py"] = [
+            f"{SRC}/bbb/dup.py",
+            f"{SRC}/aaa/dup.py",
+        ]
+        reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(
+            Dup=FakeDistribution
+        )
+        reflection_env.importer.modules["cavachon.bbb.dup"] = SimpleNamespace(
+            Dup=object
+        )
+        with pytest.raises(
+            ValueError, match="more than one file named dup.py"
+        ) as excinfo:
             ReflectionHandler.get_class_by_name("Dup")
         assert f"{SRC}/aaa/dup.py" in str(excinfo.value)
         assert f"{SRC}/bbb/dup.py" in str(excinfo.value)
@@ -214,5 +243,7 @@ class TestGetClassByName:
 
     def test_ambiguity_resolved_by_subdirectory(self, reflection_env):
         reflection_env.glob.hits[f"{SRC}/aaa**/dup.py"] = [f"{SRC}/aaa/dup.py"]
-        reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(Dup=FakeDistribution)
+        reflection_env.importer.modules["cavachon.aaa.dup"] = SimpleNamespace(
+            Dup=FakeDistribution
+        )
         assert ReflectionHandler.get_class_by_name("Dup", "aaa") is FakeDistribution

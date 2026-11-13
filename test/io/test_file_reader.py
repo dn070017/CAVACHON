@@ -65,7 +65,9 @@ def test_read_table_call_arguments_default(fake_fs):
 
 def test_read_table_call_arguments_headers_and_kwargs(fake_fs):
     fake_fs.tables["/d/h.csv"] = "a,b\n1,2\n"
-    FileReader.read_table("/d/h.csv", name="X", has_headers=True, delimiter=",", nrows=1)
+    FileReader.read_table(
+        "/d/h.csv", name="X", has_headers=True, delimiter=",", nrows=1
+    )
     fake_fs.read_csv.assert_called_once_with("/d/h.csv", sep=",", header=0, nrows=1)
 
 
@@ -132,7 +134,9 @@ def test_read_table_with_headers_uses_index_col(fake_fs):
 @pytest.mark.parametrize("index_col", ["ct", 1])
 def test_read_table_with_headers_index_col_by_name_or_position(fake_fs, index_col):
     fake_fs.tables["/d/h.tsv"] = "barcode\tct\nc1\tT\nc2\tB\n"
-    df = FileReader.read_table("/d/h.tsv", name="RNA", has_headers=True, index_col=index_col)
+    df = FileReader.read_table(
+        "/d/h.tsv", name="RNA", has_headers=True, index_col=index_col
+    )
     assert list(df.index) == ["T", "B"]
     assert df.index.name == "RNA:ct"
 
@@ -190,9 +194,12 @@ def test_read_multiomics_has_headers_drops_colnames(fake_fs, helpers):
 
 
 def test_read_multiomics_transposed_matrix(fake_fs, helpers):
-    fake_fs.add_sample("/data", "s1", X, ["c1", "c2"], ["g1", "g2", "g3"], transpose=True)
+    fake_fs.add_sample(
+        "/data", "s1", X, ["c1", "c2"], ["g1", "g2", "g3"], transpose=True
+    )
     cfg = helpers.make_config(
-        {"s1": ("", [helpers.make_sample_modality("s1", transpose=True)])}, {"RNA": ["s1"]}
+        {"s1": ("", [helpers.make_sample_modality("s1", transpose=True)])},
+        {"RNA": ["s1"]},
     )
     adata = FileReader.read_multiomics_data(cfg, "RNA")
     assert adata.shape == (2, 3)
@@ -207,7 +214,11 @@ def test_read_multiomics_picks_requested_modality(fake_fs, helpers):
         helpers.make_sample_modality("a1", modality="ATAC"),
     ]
     cfg = helpers.make_config({"s": ("", mods)}, {"RNA": ["s"], "ATAC": ["s"]})
-    assert list(FileReader.read_multiomics_data(cfg, "RNA").var_names) == ["g1", "g2", "g3"]
+    assert list(FileReader.read_multiomics_data(cfg, "RNA").var_names) == [
+        "g1",
+        "g2",
+        "g3",
+    ]
     assert list(FileReader.read_multiomics_data(cfg, "ATAC").var_names) == ["p1", "p2"]
 
 

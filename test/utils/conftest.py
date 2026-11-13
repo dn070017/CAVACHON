@@ -5,6 +5,7 @@ ReflectionHandler talks to three collaborators outside the utils package:
 ``import_module`` (module loading). All three are replaced where
 reflection_handler looks them up.
 """
+
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -69,4 +70,6 @@ def fake_import(monkeypatch):
 @pytest.fixture
 def reflection_env(fake_settings, fake_glob, fake_import):
     """Settings, glob and import_module all mocked for ReflectionHandler."""
-    return SimpleNamespace(src=fake_settings.src_path, glob=fake_glob, importer=fake_import)
+    return SimpleNamespace(
+        src=fake_settings.src_path, glob=fake_glob, importer=fake_import
+    )

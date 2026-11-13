@@ -63,7 +63,8 @@ def test_bernoulli_order_todense_then_binarize(fake_modifier_layers):
     np.testing.assert_allclose(out["rna_matrix"].numpy(), (X + 1) * 10)
     np.testing.assert_allclose(out["atac_matrix"].numpy(), OTHER)
     _assert_passes(
-        fake_modifier_layers, [("FakeToDense", "rna_matrix"), ("FakeBinarize", "rna_matrix")]
+        fake_modifier_layers,
+        [("FakeToDense", "rna_matrix"), ("FakeBinarize", "rna_matrix")],
     )
 
 

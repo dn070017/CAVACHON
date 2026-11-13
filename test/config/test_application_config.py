@@ -43,7 +43,9 @@ def test_minimal_config_loads(base_config, load_config):
     assert len(cfg.sample) == 0
 
 
-def test_from_yaml_reads_through_open_and_yaml_load(base_config, load_config, yaml_source):
+def test_from_yaml_reads_through_open_and_yaml_load(
+    base_config, load_config, yaml_source
+):
     cfg = load_config(base_config)
     yaml_source.open.assert_called_once_with("/cfg/config.yaml", "r")
     yaml_source.load.assert_called_once()
@@ -52,7 +54,9 @@ def test_from_yaml_reads_through_open_and_yaml_load(base_config, load_config, ya
     assert set(cfg.yaml_raw) == set(base_config)
 
 
-def test_relative_filename_is_made_absolute(base_config, load_config, yaml_source, fake_os):
+def test_relative_filename_is_made_absolute(
+    base_config, load_config, yaml_source, fake_os
+):
     cfg = load_config(base_config, filename="config.yaml")
     fake_os.realpath.assert_any_call("config.yaml")
     yaml_source.open.assert_called_once_with("/cwd/config.yaml", "r")
@@ -93,7 +97,10 @@ def test_learning_rate_yaml_string_coerced(base_config, load_config):
 
 
 def test_training_and_dataset_extracted_from_model(base_config, load_config):
-    base_config["model"]["training"] = {"max_regular_training_epochs": 7, "train": False}
+    base_config["model"]["training"] = {
+        "max_regular_training_epochs": 7,
+        "train": False,
+    }
     base_config["model"]["dataset"] = {"batch_size": 16, "shuffle": True}
     cfg = load_config(base_config)
     assert cfg.training.max_regular_training_epochs == 7
@@ -142,14 +149,24 @@ def test_revalidation_round_trip_idempotent(base_config, load_config):
 
 
 # ---------------------------------------------------------------- components
-def test_components_ordered_by_order_components(base_config, load_config, general_utils):
+def test_components_ordered_by_order_components(
+    base_config, load_config, general_utils
+):
     base_config["model"]["components"].reverse()  # RNA (child) first
     general_utils.order_components.side_effect = lambda d: [d["ATAC"], d["RNA"]]
     cfg = load_config(base_config)
     general_utils.order_components.assert_called_once_with(
         {
-            "RNA": {"name": "RNA", "conditioned_on_z": [], "conditioned_on_z_hat": ["ATAC"]},
-            "ATAC": {"name": "ATAC", "conditioned_on_z": [], "conditioned_on_z_hat": []},
+            "RNA": {
+                "name": "RNA",
+                "conditioned_on_z": [],
+                "conditioned_on_z_hat": ["ATAC"],
+            },
+            "ATAC": {
+                "name": "ATAC",
+                "conditioned_on_z": [],
+                "conditioned_on_z_hat": [],
+            },
         }
     )
     assert [c.name for c in cfg.components] == ["ATAC", "RNA"]
@@ -187,7 +204,9 @@ def test_order_components_error_propagates(base_config, load_config, general_uti
         load_config(base_config)
 
 
-def test_dependency_lists_passed_to_order_components(base_config, load_config, general_utils):
+def test_dependency_lists_passed_to_order_components(
+    base_config, load_config, general_utils
+):
     base_config["model"]["components"][0]["conditioned_on_z"] = ["RNA"]
     load_config(base_config)
     (passed,), _ = general_utils.order_components.call_args
@@ -201,7 +220,9 @@ def test_unknown_parent_component_rejected_by_config(
     base_config, load_config, general_utils, field
 ):
     base_config["model"]["components"][1][field] = ["Ghost"]
-    with pytest.raises(ValueError, match=r"'Ghost' \(conditioned on by component 'RNA'\)"):
+    with pytest.raises(
+        ValueError, match=r"'Ghost' \(conditioned on by component 'RNA'\)"
+    ):
         load_config(base_config)
     general_utils.order_components.assert_not_called()
 
@@ -290,7 +311,9 @@ def test_yaml_raw_is_unmodified(base_config, load_config):
 # regression: unknown top-level keys warn
 def test_unknown_top_level_key_warns(base_config, load_config):
     base_config["sample"] = [_sample("s1")]  # typo for 'samples'
-    with pytest.warns(RuntimeWarning, match="Unexpected field sample in ApplicationConfig"):
+    with pytest.warns(
+        RuntimeWarning, match="Unexpected field sample in ApplicationConfig"
+    ):
         cfg = load_config(base_config)
     assert len(cfg.sample) == 0
 
@@ -347,7 +370,9 @@ def test_analysis_valid_entries_pass(base_config, load_config):
 )
 def test_analysis_modality_not_in_component(base_config, load_config, section):
     base_config["analysis"] = {section: [{"modality": "ATAC", "component": "RNA"}]}
-    with pytest.raises(KeyError, match="'ATAC' is not in the config of component 'RNA'"):
+    with pytest.raises(
+        KeyError, match="'ATAC' is not in the config of component 'RNA'"
+    ):
         load_config(base_config)
 
 
@@ -372,7 +397,9 @@ def test_analysis_modality_not_in_component_differential_attribution(
     base_config, load_config, section
 ):
     base_config["analysis"] = {section: [{"modality": "ATAC", "component": "RNA"}]}
-    with pytest.raises(KeyError, match="'ATAC' is not in the config of component 'RNA'"):
+    with pytest.raises(
+        KeyError, match="'ATAC' is not in the config of component 'RNA'"
+    ):
         load_config(base_config)
 
 
@@ -387,7 +414,9 @@ def test_visualize_unknown_modality_raises(base_config, load_config):
     base_config["analysis"] = {
         "visualize_embedding": [{"modality": "Protein", "embedding_method": "umap"}]
     }
-    with pytest.raises(KeyError, match="'Protein' is not in the config of any component"):
+    with pytest.raises(
+        KeyError, match="'Protein' is not in the config of any component"
+    ):
         load_config(base_config)
 
 
@@ -433,7 +462,11 @@ def test_differential_attribution_unknown_with_respect_to(base_config, load_conf
     "section, analysis_type, source",
     [
         ("differential_attribution_analysis", "deg", "differential_analysis"),
-        ("differential_attribution_analysis", "hdeg", "hierarchical_differential_analysis"),
+        (
+            "differential_attribution_analysis",
+            "hdeg",
+            "hierarchical_differential_analysis",
+        ),
         ("enrichment_analysis", "deg", "differential_analysis"),
         ("enrichment_analysis", "hdeg", "hierarchical_differential_analysis"),
     ],
@@ -468,8 +501,14 @@ def test_source_gate_satisfied_by_config(base_config, load_config, fake_os):
 @pytest.mark.parametrize(
     "entry, message",
     [
-        ({"modality": "ATAC", "component": "RNA"}, "'ATAC' is not in the config of component 'RNA'"),
-        ({"modality": "RNA", "component": "YY"}, "'YY' is not in the config of components"),
+        (
+            {"modality": "ATAC", "component": "RNA"},
+            "'ATAC' is not in the config of component 'RNA'",
+        ),
+        (
+            {"modality": "RNA", "component": "YY"},
+            "'YY' is not in the config of components",
+        ),
         (
             {"modality": "RNA", "component": "RNA", "donor_components": ["QQ"]},
             "'QQ' \\(donor_components\\)",
@@ -489,14 +528,21 @@ def test_hierarchical_valid_entry_passes(base_config, load_config):
         ]
     }
     cfg = load_config(base_config)
-    assert cfg.analysis.hierarchical_differential_analysis[0].use_cluster == "cluster_RNA"
+    assert (
+        cfg.analysis.hierarchical_differential_analysis[0].use_cluster == "cluster_RNA"
+    )
 
 
 def test_direct_construction_requires_metadata():
     with pytest.raises(ValidationError):
         ApplicationConfig(
-            io={}, modality={"RNA": {"name": "RNA", "type": "rna"}}, sample={},
-            model={}, training={}, dataset={}, analysis={},
+            io={},
+            modality={"RNA": {"name": "RNA", "type": "rna"}},
+            sample={},
+            model={},
+            training={},
+            dataset={},
+            analysis={},
         )
 
 

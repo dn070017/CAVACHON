@@ -20,6 +20,7 @@ HierarchicalEncoder is exercised in one file, with its own
 
 Constants (cavachon.environment.Constants) are used as-is.
 """
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -74,8 +75,15 @@ class FakePreprocessor(tf.keras.layers.Layer):
         FakePreprocessor.instances.append(self)
 
     @classmethod
-    def make(cls, modality_names, distribution_names, n_vars, n_dims=1024,
-             name="preprocessor", **kwargs):
+    def make(
+        cls,
+        modality_names,
+        distribution_names,
+        n_vars,
+        n_dims=1024,
+        name="preprocessor",
+        **kwargs,
+    ):
         return cls(modality_names, distribution_names, n_vars, n_dims, name)
 
     def call(self, inputs, training=None):
@@ -128,9 +136,16 @@ class FakeHierarchicalEncoder(tf.keras.layers.Layer):
 
     instances = []
 
-    def __init__(self, n_latent_dims=5, is_conditioned_on_z=False,
-                 is_conditioned_on_z_hat=False, progressive_iterations=5000,
-                 use_bias=False, name="hierarchical_encoder", **kwargs):
+    def __init__(
+        self,
+        n_latent_dims=5,
+        is_conditioned_on_z=False,
+        is_conditioned_on_z_hat=False,
+        progressive_iterations=5000,
+        use_bias=False,
+        name="hierarchical_encoder",
+        **kwargs,
+    ):
         super().__init__(name=name)
         self.n_latent_dims = n_latent_dims
         self.is_conditioned_on_z = is_conditioned_on_z
@@ -139,7 +154,9 @@ class FakeHierarchicalEncoder(tf.keras.layers.Layer):
         self.use_bias = use_bias
         self.extra_kwargs = dict(kwargs)
         self.progressive_scaler = SimpleNamespace(
-            total_iterations=tf.Variable(float(progressive_iterations), trainable=False),
+            total_iterations=tf.Variable(
+                float(progressive_iterations), trainable=False
+            ),
             current_iteration=tf.Variable(0.0, trainable=False),
         )
         self.training_calls = []
@@ -181,7 +198,9 @@ class FakeDecoder(tf.keras.layers.Layer):
 
     instances = []
 
-    def __init__(self, distribution_name, n_vars=5, n_layers=3, name="decoder", **kwargs):
+    def __init__(
+        self, distribution_name, n_vars=5, n_layers=3, name="decoder", **kwargs
+    ):
         super().__init__(name=name)
         self.distribution_name = distribution_name
         self.n_vars = n_vars
@@ -346,7 +365,9 @@ class FakeNLL(_RecordingLoss):
     value = 7.0
     instances = []
 
-    def __init__(self, dist_x_z, weight=1.0, name="negative_log_data_likelihood", **kwargs):
+    def __init__(
+        self, dist_x_z, weight=1.0, name="negative_log_data_likelihood", **kwargs
+    ):
         super().__init__(name)
         self.dist_x_z = dist_x_z
         self.weight_arg = weight
@@ -373,8 +394,15 @@ class FakeDensity(_RecordingLoss):
 
 
 FAKE_CLASSES = [
-    FakePreprocessor, FakeEncoder, FakeHierarchicalEncoder, FakeDecoder,
-    FakeMixturePrior, FakeSampler, FakeStandardKL, FakeGMMKL, FakeNLL,
+    FakePreprocessor,
+    FakeEncoder,
+    FakeHierarchicalEncoder,
+    FakeDecoder,
+    FakeMixturePrior,
+    FakeSampler,
+    FakeStandardKL,
+    FakeGMMKL,
+    FakeNLL,
     FakeDensity,
 ]
 
@@ -386,8 +414,10 @@ def fakes(monkeypatch):
         cls.instances = []
     FakeToDense.calls = []
     for cls, attrs in [
-        (FakeStandardKL, (3.0, 0.0)), (FakeGMMKL, (5.0, 0.0)),
-        (FakeNLL, (7.0, 0.0)), (FakeDensity, (11.0, 0.0)),
+        (FakeStandardKL, (3.0, 0.0)),
+        (FakeGMMKL, (5.0, 0.0)),
+        (FakeNLL, (7.0, 0.0)),
+        (FakeDensity, (11.0, 0.0)),
     ]:
         cls.value, cls.coef = attrs
 
@@ -414,19 +444,32 @@ def fakes(monkeypatch):
     monkeypatch.setattr(component_module, "TensorUtils", tensor_utils)
     return SimpleNamespace(
         TensorUtils=tensor_utils,
-        Preprocessor=FakePreprocessor, Encoder=FakeEncoder,
-        HierarchicalEncoder=FakeHierarchicalEncoder, Decoder=FakeDecoder,
-        Prior=FakeMixturePrior, Sampler=FakeSampler, Scaler=FakeScaler,
-        ToDense=FakeToDense, StandardKL=FakeStandardKL, GMMKL=FakeGMMKL,
-        NLL=FakeNLL, Density=FakeDensity,
+        Preprocessor=FakePreprocessor,
+        Encoder=FakeEncoder,
+        HierarchicalEncoder=FakeHierarchicalEncoder,
+        Decoder=FakeDecoder,
+        Prior=FakeMixturePrior,
+        Sampler=FakeSampler,
+        Scaler=FakeScaler,
+        ToDense=FakeToDense,
+        StandardKL=FakeStandardKL,
+        GMMKL=FakeGMMKL,
+        NLL=FakeNLL,
+        Density=FakeDensity,
     )
 
 
 # ---------------------------------------------------------------------------
 # builders
 # ---------------------------------------------------------------------------
-def make_component(name="comp", z_dims=None, z_hat_dims=None,
-                   learn_z_hat_priors=False, modalities=None, **kwargs):
+def make_component(
+    name="comp",
+    z_dims=None,
+    z_hat_dims=None,
+    learn_z_hat_priors=False,
+    modalities=None,
+    **kwargs,
+):
     """Component.make with tiny dims. Requires the `fakes` fixture."""
     modalities = modalities or MODALITIES
     extra = dict(kwargs)
@@ -485,7 +528,9 @@ def real_hierarchical_encoder_env(monkeypatch):
     class IdentityScaler(tf.keras.layers.Layer):
         def __init__(self, total_iterations=5000, scale=1.0, **kwargs):
             super().__init__()
-            self.total_iterations = tf.Variable(float(total_iterations), trainable=False)
+            self.total_iterations = tf.Variable(
+                float(total_iterations), trainable=False
+            )
             self.current_iteration = tf.Variable(1.0, trainable=False)
 
         def call(self, inputs, training=None):
@@ -512,7 +557,9 @@ def metrics_shim(monkeypatch):
     exercised past the line that crashes on Keras 3 (see the xfail in
     test_component_train_step.py). Records (y_true, y_pred) per call."""
     calls = []
-    stub = SimpleNamespace(update_state=lambda y_true, y_pred: calls.append((y_true, y_pred)))
+    stub = SimpleNamespace(
+        update_state=lambda y_true, y_pred: calls.append((y_true, y_pred))
+    )
     monkeypatch.setattr(
         component_module.Component, "compiled_metrics", property(lambda self: stub)
     )

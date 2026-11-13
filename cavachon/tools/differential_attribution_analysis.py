@@ -124,9 +124,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             n_features)``.
 
         """
-        hier_outputs = self.model.hierarchical_encode(
-            batch, z_dict, training=False
-        )
+        hier_outputs = self.model.hierarchical_encode(batch, z_dict, training=False)
         z_hat = hier_outputs[Constants.MODEL_OUTPUTS_Z_HAT]
         decode_outputs = self.model.decode(
             batch, z_hat, components=[component], training=False
@@ -197,7 +195,9 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         if not with_respect_to:
             raise ValueError("with_respect_to must contain at least one component.")
 
-        invalid_components = set(with_respect_to).difference(self.model.components.keys())
+        invalid_components = set(with_respect_to).difference(
+            self.model.components.keys()
+        )
         if invalid_components:
             raise ValueError(
                 f"Unknown components in with_respect_to: {sorted(invalid_components)}"
@@ -239,7 +239,9 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         mdata_subset = mu.MuData(adata_dict)
 
-        z_baseline = self.compute_group_latent_mean(group_b_index, batch_size=batch_size)
+        z_baseline = self.compute_group_latent_mean(
+            group_b_index, batch_size=batch_size
+        )
         z_target = self.compute_group_latent_mean(group_a_index, batch_size=batch_size)
 
         # Representative batch for decoder conditional inputs.
@@ -264,9 +266,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         }
 
         # Compute full prediction at baseline and target (deterministic).
-        z_dict_baseline = {
-            name: z_baseline[name] for name in z_baseline.keys()
-        }
+        z_dict_baseline = {name: z_baseline[name] for name in z_baseline.keys()}
         z_dict_target = {
             name: (z_target[name] if name in with_respect_to else z_baseline[name])
             for name in z_baseline.keys()
@@ -388,9 +388,7 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         abs_sum = np.where(abs_sum < 1e-12, 0.0, abs_sum)
 
         for comp_name in with_respect_to:
-            signed_denom = np.where(
-                np.abs(signed_sum) < 1e-12, 1.0, signed_sum
-            )
+            signed_denom = np.where(np.abs(signed_sum) < 1e-12, 1.0, signed_sum)
             abs_denom = np.where(abs_sum < 1e-12, 1.0, abs_sum)
             result[f"contrib_{comp_name}"] = np.where(
                 np.abs(signed_sum) < 1e-12,
@@ -497,4 +495,3 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             batch_size=batch_size,
             n_steps=n_steps,
         )
-

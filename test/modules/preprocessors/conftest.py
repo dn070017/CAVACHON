@@ -67,7 +67,9 @@ class FakeNormalizeLibrarySize(_KeyModifier):
 
     def call(self, inputs):
         out = super().call(inputs)
-        out[f"{self.key}_libsize"] = tf.reduce_sum(inputs[self.key], axis=-1, keepdims=True)
+        out[f"{self.key}_libsize"] = tf.reduce_sum(
+            inputs[self.key], axis=-1, keepdims=True
+        )
         return out
 
 
@@ -96,7 +98,9 @@ REAL_MODIFIERS = {
 def modifier_lookup(monkeypatch, fake_modifier_layers):
     """Patch ReflectionHandler.get_class_by_name as seen by preprocessor.py so
     it returns the real in-package modifier class for a distribution name."""
-    get_class = mock.MagicMock(side_effect=lambda name, subdir, postfix: REAL_MODIFIERS[name])
+    get_class = mock.MagicMock(
+        side_effect=lambda name, subdir, postfix: REAL_MODIFIERS[name]
+    )
     monkeypatch.setattr(
         "cavachon.modules.preprocessors.preprocessor.ReflectionHandler.get_class_by_name",
         get_class,

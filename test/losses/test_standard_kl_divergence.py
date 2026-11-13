@@ -20,9 +20,7 @@ def _y_pred(batch=4, d=3, seed=0):
 
 def _tfp_kl(mean, std):
     q = tfp.distributions.MultivariateNormalDiag(mean, std)
-    p = tfp.distributions.MultivariateNormalDiag(
-        tf.zeros_like(mean), tf.ones_like(std)
-    )
+    p = tfp.distributions.MultivariateNormalDiag(tf.zeros_like(mean), tf.ones_like(std))
     return tfp.distributions.kl_divergence(q, p).numpy()
 
 

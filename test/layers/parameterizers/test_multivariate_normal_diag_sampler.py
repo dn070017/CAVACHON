@@ -22,7 +22,9 @@ def test_training_samples_with_correct_moments():
 
 
 def test_non_stochastic_returns_loc_in_training():
-    np.testing.assert_allclose(Sampler(stochastic=False)(PARAMS, training=True).numpy(), LOC)
+    np.testing.assert_allclose(
+        Sampler(stochastic=False)(PARAMS, training=True).numpy(), LOC
+    )
 
 
 def test_stochastic_variable_toggle():
@@ -73,5 +75,7 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = Sampler.from_config(Sampler(**dict(stochastic=False, name="smp")).get_config())
+    clone = Sampler.from_config(
+        Sampler(**dict(stochastic=False, name="smp")).get_config()
+    )
     assert float(clone.stochastic) == 0.0 and clone.name == "smp"

@@ -10,6 +10,7 @@ stays real. Everything imported from other cavachon packages is mocked:
 
 ``cavachon.environment.Constants`` is plain constants and is used as-is.
 """
+
 import warnings
 from unittest import mock
 
@@ -148,7 +149,9 @@ def fake_layers(monkeypatch):
     binarize = mock.MagicMock(side_effect=FakeBinarize, name="Binarize")
     for module in MODIFIER_MODULES.values():
         monkeypatch.setattr(f"{module}.ToDense", to_dense)
-    monkeypatch.setattr(f"{MODIFIER_MODULES['IndependentBernoulli']}.Binarize", binarize)
+    monkeypatch.setattr(
+        f"{MODIFIER_MODULES['IndependentBernoulli']}.Binarize", binarize
+    )
     return mock.Mock(ToDense=to_dense, Binarize=binarize)
 
 
@@ -178,7 +181,9 @@ def mock_tensor_utils(monkeypatch):
     )
     monkeypatch.setattr(f"{DL_MODULE}.TensorUtils.spmatrix_to_sparse_tensor", to_sparse)
     monkeypatch.setattr(f"{DL_MODULE}.TensorUtils.create_tensor_from_df", create_df)
-    return mock.Mock(spmatrix_to_sparse_tensor=to_sparse, create_tensor_from_df=create_df)
+    return mock.Mock(
+        spmatrix_to_sparse_tensor=to_sparse, create_tensor_from_df=create_df
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -191,7 +196,6 @@ def mock_reflection(monkeypatch):
     get_class = mock.MagicMock(side_effect=resolve)
     monkeypatch.setattr(f"{DL_MODULE}.ReflectionHandler.get_class_by_name", get_class)
     return get_class
-
 
 
 # --------------------------------------------------------------------------
@@ -214,5 +218,7 @@ def sparse_counts(counts):
 def mdata_two(sparse_counts):
     rng = np.random.default_rng(1)
     rna = make_adata(sparse_counts.copy())
-    atac = make_adata(sp.csr_matrix(rng.integers(0, 4, size=(N_OBS, 4)).astype(np.float32)))
+    atac = make_adata(
+        sp.csr_matrix(rng.integers(0, 4, size=(N_OBS, 4)).astype(np.float32))
+    )
     return make_mdata({"rna": rna, "atac": atac})

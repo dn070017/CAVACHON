@@ -906,9 +906,7 @@ class Component(tf.keras.Model):
             )
 
         z_sampler = cls.setup_z_sampler(name=f"{name}_z_sampler", **kwargs)
-        z_hat_sampler = cls.setup_z_hat_sampler(
-            name=f"{name}_z_hat_sampler", **kwargs
-        )
+        z_hat_sampler = cls.setup_z_hat_sampler(name=f"{name}_z_hat_sampler", **kwargs)
 
         decoders = cls.setup_decoders(
             modality_names=modality_names,
@@ -990,9 +988,7 @@ class Component(tf.keras.Model):
         preprocessor_inputs = Component.prepare_preprocessor_inputs(
             batch, self.modality_names
         )
-        preprocessor_outputs = self.preprocessor(
-            preprocessor_inputs, training=training
-        )
+        preprocessor_outputs = self.preprocessor(preprocessor_inputs, training=training)
         z_parameters = self.encoder(
             preprocessor_outputs.get(self.preprocessor.matrix_key),
             training=training,
@@ -1099,23 +1095,17 @@ class Component(tf.keras.Model):
                     f"Missing required input key '{modality_batch_key}' in batch."
                 )
 
-        tf.debugging.assert_rank(
-            z_hat, 2, message="Expected 'z_hat' to have rank 2."
-        )
+        tf.debugging.assert_rank(z_hat, 2, message="Expected 'z_hat' to have rank 2.")
         preprocessor_inputs = Component.prepare_preprocessor_inputs(
             batch, self.modality_names
         )
-        preprocessor_outputs = self.preprocessor(
-            preprocessor_inputs, training=training
-        )
+        preprocessor_outputs = self.preprocessor(preprocessor_inputs, training=training)
 
         outputs = dict()
         for modality_name in self.modality_names:
             decoder = self.decoders.get(modality_name)
             if decoder is None:
-                raise ValueError(
-                    f"No decoder found for modality '{modality_name}'."
-                )
+                raise ValueError(f"No decoder found for modality '{modality_name}'.")
             decoder_inputs = Component.prepare_decoder_inputs(
                 batch, modality_name, z_hat, preprocessor_outputs
             )
@@ -1183,7 +1173,9 @@ class Component(tf.keras.Model):
             if has_standard:
                 if comp_name not in self._standard_kl_weights:
                     self._standard_kl_weights[comp_name] = tf.Variable(
-                        standard_w, trainable=False, dtype=tf.float32,
+                        standard_w,
+                        trainable=False,
+                        dtype=tf.float32,
                         name=f"{comp_name}_standard_kl_weight",
                     )
                 else:
@@ -1199,7 +1191,9 @@ class Component(tf.keras.Model):
             if has_gmm:
                 if comp_name not in self._gmm_kl_weights:
                     self._gmm_kl_weights[comp_name] = tf.Variable(
-                        gmm_w, trainable=False, dtype=tf.float32,
+                        gmm_w,
+                        trainable=False,
+                        dtype=tf.float32,
                         name=f"{comp_name}_gmm_kl_weight",
                     )
                 else:
@@ -1214,12 +1208,13 @@ class Component(tf.keras.Model):
 
             if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
                 loss_name = (
-                    f"{self.name}_"
-                    f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                    f"{self.name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
                 )
                 if comp_name not in self._z_hat_density_weights:
                     self._z_hat_density_weights[comp_name] = tf.Variable(
-                        1.0, trainable=False, dtype=tf.float32,
+                        1.0,
+                        trainable=False,
+                        dtype=tf.float32,
                         name=f"{comp_name}_z_hat_density_weight",
                     )
                 else:
@@ -1236,13 +1231,11 @@ class Component(tf.keras.Model):
                 self._data_loss_weights[comp_name] = {}
 
             for modality_name in self.modality_names:
-                nldl_name = (
-                    f"{modality_name}_"
-                    f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                )
+                nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
                 var = tf.Variable(
                     loss_weights.pop(nldl_name, 1.0),
-                    trainable=False, dtype=tf.float32,
+                    trainable=False,
+                    dtype=tf.float32,
                     name=f"{comp_name}_{modality_name}_data_weight",
                 )
                 self._data_loss_weights[comp_name][modality_name] = var
@@ -1301,16 +1294,18 @@ class Component(tf.keras.Model):
 
             z_key = Constants.MODEL_OUTPUTS_Z
             z_params_key = Constants.MODEL_OUTPUTS_Z_PARAMS
-            z_concat = tf.keras.layers.Lambda(
-                lambda x: tf.concat(x, axis=-1)
-            )([results.get(z_key), results.get(z_params_key)])
+            z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                [results.get(z_key), results.get(z_params_key)]
+            )
 
             # Support both new (standard_kl + gmm_kl) and legacy formats
             if (
                 Constants.MODEL_LOSS_STANDARD_KL_POSTFIX in self.loss
                 and Constants.MODEL_LOSS_GMM_KL_POSTFIX in self.loss
             ):
-                y_true.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, prior_params)
+                y_true.setdefault(
+                    Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, prior_params
+                )
                 y_pred.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, z_concat)
                 y_true.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, prior_params)
                 y_pred.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, z_concat)
@@ -1326,8 +1321,7 @@ class Component(tf.keras.Model):
                 z_hat = results.get(Constants.MODEL_OUTPUTS_Z_HAT)
                 if z_hat_prior_params is not None and z_hat is not None:
                     loss_name = (
-                        f"{self.name}_"
-                        f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                        f"{self.name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
                     )
                     y_true.setdefault(loss_name, z_hat_prior_params)
                     y_pred.setdefault(loss_name, z_hat)

@@ -5,6 +5,7 @@ Component defines neither get_config nor from_config; these tests pin
 down what the inherited Keras 3 implementations do. Mocked: the same
 fakes as the other files (see conftest.py).
 """
+
 import pytest
 
 from cavachon.modules.components.component import Component
@@ -19,8 +20,12 @@ def test_get_config_only_has_base_keras_fields(fakes):
     assert config["name"] == "c"
     assert config["trainable"] is True
     # nothing needed to rebuild the component is serialized
-    for key in ("modality_names", "distribution_names", "conditioned_on_z",
-                "learn_z_hat_priors"):
+    for key in (
+        "modality_names",
+        "distribution_names",
+        "conditioned_on_z",
+        "learn_z_hat_priors",
+    ):
         assert key not in config
 
 

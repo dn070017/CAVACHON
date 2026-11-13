@@ -40,7 +40,8 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
 
         """
         self.weight = ProgressiveScaler(
-            total_iterations=1, scale=float(weight),
+            total_iterations=1,
+            scale=float(weight),
         )
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs

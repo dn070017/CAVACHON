@@ -9,6 +9,7 @@ priors are fakes patched into cavachon.modules.components.component. The
 optimizer is real Keras SGD. `metrics_shim` replaces Keras' own deprecated
 `compiled_metrics` property, which otherwise crashes train_step (xfail).
 """
+
 import warnings
 
 import numpy as np
@@ -58,15 +59,22 @@ def test_default_loss_is_sum_of_gmm_and_nll(fakes, metrics_shim):
     c = make_component(name="c")
     _compile(c)
     logs = _train(c, make_batch())
-    assert logs == pytest.approx({
-        "loss": 5.0 + 7.0 + 7.0, GMM: 5.0, NLL_RNA: 7.0, NLL_ATAC: 7.0,
-    })
+    assert logs == pytest.approx(
+        {
+            "loss": 5.0 + 7.0 + 7.0,
+            GMM: 5.0,
+            NLL_RNA: 7.0,
+            NLL_ATAC: 7.0,
+        }
+    )
 
 
 def test_weights_applied_once_and_metrics_unweighted(fakes, metrics_shim):
     c = make_component(name="c")
     _compile(
-        c, standard_kl_weights={"c": 0.5}, gmm_kl_weights={"c": 2.0},
+        c,
+        standard_kl_weights={"c": 0.5},
+        gmm_kl_weights={"c": 2.0},
         loss_weights={NLL_RNA: 2.5},
     )
     logs = _train(c, make_batch())
@@ -120,7 +128,9 @@ def test_loss_inputs_root(fakes, metrics_shim):
     for m, key in (("rna", NLL_RNA), ("atac", NLL_ATAC)):
         y_true, y_pred = c.loss[key].calls[0]
         np.testing.assert_allclose(y_true.numpy(), batch[f"{m}_matrix"].numpy())
-        np.testing.assert_allclose(y_pred.numpy(), out[f"{m}_x_parameters"].numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            y_pred.numpy(), out[f"{m}_x_parameters"].numpy(), rtol=1e-5
+        )
     assert fakes.ToDense.calls == ["rna_matrix", "atac_matrix"]
 
 
@@ -136,7 +146,9 @@ def test_loss_inputs_child_kl_on_z_density_on_z_hat(fakes, metrics_shim):
     np.testing.assert_allclose(kl_true.numpy(), out["z_prior_parameters"].numpy())
     _, kl_pred = c.loss[GMM].calls[0]
     # KL is on z (no z_hat shift), never on z_hat
-    np.testing.assert_allclose(kl_pred.numpy()[:, :N_LATENT], out["z"].numpy(), rtol=1e-5)
+    np.testing.assert_allclose(
+        kl_pred.numpy()[:, :N_LATENT], out["z"].numpy(), rtol=1e-5
+    )
     assert np.all(np.abs(kl_pred.numpy()) < Z_HAT_SHIFT / 2)
     d_true, d_pred = c.loss["c_z_hat_gmm_density"].calls[0]
     np.testing.assert_allclose(d_pred.numpy(), out["z_hat"].numpy(), rtol=1e-5)
@@ -197,14 +209,17 @@ def test_sgd_update_matches_gradient_of_total_loss(fakes, metrics_shim, child):
     assert logs["loss"] == pytest.approx(float(expected), rel=1e-5)
     for v, b, g in zip(variables, before, grads):
         g = np.zeros_like(b) if g is None else g.numpy()
-        np.testing.assert_allclose(v.numpy(), b - 0.1 * g, rtol=1e-4, atol=1e-6,
-                                   err_msg=v.path)
+        np.testing.assert_allclose(
+            v.numpy(), b - 0.1 * g, rtol=1e-4, atol=1e-6, err_msg=v.path
+        )
 
 
 def test_root_trainable_variables_exclude_unused_modules(fakes):
     c = make_component(name="c")
     paths = sorted(v.path for v in c.trainable_variables)
-    assert paths == sorted(["c_encoder/w", "c_rna/w", "c_atac/w", "c_z_prior_parameterizer/w"])
+    assert paths == sorted(
+        ["c_encoder/w", "c_rna/w", "c_atac/w", "c_z_prior_parameterizer/w"]
+    )
 
 
 def test_child_trains_hierarchical_encoder_and_z_hat_prior(fakes, metrics_shim):
@@ -276,9 +291,9 @@ def test_gradients_pass_through_remove_nan_gradients(fakes, metrics_shim):
 def test_cleaned_gradients_are_the_ones_applied(fakes, metrics_shim):
     c = make_component(name="c")
     _compile(c, lr=1.0)
-    fakes.TensorUtils.remove_nan_gradients.side_effect = (
-        lambda gradients: [None if g is None else tf.zeros_like(g) for g in gradients]
-    )
+    fakes.TensorUtils.remove_nan_gradients.side_effect = lambda gradients: [
+        None if g is None else tf.zeros_like(g) for g in gradients
+    ]
     before = [v.numpy().copy() for v in c.trainable_variables]
     _train(c, make_batch())
     for b, v in zip(before, c.trainable_variables):

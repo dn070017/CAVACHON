@@ -7,7 +7,9 @@ LOC = np.array([[1.0, -1.0]], np.float32)
 
 
 def _params(raw_scale=0.0, raw_df=0.0, n=1):
-    p = np.concatenate([LOC, np.full_like(LOC, raw_scale), np.full_like(LOC, raw_df)], -1)
+    p = np.concatenate(
+        [LOC, np.full_like(LOC, raw_scale), np.full_like(LOC, raw_df)], -1
+    )
     return tf.constant(np.repeat(p, n, axis=0))
 
 
@@ -16,14 +18,18 @@ def test_inference_returns_loc():
 
 
 def test_training_sample_shape_and_median():
-    out = StudenttSampler()(_params(raw_scale=-1.0, raw_df=5.0, n=20000), training=True).numpy()
+    out = StudenttSampler()(
+        _params(raw_scale=-1.0, raw_df=5.0, n=20000), training=True
+    ).numpy()
     assert out.shape == (20000, 2)
     np.testing.assert_allclose(np.median(out, 0), LOC[0], atol=0.05)
 
 
 def test_training_scale_matches_softplus():
     raw_df = 50.0  # df ~ 52 -> approx normal with std ~ scale * sqrt(df/(df-2))
-    out = StudenttSampler()(_params(raw_scale=0.0, raw_df=raw_df, n=20000), training=True).numpy()
+    out = StudenttSampler()(
+        _params(raw_scale=0.0, raw_df=raw_df, n=20000), training=True
+    ).numpy()
     scale = np.logaddexp(0.0, 0.0)
     df = raw_df + 2.0
     np.testing.assert_allclose(out.std(0), scale * np.sqrt(df / (df - 2)), rtol=0.05)

@@ -75,12 +75,18 @@ def make_feature(filename, colnames=None, has_headers=False):
     )
 
 
-def make_sample_modality(name, modality="RNA", transpose=False, colnames=True, prefix=""):
+def make_sample_modality(
+    name, modality="RNA", transpose=False, colnames=True, prefix=""
+):
     return SimpleNamespace(
         name=modality,
         matrix=SimpleNamespace(filename=f"{prefix}{name}.mtx", transpose=transpose),
-        barcodes=make_feature(f"{prefix}{name}_b.tsv", ["barcode"] if colnames else None),
-        features=make_feature(f"{prefix}{name}_f.tsv", ["id", "symbol"] if colnames else None),
+        barcodes=make_feature(
+            f"{prefix}{name}_b.tsv", ["barcode"] if colnames else None
+        ),
+        features=make_feature(
+            f"{prefix}{name}_f.tsv", ["id", "symbol"] if colnames else None
+        ),
     )
 
 
@@ -92,7 +98,9 @@ def make_config(samples, modality_samples, datadir="/data"):
     """
     return SimpleNamespace(
         io=SimpleNamespace(datadir=datadir),
-        modality={m: SimpleNamespace(samples=list(s)) for m, s in modality_samples.items()},
+        modality={
+            m: SimpleNamespace(samples=list(s)) for m, s in modality_samples.items()
+        },
         sample={
             n: SimpleNamespace(description=d, modalities=mods)
             for n, (d, mods) in samples.items()

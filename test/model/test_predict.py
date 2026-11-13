@@ -102,15 +102,26 @@ class TestPredictMuData:
         assert set(atac.keys()) == {"z_b", "z_hat_b"}
         np.testing.assert_allclose(rna["z_a"], exp["a_z"], rtol=1e-6)
         np.testing.assert_allclose(rna["z_hat_a"], exp["a_z_hat"], rtol=1e-6)
-        np.testing.assert_allclose(rna["x_parameters_a"], exp["a_rna_x_parameters"], rtol=1e-6)
-        np.testing.assert_allclose(rna["x_parameters_b"], exp["b_rna_x_parameters"], rtol=1e-6)
+        np.testing.assert_allclose(
+            rna["x_parameters_a"], exp["a_rna_x_parameters"], rtol=1e-6
+        )
+        np.testing.assert_allclose(
+            rna["x_parameters_b"], exp["b_rna_x_parameters"], rtol=1e-6
+        )
         np.testing.assert_allclose(atac["z_b"], exp["b_z"], rtol=1e-6)
         np.testing.assert_allclose(atac["z_hat_b"], exp["b_z_hat"], rtol=1e-6)
 
     def test_returns_outputs_dict(self, setup):
         model, mdata, _ = setup
         outputs = model.predict(mdata)
-        assert {"a_z", "a_z_hat", "b_z", "b_z_hat", "a_rna_x_parameters", "b_rna_x_parameters"} <= set(outputs)
+        assert {
+            "a_z",
+            "a_z_hat",
+            "b_z",
+            "b_z_hat",
+            "a_rna_x_parameters",
+            "b_rna_x_parameters",
+        } <= set(outputs)
         assert all(isinstance(v, np.ndarray) for v in outputs.values())
 
     def test_inference_mode(self, setup):
@@ -119,7 +130,9 @@ class TestPredictMuData:
         assert model.components["a"].recorder.calls[-1]["training"] is False
 
     def test_no_z_written_when_save_z_false(self, make_model, fakes):
-        model = make_model(FakeConfig("a", ["rna"], save_z={"rna": False}, save_x={"rna": False}))
+        model = make_model(
+            FakeConfig("a", ["rna"], save_z={"rna": False}, save_x={"rna": False})
+        )
         mdata = _mdata()
         fakes.dataloader.return_value = _batches(mdata, modalities=("rna",))
         outputs = model.predict(mdata)
@@ -136,7 +149,6 @@ class TestPredictMuData:
         outputs = model.predict(mdata)
         # b: save_x = {rna: True, atac: False}
         assert "b_atac_x_parameters" not in outputs
-
 
     def test_unused_modality_in_mudata_is_ignored(self, make_model, fakes):
         # regression: fixed bug, see UNIT_TEST_REPORT.md

@@ -59,9 +59,7 @@ class FileReader:
 
             config_modality_obs = config_sample_modality.barcodes
             obs_has_headers = config_modality_obs.has_headers
-            obs_colnames = (
-                config_modality_obs.colnames if not obs_has_headers else None
-            )
+            obs_colnames = config_modality_obs.colnames if not obs_has_headers else None
             obs_df = FileReader.read_table(
                 filename=os.path.join(
                     datadir,
@@ -76,9 +74,7 @@ class FileReader:
 
             config_modality_var = config_sample_modality.features
             var_has_headers = config_modality_var.has_headers
-            var_colnames = (
-                config_modality_var.colnames if not var_has_headers else None
-            )
+            var_colnames = config_modality_var.colnames if not var_has_headers else None
             var_df = FileReader.read_table(
                 filename=os.path.join(
                     datadir,

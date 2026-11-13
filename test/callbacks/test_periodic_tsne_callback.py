@@ -72,12 +72,8 @@ def test_init_stores_arguments_and_creates_outdir(patched):
     assert cb.batch_size == 64
     assert cb.output_dir == "/nonexistent/snapshots"
     assert cb.batch_effect_colnames == {"rna": ["batch"]}
-    assert cb.distribution_names == {
-        "rna": "IndependentZeroInflatedNegativeBinomial"
-    }
-    patched["makedirs"].assert_called_once_with(
-        "/nonexistent/snapshots", exist_ok=True
-    )
+    assert cb.distribution_names == {"rna": "IndependentZeroInflatedNegativeBinomial"}
+    patched["makedirs"].assert_called_once_with("/nonexistent/snapshots", exist_ok=True)
 
 
 def test_on_epoch_end_is_currently_a_noop(patched):

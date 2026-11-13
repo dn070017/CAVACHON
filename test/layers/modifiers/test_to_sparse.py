@@ -29,7 +29,6 @@ def test_dense_eager_tensor_is_converted():
     np.testing.assert_array_equal(to_np(out), X)
 
 
-
 def test_sparse_input_checked_via_tensor_utils(tensor_utils):
     ToSparse("a")({"a": sparse()})
     tensor_utils.is_sparse_tensor.assert_called_once()

@@ -18,7 +18,9 @@ def names(components):
 def assert_topological(ordered):
     pos = {n: i for i, n in enumerate(names(ordered))}
     for c in ordered:
-        get = c.get if isinstance(c, dict) else (lambda k, d=None, c=c: getattr(c, k, d))
+        get = (
+            c.get if isinstance(c, dict) else (lambda k, d=None, c=c: getattr(c, k, d))
+        )
         for parent in list(get(Z, [])) + list(get(ZH, [])):
             assert pos[parent] < pos[get("name")]
 
@@ -106,16 +108,22 @@ class TestOrderComponents:
 
     def test_unknown_parent_reports_name(self, timeout):
         # regression: failed in networkx with 'None cannot be a node'
-        with pytest.raises(ValueError, match="'a' is conditioned on unknown component 'missing_parent'"):
+        with pytest.raises(
+            ValueError, match="'a' is conditioned on unknown component 'missing_parent'"
+        ):
             GeneralUtils.order_components([{"name": "a", Z: ["missing_parent"]}])
 
     def test_unknown_z_hat_parent_reports_name(self, timeout):
         cfg = [{"name": "p"}, {"name": "c", Z: ["p"], ZH: ["ghost"]}]
-        with pytest.raises(ValueError, match="'c' is conditioned on unknown component 'ghost'"):
+        with pytest.raises(
+            ValueError, match="'c' is conditioned on unknown component 'ghost'"
+        ):
             GeneralUtils.order_components(cfg)
 
     def test_unknown_parent_in_mapping_input(self, timeout):
-        with pytest.raises(ValueError, match="'x' is conditioned on unknown component 'nope'"):
+        with pytest.raises(
+            ValueError, match="'x' is conditioned on unknown component 'nope'"
+        ):
             GeneralUtils.order_components({"x": {Z: ["nope"]}})
 
     def test_unknown_parent_on_object_config(self, timeout):
@@ -181,7 +189,9 @@ class TestTensorflowCompatibleStr:
         once = GeneralUtils.tensorflow_compatible_str("_a b")
         assert GeneralUtils.tensorflow_compatible_str(once) == once
 
-    @pytest.mark.parametrize("s,expected", [("abc\n", "abc_"), ("_a\n", "t__a_"), ("a\nb", "a_b")])
+    @pytest.mark.parametrize(
+        "s,expected", [("abc\n", "abc_"), ("_a\n", "t__a_"), ("a\nb", "a_b")]
+    )
     def test_trailing_newline_sanitized(self, s, expected):
         # regression: match() with '$' accepted 'abc\n' unchanged
         out = GeneralUtils.tensorflow_compatible_str(s)

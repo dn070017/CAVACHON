@@ -15,10 +15,7 @@ class StandardKLDivergence(tf.keras.losses.Loss):
     """
 
     def __init__(
-        self, 
-        weight: float = 1.0,
-        name: str = "standard_kl_divergence",
-        **kwargs
+        self, weight: float = 1.0, name: str = "standard_kl_divergence", **kwargs
     ):
         """Standard KL; the scheduler sets the weight through the scale of
         the ProgressiveScaler (total_iterations=1, so weight = scale)."""
@@ -28,7 +25,8 @@ class StandardKLDivergence(tf.keras.losses.Loss):
             **kwargs,
         )
         self.weight = ProgressiveScaler(
-            total_iterations=1, scale=float(weight),
+            total_iterations=1,
+            scale=float(weight),
         )
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:

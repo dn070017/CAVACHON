@@ -202,9 +202,7 @@ class Workflow:
         self.distribution_names = dict()
         self.batch_effect_colnames = dict()
         for modality_name, modality_config in self.config.modality.items():
-            self.distribution_names.setdefault(
-                modality_name, modality_config.dist
-            )
+            self.distribution_names.setdefault(modality_name, modality_config.dist)
             self.batch_effect_colnames.setdefault(
                 modality_name,
                 modality_config.batch_effect_colnames,
@@ -499,7 +497,9 @@ class Workflow:
         """Perform hierarchical differential analysis between clusters."""
         if not self.config.analysis.hierarchical_differential_analysis:
             return
-        outdir = os.path.join(self.config.io.outdir, "hierarchical_differential_analysis")
+        outdir = os.path.join(
+            self.config.io.outdir, "hierarchical_differential_analysis"
+        )
         os.makedirs(outdir, exist_ok=True)
         analysis = HierarchicalDifferentialAnalysis(
             self.mdata,
@@ -510,7 +510,9 @@ class Workflow:
         )
         for analysis_config in self.config.analysis.hierarchical_differential_analysis:
             donor_components = analysis_config.donor_components
-            donor_components_str = "_".join(donor_components) if donor_components else "all"
+            donor_components_str = (
+                "_".join(donor_components) if donor_components else "all"
+            )
             if analysis_config.donor_cluster and analysis_config.recipient_cluster:
                 # Single-pair mode: explicit donor -> recipient
                 result = analysis.between_clusters(
@@ -557,7 +559,12 @@ class Workflow:
                     donor_components_str,
                 )
                 for pair_key, result in results.items():
-                    pair = pair_key.replace("->", "_to_").replace("/", "_").replace(" ", "_").lower()
+                    pair = (
+                        pair_key.replace("->", "_to_")
+                        .replace("/", "_")
+                        .replace(" ", "_")
+                        .lower()
+                    )
                     filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_')}_{pair}.tsv"
                     result.to_csv(filename, sep="\t")
 
@@ -565,7 +572,9 @@ class Workflow:
 
     def perform_differential_attribution_analysis(self) -> None:
         """Perform differential attribution analysis on DEG/HDEG outputs."""
-        output_root = os.path.join(self.config.io.outdir, "differential_attribution_analysis")
+        output_root = os.path.join(
+            self.config.io.outdir, "differential_attribution_analysis"
+        )
         for analysis_config in tqdm(
             self.config.analysis.differential_attribution_analysis,
             desc="Differential attribution analyses",
@@ -608,10 +617,14 @@ class Workflow:
             ):
                 if analysis_config.analysis_type == "deg":
                     group_a = str(
-                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN].iloc[0]
+                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN].iloc[
+                            0
+                        ]
                     )
                     group_b = str(
-                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN].iloc[0]
+                        deg_table[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN].iloc[
+                            0
+                        ]
                     )
                 else:
                     group_a = str(
@@ -664,9 +677,7 @@ class Workflow:
                 if len(analysis_config.with_respect_to) < 2:
                     continue
 
-                radviz_filename = os.path.join(
-                    outdir, f"{output_name}_radviz.html"
-                )
+                radviz_filename = os.path.join(outdir, f"{output_name}_radviz.html")
                 InteractiveVisualization.differential_attribution_radviz(
                     data=attributed,
                     with_respect_to=analysis_config.with_respect_to,

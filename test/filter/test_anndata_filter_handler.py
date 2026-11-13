@@ -114,9 +114,7 @@ def test_call_orchestrates_fake_steps_in_order():
         return step
 
     a0, a1, a2 = object(), object(), object()
-    handler = AnnDataFilterHandler(
-        {"RNA": [fake_step("s1", a1), fake_step("s2", a2)]}
-    )
+    handler = AnnDataFilterHandler({"RNA": [fake_step("s1", a1), fake_step("s2", a2)]})
     out = handler({"RNA": a0})
     assert order == [("s1", a0), ("s2", a1)]
     assert out["RNA"] is a2

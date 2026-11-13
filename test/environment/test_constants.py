@@ -31,14 +31,19 @@ def test_tensorflow_name_regex_rejects_invalid(name):
     assert re.fullmatch(Constants.TENSORFLOW_NAME_REGEX, name) is None
 
 
-@pytest.mark.parametrize("name,ok", [("a", True), ("1", True), (".", True), ("_", False), ("", False)])
+@pytest.mark.parametrize(
+    "name,ok", [("a", True), ("1", True), (".", True), ("_", False), ("", False)]
+)
 def test_tensorflow_name_start_regex(name, ok):
     assert bool(re.match(Constants.TENSORFLOW_NAME_START_REGEX, name)) is ok
 
 
 def test_supported_modalities_and_default_distributions_consistent():
     assert Constants.SUPPORTED_MODALITY_TYPES == {"atac", "rna"}
-    assert set(Constants.DEFAULT_MODALITY_DISTRIBUTION) == Constants.SUPPORTED_MODALITY_TYPES
+    assert (
+        set(Constants.DEFAULT_MODALITY_DISTRIBUTION)
+        == Constants.SUPPORTED_MODALITY_TYPES
+    )
     assert Constants.DEFAULT_MODALITY_DISTRIBUTION["atac"] == "IndependentBernoulli"
     assert (
         Constants.DEFAULT_MODALITY_DISTRIBUTION["rna"]
@@ -47,9 +52,17 @@ def test_supported_modalities_and_default_distributions_consistent():
 
 
 def test_required_field_lists_reference_other_constants():
-    assert Constants.CONFIG_FIELD_MODALITY_REQUIRED == ["name", Constants.CONFIG_FIELD_MODALITY_TYPE]
-    assert Constants.CONFIG_FIELD_SAMPLE_REQUIRED == ["name", Constants.CONFIG_FIELD_MODALITY]
-    assert Constants.CONFIG_FIELD_MODEL_REQUIRED == [Constants.CONFIG_FIELD_MODEL_COMPONENT]
+    assert Constants.CONFIG_FIELD_MODALITY_REQUIRED == [
+        "name",
+        Constants.CONFIG_FIELD_MODALITY_TYPE,
+    ]
+    assert Constants.CONFIG_FIELD_SAMPLE_REQUIRED == [
+        "name",
+        Constants.CONFIG_FIELD_MODALITY,
+    ]
+    assert Constants.CONFIG_FIELD_MODEL_REQUIRED == [
+        Constants.CONFIG_FIELD_MODEL_COMPONENT
+    ]
     assert Constants.CONFIG_FIELD_SAMPLE_MODALITY_REQUIRED == [
         Constants.CONFIG_FIELD_SAMPLE_MODALITY_MTX,
         Constants.CONFIG_FIELD_SAMPLE_MODALITY_OBS,
@@ -64,7 +77,9 @@ def test_condition_field_names():
 
 def test_all_string_constants_are_nonempty_and_model_outputs_unique():
     str_values = {
-        k: v for k, v in vars(Constants).items() if not k.startswith("__") and isinstance(v, str)
+        k: v
+        for k, v in vars(Constants).items()
+        if not k.startswith("__") and isinstance(v, str)
     }
     assert all(len(v) > 0 for v in str_values.values())
     outputs = [v for k, v in str_values.items() if k.startswith("MODEL_OUTPUTS_")]

@@ -58,7 +58,9 @@ def test_samples_not_shared_between_instances():
 
 # regression: unknown type without dist raises
 def test_unknown_type_without_dist_rejected():
-    with pytest.raises(ValidationError, match="Unknown type 'protein' of modality prot"):
+    with pytest.raises(
+        ValidationError, match="Unknown type 'protein' of modality prot"
+    ):
         ModalityConfig(name="prot", type="protein")
 
 

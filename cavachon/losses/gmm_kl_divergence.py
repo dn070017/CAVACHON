@@ -17,19 +17,15 @@ class GMMKLDivergence(tf.keras.losses.Loss):
     𝚺_j𝚺_y[py_z(logpc_z)]
     """
 
-    def __init__(
-        self,
-        weight: float = 1.0,
-        name: str = "gmm_kl_divergence", 
-        **kwargs
-    ):
+    def __init__(self, weight: float = 1.0, name: str = "gmm_kl_divergence", **kwargs):
         """GMM KL; the scheduler sets the weight through the scale of the
         ProgressiveScaler (total_iterations=1, so weight = scale)."""
         super().__init__(
             name=name, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE, **kwargs
         )
         self.weight = ProgressiveScaler(
-            total_iterations=1, scale=float(weight),
+            total_iterations=1,
+            scale=float(weight),
         )
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:

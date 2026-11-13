@@ -75,7 +75,9 @@ class ScaleLibrarySize(tf.keras.layers.Layer):
             warnings.warn(message, RuntimeWarning)
             self.show_warning = False
 
-        libsize = inputs.get(libsize_key, tf.ones((tf.shape(tensor)[0], 1), dtype=tensor.dtype))
+        libsize = inputs.get(
+            libsize_key, tf.ones((tf.shape(tensor)[0], 1), dtype=tensor.dtype)
+        )
         tensor = tensor * libsize
 
         if is_sparse:

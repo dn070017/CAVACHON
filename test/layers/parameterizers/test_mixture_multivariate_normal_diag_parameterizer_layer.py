@@ -72,8 +72,22 @@ def test_grid_perfect_power_is_centred():
 @pytest.mark.parametrize(
     "k,d",
     [
-        (5**5, 5), (6**5, 5), (7**5, 5), (2**10, 10), (3**3, 3), (1, 1), (1, 4),
-        (2, 1), (7, 1), (5, 2), (10, 3), (3126, 5), (3124, 5), (1025, 10), (26, 3), (28, 3),
+        (5**5, 5),
+        (6**5, 5),
+        (7**5, 5),
+        (2**10, 10),
+        (3**3, 3),
+        (1, 1),
+        (1, 4),
+        (2, 1),
+        (7, 1),
+        (5, 2),
+        (10, 3),
+        (3126, 5),
+        (3124, 5),
+        (1025, 10),
+        (26, 3),
+        (28, 3),
     ],
 )
 def test_grid_side_is_minimal_integer(k, d):
@@ -113,5 +127,7 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = Mixture.from_config(Mixture(**dict(event_dims=2, n_components=4, unit_variance=True)).get_config())
+    clone = Mixture.from_config(
+        Mixture(**dict(event_dims=2, n_components=4, unit_variance=True)).get_config()
+    )
     assert (clone.event_dims, clone.n_components, clone.unit_variance) == (2, 4, True)

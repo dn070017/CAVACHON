@@ -1,7 +1,9 @@
 import numpy as np
 import tensorflow as tf
 
-from cavachon.layers.parameterizers import MultivariateNormalDiagParameterizerLayer as MVN
+from cavachon.layers.parameterizers import (
+    MultivariateNormalDiagParameterizerLayer as MVN,
+)
 
 
 def _softplus(x):
@@ -15,7 +17,10 @@ def test_shape_and_numeric_reference():
     assert out.shape == (4, 6)
     xn = x.numpy()
     loc = xn @ layer.loc_weight.numpy() + layer.loc_bias.numpy()
-    scale = _softplus(xn @ layer.scale_diag_weight.numpy() + layer.scale_diag_bias.numpy()) + 1e-7
+    scale = (
+        _softplus(xn @ layer.scale_diag_weight.numpy() + layer.scale_diag_bias.numpy())
+        + 1e-7
+    )
     np.testing.assert_allclose(out[:, :3], loc, rtol=1e-5, atol=1e-6)
     np.testing.assert_allclose(out[:, 3:], scale, rtol=1e-5, atol=1e-6)
 

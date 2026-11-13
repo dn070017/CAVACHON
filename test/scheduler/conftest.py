@@ -81,7 +81,9 @@ class FakePrior(FakeLayer):
     def __init__(self, name, n_components=2, event_dims=2):
         super().__init__(name)
         self.n_components = n_components
-        self.loc_bias = [FakeVar(np.zeros((1, event_dims))) for _ in range(n_components)]
+        self.loc_bias = [
+            FakeVar(np.zeros((1, event_dims))) for _ in range(n_components)
+        ]
         self.scale_diag_bias = [
             FakeVar(np.zeros((1, event_dims))) for _ in range(n_components)
         ]
@@ -98,7 +100,9 @@ class FakeComponent:
         self.decoder = FakeLayer(f"{name}_decoder")
         self.inner = FakeLayer(f"{name}_inner")
         self.decoder.layers = [self.inner]  # nested: reached through .layers
-        self.z_prior_parameterizer = FakePrior(f"{name}_z_prior", n_clusters, event_dims)
+        self.z_prior_parameterizer = FakePrior(
+            f"{name}_z_prior", n_clusters, event_dims
+        )
         self.z_hat_prior_parameterizer = (
             FakePrior(f"{name}_z_hat_prior", n_clusters, event_dims)
             if learn_z_hat_priors
@@ -121,7 +125,9 @@ class FakeComponent:
         self.progressive_calls = []
 
     def set_progressive_scaler_iteration(self, current_iteration=1, total_iterations=1):
-        self.progressive_calls.append((float(current_iteration), float(total_iterations)))
+        self.progressive_calls.append(
+            (float(current_iteration), float(total_iterations))
+        )
         ps = self.hierarchical_encoder.progressive_scaler
         ps.current_iteration.assign(float(current_iteration))
         ps.total_iterations.assign(float(total_iterations))
@@ -175,7 +181,10 @@ class FakeModel:
         self.component_configs = configs
         self.components = {
             c.name: FakeComponent(
-                c.name, c.name in learn_z_hat, n_clusters=n_clusters, event_dims=event_dims
+                c.name,
+                c.name in learn_z_hat,
+                n_clusters=n_clusters,
+                event_dims=event_dims,
             )
             for c in configs
         }
@@ -186,7 +195,9 @@ class FakeModel:
         }
         self._z_hat_density_weights = {n: FakeVar(1.0) for n in learn_z_hat}
         self._z_hat_gmm_kl_weights = {
-            c.name: FakeScaler(c.z_hat_kl_weight) for c in configs if c.name in learn_z_hat
+            c.name: FakeScaler(c.z_hat_kl_weight)
+            for c in configs
+            if c.name in learn_z_hat
         }
         self.optimizer = None
         self.compile_calls = []
@@ -328,7 +339,9 @@ def fakes(monkeypatch):
     )
     monkeypatch.setattr(sts_module, "EarlyStoppingConfig", ns.EarlyStoppingConfig)
     ns.mlflow = MagicMock(name="mlflow")
-    ns.mlflow.get_experiment_by_name.return_value = SimpleNamespace(experiment_id="exp-1")
+    ns.mlflow.get_experiment_by_name.return_value = SimpleNamespace(
+        experiment_id="exp-1"
+    )
     monkeypatch.setattr(sts_module, "mlflow", ns.mlflow)
     return ns
 

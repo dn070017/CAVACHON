@@ -26,7 +26,9 @@ def test_activate_and_quadratic_schedule():
     for _ in range(6):
         s.increment()
         vals.append(s.numpy())
-    np.testing.assert_allclose(vals, 2.0 * np.array([1, 4, 9, 16, 16, 16]) / 16.0, rtol=1e-6)
+    np.testing.assert_allclose(
+        vals, 2.0 * np.array([1, 4, 9, 16, 16, 16]) / 16.0, rtol=1e-6
+    )
 
 
 def test_activate_zero_progress_floor():
@@ -100,7 +102,6 @@ def test_variables_not_trainable():
     assert len(s.trainable_weights) == 0
 
 
-
 @pytest.mark.xfail(
     strict=True,
     reason="BUG?: activate(0) clamps current_iteration to 0 forever, so the weight stays at 1e-16*scale "
@@ -122,5 +123,7 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = ProgressiveScaler.from_config(ProgressiveScaler(**dict(total_iterations=7, scale=0.5, name="ps")).get_config())
+    clone = ProgressiveScaler.from_config(
+        ProgressiveScaler(**dict(total_iterations=7, scale=0.5, name="ps")).get_config()
+    )
     assert float(clone.total_iterations) == 7.0 and float(clone.scale) == 0.5

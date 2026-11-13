@@ -105,9 +105,7 @@ class EnrichmentAnalysis:
         """
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
-        compatible_gene_sets = cast(
-            Union[str, List[str], Dict[str, str]], gene_sets
-        )
+        compatible_gene_sets = cast(Union[str, List[str], Dict[str, str]], gene_sets)
         return gseapy.prerank(
             rnk=prerank,
             gene_sets=compatible_gene_sets,
@@ -201,7 +199,9 @@ class EnrichmentAnalysis:
                 InteractiveVisualization.prerank_enrichment_score(
                     prerank_result,
                     term=term,
-                    filename=str(outdir / f"enrichment_score_{_safe_filename(term)}.html"),
+                    filename=str(
+                        outdir / f"enrichment_score_{_safe_filename(term)}.html"
+                    ),
                 )
             )
 
@@ -466,6 +466,7 @@ class EnrichmentAnalysis:
             )
 
         return results
+
 
 def _safe_filename(value: str) -> str:
     """Convert an enrichment term into a filesystem-safe filename part."""

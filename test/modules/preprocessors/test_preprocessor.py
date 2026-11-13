@@ -27,7 +27,10 @@ def _set_dense(model, layer_name, value):
 RNA = np.array([[1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 1.0, 0.0]], dtype=np.float32)
 ATAC = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]], dtype=np.float32)
 
-DISTS = {"rna": "IndependentZeroInflatedNegativeBinomial", "atac": "IndependentBernoulli"}
+DISTS = {
+    "rna": "IndependentZeroInflatedNegativeBinomial",
+    "atac": "IndependentBernoulli",
+}
 NVARS = {"rna": 4, "atac": 3}
 
 
@@ -41,7 +44,11 @@ class TestMake:
     def test_reflection_lookup_per_modality(self, two_modality):
         _, lookup = two_modality
         assert [c.args for c in lookup.call_args_list] == [
-            ("IndependentZeroInflatedNegativeBinomial", "modules/preprocessors/modifiers", "Modifier"),
+            (
+                "IndependentZeroInflatedNegativeBinomial",
+                "modules/preprocessors/modifiers",
+                "Modifier",
+            ),
             ("IndependentBernoulli", "modules/preprocessors/modifiers", "Modifier"),
         ]
 
@@ -71,11 +78,13 @@ class TestMake:
         _set_dense(model, "pre_rna", 1.0)
         _set_dense(model, "pre_atac", 0.5)
         out = model({"rna_matrix": tf.constant(RNA), "atac_matrix": tf.constant(ATAC)})
-        rna_mod = (RNA + 1) * 2 - 3          # ToDense -> Log -> Normalize (fakes)
-        atac_mod = (ATAC + 1) * 10           # ToDense -> Binarize (fakes)
+        rna_mod = (RNA + 1) * 2 - 3  # ToDense -> Log -> Normalize (fakes)
+        atac_mod = (ATAC + 1) * 10  # ToDense -> Binarize (fakes)
         expected = np.concatenate(
-            [np.repeat(rna_mod.sum(-1, keepdims=True), 2, -1),
-             np.repeat(0.5 * atac_mod.sum(-1, keepdims=True), 2, -1)],
+            [
+                np.repeat(rna_mod.sum(-1, keepdims=True), 2, -1),
+                np.repeat(0.5 * atac_mod.sum(-1, keepdims=True), 2, -1),
+            ],
             axis=-1,
         )
         np.testing.assert_allclose(out[X].numpy(), expected, rtol=1e-6)
@@ -99,16 +108,22 @@ class TestMake:
         model = Preprocessor.make(
             ["cnv"], {"cnv": "Studentt"}, {"cnv": 3}, n_dims=4, name="pre"
         )
-        modifier_lookup.assert_called_once_with("Studentt", "modules/preprocessors/modifiers", "Modifier")
+        modifier_lookup.assert_called_once_with(
+            "Studentt", "modules/preprocessors/modifiers", "Modifier"
+        )
         assert set(model.output) == {X}
         _set_dense(model, "pre_cnv", 1.0)
         out = model({"cnv_matrix": tf.constant(ATAC)})
         np.testing.assert_allclose(
-            out[X].numpy(), np.repeat((ATAC + 1).sum(-1, keepdims=True), 4, -1), rtol=1e-6
+            out[X].numpy(),
+            np.repeat((ATAC + 1).sum(-1, keepdims=True), 4, -1),
+            rtol=1e-6,
         )
 
     def test_default_n_dims(self, modifier_lookup):
-        model = Preprocessor.make(["cnv"], {"cnv": "MultivariateNormalDiag"}, {"cnv": 3})
+        model = Preprocessor.make(
+            ["cnv"], {"cnv": "MultivariateNormalDiag"}, {"cnv": 3}
+        )
         assert model.name == "preprocessor"
         assert tuple(model.output[X].shape) == (None, 1024)
 

@@ -70,7 +70,9 @@ def test_sums_over_event_axis_and_negates(fakes):
     fakes.bernoulli.from_parameterizer_output.side_effect = None
     fakes.bernoulli.from_parameterizer_output.return_value = dist
     loss = NegativeLogDataLikelihood("IndependentBernoulli")
-    np.testing.assert_allclose(loss.call(tf.zeros((2, 2)), tf.zeros((2, 2))), [3.0, 1.0])
+    np.testing.assert_allclose(
+        loss.call(tf.zeros((2, 2)), tf.zeros((2, 2))), [3.0, 1.0]
+    )
     np.testing.assert_allclose(loss(tf.zeros((2, 2)), tf.zeros((2, 2))), 2.0)
 
 

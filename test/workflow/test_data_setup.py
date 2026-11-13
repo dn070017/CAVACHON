@@ -25,7 +25,9 @@ def modality_cfg(type_, dist, h5ad="", batch=()):
 def two_modality_config():
     config = make_config()
     config.modality = {
-        "RNA": modality_cfg("rna", "IndependentZeroInflatedNegativeBinomial", "rna.h5ad", ["batch"]),
+        "RNA": modality_cfg(
+            "rna", "IndependentZeroInflatedNegativeBinomial", "rna.h5ad", ["batch"]
+        ),
         "ATAC": modality_cfg("atac", "IndependentBernoulli", "", ["sample", "lane"]),
     }
     config.modality_names = ["RNA", "ATAC"]
@@ -107,7 +109,9 @@ def test_setup_mdata_reads_filters_and_builds_multimodality(deps, monkeypatch):
     manager = mock.Mock()
     manager.read_modalities.return_value = {"RNA": "raw"}
     manager.filters.return_value = {"RNA": "filtered"}
-    monkeypatch.setattr(Workflow, "read_modalities", staticmethod(manager.read_modalities))
+    monkeypatch.setattr(
+        Workflow, "read_modalities", staticmethod(manager.read_modalities)
+    )
     wf.anndata_filters = manager.filters
     manager.attach_mock(deps.MultiModality, "MultiModality")
     wf.update_config_nvars = manager.update_config_nvars
@@ -206,7 +210,12 @@ def test_setup_dataloader_passes_args_in_signature_order(deps):
     from cavachon.dataloader.dataloader import DataLoader
 
     names = list(inspect.signature(DataLoader.__init__).parameters)[1:5]
-    assert names == ["mdata", "batch_size", "batch_effect_colnames", "distribution_names"]
+    assert names == [
+        "mdata",
+        "batch_size",
+        "batch_effect_colnames",
+        "distribution_names",
+    ]
 
 
 def test_setup_dataloader_updates_batch_effect_nvars(deps):

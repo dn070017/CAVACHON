@@ -342,8 +342,12 @@ class SequentialTrainingScheduler:
         # (Component.__setattr__), so their state is restored at the end
         saved_progressive = {
             name: (
-                float(component.hierarchical_encoder.progressive_scaler.current_iteration),
-                float(component.hierarchical_encoder.progressive_scaler.total_iterations),
+                float(
+                    component.hierarchical_encoder.progressive_scaler.current_iteration
+                ),
+                float(
+                    component.hierarchical_encoder.progressive_scaler.total_iterations
+                ),
             )
             for name, component in self.model.components.items()
         }
@@ -351,7 +355,9 @@ class SequentialTrainingScheduler:
         # 1. Extract latent representations from end of previous phase
         self.model.trainable = False
         outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
-        z = outputs[f"{component_name}{representation_key}"]  # Shape: (n_samples, event_dims)
+        z = outputs[
+            f"{component_name}{representation_key}"
+        ]  # Shape: (n_samples, event_dims)
         z_tensor = tf.constant(z, dtype=tf.float32)
 
         n_samples = z.shape[0]
@@ -532,26 +538,20 @@ class SequentialTrainingScheduler:
 
         cumulative_offset = 0
         phase_number = 1
-        self.component_order = [
-            c[0] for c in self.training_order
-        ]
+        self.component_order = [c[0] for c in self.training_order]
 
-        for component_order, train_components in enumerate(
-            self.training_order
-        ):
+        for component_order, train_components in enumerate(self.training_order):
             component_name = train_components[0]
-            self.setup_component_and_loss_weights(
-                train_components
-            )
-            self._compile_model(self.learning_rate)  # retrace with current trainable_variables
+            self.setup_component_and_loss_weights(train_components)
+            self._compile_model(
+                self.learning_rate
+            )  # retrace with current trainable_variables
 
             # --- Parent annealing ---
             if self.run_progressive_training.get(component_name):
                 parent_names = self._get_parent_component(component_name)
                 if parent_names:
-                    n_prog_epochs = self._get_parent_annealing_epochs(
-                        component_name
-                    )
+                    n_prog_epochs = self._get_parent_annealing_epochs(component_name)
                     if n_prog_epochs > 0:
                         # parents are frozen and their loss weights zeroed by
                         # setup_component_and_loss_weights
@@ -570,23 +570,21 @@ class SequentialTrainingScheduler:
                             phase_number=phase_number,
                             kwargs=kwargs,
                         )
-                        actual = len(history[-1].epoch) if len(history) > before else n_prog_epochs
-                        cumulative_total -= (n_prog_epochs - actual)
+                        actual = (
+                            len(history[-1].epoch)
+                            if len(history) > before
+                            else n_prog_epochs
+                        )
+                        cumulative_total -= n_prog_epochs - actual
                         cumulative_offset += actual
                         phase_number += 1
 
             # --- KL annealing (when enabled for this component) ---
             comp_kl_epochs = self._get_kl_annealing_epochs(component_name)
             if comp_kl_epochs > 0:
-                comp_enable_kmeans_init = self._get_enable_kmeans_init(
-                    component_name
-                )
-                comp_kl_annealing_ratio = self._get_kl_annealing_ratios(
-                    component_name
-                )
-                self.setup_component_and_loss_weights(
-                    train_components
-                )
+                comp_enable_kmeans_init = self._get_enable_kmeans_init(component_name)
+                comp_kl_annealing_ratio = self._get_kl_annealing_ratios(component_name)
+                self.setup_component_and_loss_weights(train_components)
                 self._compile_model(self.learning_rate)
                 before = len(history)
                 self._run_kl_annealing_phase(
@@ -603,15 +601,15 @@ class SequentialTrainingScheduler:
                     phase_number=phase_number,
                     kwargs=kwargs,
                 )
-                actual = len(history[-1].epoch) if len(history) > before else comp_kl_epochs
-                cumulative_total -= (comp_kl_epochs - actual)
+                actual = (
+                    len(history[-1].epoch) if len(history) > before else comp_kl_epochs
+                )
+                cumulative_total -= comp_kl_epochs - actual
                 cumulative_offset += actual
                 phase_number += 1
 
             # --- Regular GMM training ---
-            self.setup_component_and_loss_weights(
-                train_components
-            )
+            self.setup_component_and_loss_weights(train_components)
             self._compile_model(self.learning_rate)
             before = len(history)
             kmeans_initialized_in_kl_phase = comp_kl_epochs > 0
@@ -624,9 +622,7 @@ class SequentialTrainingScheduler:
                     f"in poor cluster priors. Consider enabling KL annealing "
                     f"for better initialization quality."
                 )
-            comp_max_epochs = self._get_max_regular_training_epochs(
-                component_name
-            )
+            comp_max_epochs = self._get_max_regular_training_epochs(component_name)
             self._run_gmm_training_phase(
                 component_name=component_name,
                 component_order=component_order,
@@ -642,8 +638,10 @@ class SequentialTrainingScheduler:
                 phase_number=phase_number,
                 kwargs=kwargs,
             )
-            actual = len(history[-1].epoch) if len(history) > before else comp_max_epochs
-            cumulative_total -= (comp_max_epochs - actual)
+            actual = (
+                len(history[-1].epoch) if len(history) > before else comp_max_epochs
+            )
+            cumulative_total -= comp_max_epochs - actual
             cumulative_offset += actual
             phase_number += 1
 
@@ -691,7 +689,7 @@ class SequentialTrainingScheduler:
                         if len(history) > before
                         else n_z_hat_training_epochs
                     )
-                    cumulative_total -= (n_z_hat_training_epochs - actual)
+                    cumulative_total -= n_z_hat_training_epochs - actual
                     cumulative_offset += actual
                     phase_number += 1
 
@@ -748,8 +746,10 @@ class SequentialTrainingScheduler:
             z_hat_gmm_kl=0.0,
         )
         self._set_component_progressive(
-            component_name, active=True,
-            n_batches=n_batches, n_epochs=n_prog_epochs,
+            component_name,
+            active=True,
+            n_batches=n_batches,
+            n_epochs=n_prog_epochs,
         )
         # standard KL weight = scale (STANDARD_KL_WEIGHT) × alpha, advanced
         # per batch together with alpha by AnnealingCallback.on_batch_end
@@ -765,8 +765,7 @@ class SequentialTrainingScheduler:
 
         callbacks_prog.append(
             VerboseCallback(
-                labels=[(pn, 0) for pn in parent_names]
-                + [(component_name, 1)],
+                labels=[(pn, 0) for pn in parent_names] + [(component_name, 1)],
                 phase="Parent Annealing",
                 loss_prefixes={
                     **{pn: 0 for pn in parent_names},
@@ -823,9 +822,7 @@ class SequentialTrainingScheduler:
         kwargs,
     ):
         """Run KL annealing (standard_kl → GMM) for a root component."""
-        run_name = (
-            f"Training/{component_order}/KLAnnealing/{component_name}"
-        )
+        run_name = f"Training/{component_order}/KLAnnealing/{component_name}"
         self._mlflow_start_run(run_name, experiment)
         self._set_component_weights(
             component_name,
@@ -997,7 +994,9 @@ class SequentialTrainingScheduler:
         callbacks.append(OptimizerStateCallback())
         callbacks.extend(
             self._common_callbacks(
-                kwargs, is_single_component, component_name,
+                kwargs,
+                is_single_component,
+                component_name,
                 cumulative_offset=cumulative_offset,
             )
         )
@@ -1049,9 +1048,7 @@ class SequentialTrainingScheduler:
         self._mlflow_start_run(run_name, experiment)
         component = self.model.components.get(component_name)
         n_annealing_epochs = self._get_z_hat_annealing_epochs(component_name)
-        target_weight = float(
-            self.model._z_hat_gmm_kl_weights[component_name].scale
-        )
+        target_weight = float(self.model._z_hat_gmm_kl_weights[component_name].scale)
 
         # 1. Initialize the z_hat prior on the deterministic z_hat (loc)
         #    learned so far. k-means toggles model.trainable, so the
@@ -1084,9 +1081,7 @@ class SequentialTrainingScheduler:
         )
         self._compile_model(self.learning_rate)
 
-        z_hat_kl_name = (
-            f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
-        )
+        z_hat_kl_name = f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
 
         # epoch is 0-based, so (epoch + 1) / n makes the last annealing
         # epoch use the full target weight (e.g. 0.25, 0.5, 0.75, 1.0).
@@ -1157,9 +1152,7 @@ class SequentialTrainingScheduler:
         """
         run_name = f"Z_hat Training/{component_order}/{component_name}"
         self._mlflow_start_run(run_name, experiment)
-        target_weight = float(
-            self.model._z_hat_gmm_kl_weights[component_name].scale
-        )
+        target_weight = float(self.model._z_hat_gmm_kl_weights[component_name].scale)
         self._set_component_weights(
             component_name,
             data_scale=1.0,
@@ -1185,7 +1178,9 @@ class SequentialTrainingScheduler:
         callbacks.append(OptimizerStateCallback())
         callbacks.extend(
             self._common_callbacks(
-                kwargs, is_single_component, component_name,
+                kwargs,
+                is_single_component,
+                component_name,
                 cumulative_offset=cumulative_offset,
             )
         )
@@ -1218,8 +1213,7 @@ class SequentialTrainingScheduler:
         """Return a schedule_fn for the final-phase KL annealing."""
         standard_kl_end = int(total_epochs * kl_annealing_ratios[0])
         gmm_kl_start = int(
-            total_epochs
-            * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+            total_epochs * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
         )
 
         def schedule(epoch):
@@ -1230,9 +1224,7 @@ class SequentialTrainingScheduler:
                     f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
                 }
             elif epoch < gmm_kl_start:
-                t = (epoch - standard_kl_end) / (
-                    gmm_kl_start - standard_kl_end
-                )
+                t = (epoch - standard_kl_end) / (gmm_kl_start - standard_kl_end)
                 return {
                     f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": STANDARD_KL_WEIGHT
                     * (1.0 - t),
@@ -1263,9 +1255,15 @@ class SequentialTrainingScheduler:
         weights (e.g. zeroed parents) survive recompilation.
         """
         all_components = [c.name for c in self.component_configs]
-        current_tv = {id(v) for v in self.model.trainable_variables} if hasattr(self.model, 'trainable_variables') else set()
-        if getattr(self.model, 'optimizer', None) is not None and \
-           getattr(self, '_last_trainable', None) == current_tv:
+        current_tv = (
+            {id(v) for v in self.model.trainable_variables}
+            if hasattr(self.model, "trainable_variables")
+            else set()
+        )
+        if (
+            getattr(self.model, "optimizer", None) is not None
+            and getattr(self, "_last_trainable", None) == current_tv
+        ):
             optimizer = self.model.optimizer
         else:
             optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
@@ -1278,21 +1276,21 @@ class SequentialTrainingScheduler:
         saved_gmm = {}
         saved_data = {}
         saved_z_hat = {}
-        d = getattr(self.model, '_standard_kl_weights', {})
+        d = getattr(self.model, "_standard_kl_weights", {})
         for cn in all_components:
             if cn in d and isinstance(d[cn], ProgressiveScaler):
                 saved_std[cn] = (
                     float(d[cn].current_iteration),
                     float(d[cn].total_iterations),
                 )
-        d = getattr(self.model, '_gmm_kl_weights', {})
+        d = getattr(self.model, "_gmm_kl_weights", {})
         for cn in all_components:
             if cn in d and isinstance(d[cn], ProgressiveScaler):
                 saved_gmm[cn] = (
                     float(d[cn].current_iteration),
                     float(d[cn].total_iterations),
                 )
-        d = getattr(self.model, '_data_loss_weights', {})
+        d = getattr(self.model, "_data_loss_weights", {})
         for cn, mods in d.items():
             for mod, w in mods.items():
                 if isinstance(w, ProgressiveScaler):
@@ -1300,7 +1298,7 @@ class SequentialTrainingScheduler:
                         float(w.current_iteration),
                         float(w.total_iterations),
                     )
-        d = getattr(self.model, '_z_hat_density_weights', {})
+        d = getattr(self.model, "_z_hat_density_weights", {})
         for cn in all_components:
             if cn in d and isinstance(d[cn], ProgressiveScaler):
                 saved_z_hat[cn] = (
@@ -1314,18 +1312,24 @@ class SequentialTrainingScheduler:
         data_w = {}
         z_hat_w = {}
         for cn in all_components:
-            d = getattr(self.model, '_standard_kl_weights', {})
+            d = getattr(self.model, "_standard_kl_weights", {})
             std_w[cn] = float(d[cn].scale) if cn in d else STANDARD_KL_WEIGHT
-            d = getattr(self.model, '_gmm_kl_weights', {})
+            d = getattr(self.model, "_gmm_kl_weights", {})
             gmm_w[cn] = float(d[cn].scale) if cn in d else 1.0
-            d = getattr(self.model, '_data_loss_weights', {})
+            d = getattr(self.model, "_data_loss_weights", {})
             for mod, w in d.get(cn, {}).items():
                 if isinstance(w, ProgressiveScaler):
-                    data_w[f"{cn}_{mod}_{Constants.MODEL_LOSS_DATA_POSTFIX}"] = float(w.scale)
-            d = getattr(self.model, '_z_hat_density_weights', {})
+                    data_w[f"{cn}_{mod}_{Constants.MODEL_LOSS_DATA_POSTFIX}"] = float(
+                        w.scale
+                    )
+            d = getattr(self.model, "_z_hat_density_weights", {})
             if cn in d:
                 w = d[cn]
-                z_hat_w[cn] = float(w.scale) if isinstance(w, ProgressiveScaler) else float(w.numpy())
+                z_hat_w[cn] = (
+                    float(w.scale)
+                    if isinstance(w, ProgressiveScaler)
+                    else float(w.numpy())
+                )
 
         compile_kwargs = dict(
             standard_kl_weights=std_w,
@@ -1333,7 +1337,7 @@ class SequentialTrainingScheduler:
             optimizer=optimizer,
         )
         for cn, weight in z_hat_w.items():
-            if cn in getattr(self.model, '_z_hat_density_weights', {}):
+            if cn in getattr(self.model, "_z_hat_density_weights", {}):
                 self.model._z_hat_density_weights[cn].assign(weight)
         if data_w:
             compile_kwargs["loss_weights"] = data_w
@@ -1341,23 +1345,23 @@ class SequentialTrainingScheduler:
 
         # Restore ProgressiveScaler state after recompile
         for cn, (ci, ti) in saved_std.items():
-            w = getattr(self.model, '_standard_kl_weights', {}).get(cn)
+            w = getattr(self.model, "_standard_kl_weights", {}).get(cn)
             if w is not None and isinstance(w, ProgressiveScaler):
                 w.current_iteration.assign(ci)
                 w.total_iterations.assign(ti)
         for cn, (ci, ti) in saved_gmm.items():
-            w = getattr(self.model, '_gmm_kl_weights', {}).get(cn)
+            w = getattr(self.model, "_gmm_kl_weights", {}).get(cn)
             if w is not None and isinstance(w, ProgressiveScaler):
                 w.current_iteration.assign(ci)
                 w.total_iterations.assign(ti)
         for cn, mods in saved_data.items():
             for mod, (ci, ti) in mods.items():
-                w = getattr(self.model, '_data_loss_weights', {}).get(cn, {}).get(mod)
+                w = getattr(self.model, "_data_loss_weights", {}).get(cn, {}).get(mod)
                 if w is not None and isinstance(w, ProgressiveScaler):
                     w.current_iteration.assign(ci)
                     w.total_iterations.assign(ti)
         for cn, (ci, ti) in saved_z_hat.items():
-            w = getattr(self.model, '_z_hat_density_weights', {}).get(cn)
+            w = getattr(self.model, "_z_hat_density_weights", {}).get(cn)
             if w is not None and isinstance(w, ProgressiveScaler):
                 w.current_iteration.assign(ci)
                 w.total_iterations.assign(ti)
@@ -1370,9 +1374,7 @@ class SequentialTrainingScheduler:
 
     def _mlflow_start_run(self, run_name, experiment):
         """Start an MLflow run with TensorFlow autologging."""
-        mlflow.start_run(
-            experiment_id=experiment.experiment_id, run_name=run_name
-        )
+        mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
         mlflow.tensorflow.autolog(
             log_every_epoch=True,
             log_models=False,
@@ -1400,14 +1402,14 @@ class SequentialTrainingScheduler:
                 return c.enable_kmeans_init
         return True
 
-    def _get_max_regular_training_epochs(
-        self, component_name: str
-    ) -> int:
+    def _get_max_regular_training_epochs(self, component_name: str) -> int:
         """Get max regular training epochs from component config."""
         for c in self.component_configs:
             if c.name == component_name:
-                return c.max_regular_training_epochs or getattr(self, '_fit_epochs', 100)
-        return getattr(self, '_fit_epochs', 100)
+                return c.max_regular_training_epochs or getattr(
+                    self, "_fit_epochs", 100
+                )
+        return getattr(self, "_fit_epochs", 100)
 
     def _get_kl_annealing_ratios(self, component_name):
         """Get KL annealing ratios from component config."""
@@ -1469,7 +1471,10 @@ class SequentialTrainingScheduler:
             module.trainable = False
 
     def _common_callbacks(
-        self, kwargs, is_single_component, component_name,
+        self,
+        kwargs,
+        is_single_component,
+        component_name,
         cumulative_offset=0,
     ):
         """Return common callbacks: PeriodicTSNE + EarlyStopping."""
@@ -1530,25 +1535,29 @@ class SequentialTrainingScheduler:
             weight (only used when ``learn_z_hat_priors`` is enabled).
         """
         model = self.model
-        if comp_name in getattr(model, '_gmm_kl_weights', {}):
+        if comp_name in getattr(model, "_gmm_kl_weights", {}):
             w = model._gmm_kl_weights[comp_name]
             if isinstance(w, ProgressiveScaler):
                 w.pin_to(float(gmm_kl))
             else:
                 w.assign(float(gmm_kl))
-        if comp_name in getattr(model, '_standard_kl_weights', {}):
+        if comp_name in getattr(model, "_standard_kl_weights", {}):
             w = model._standard_kl_weights[comp_name]
             if isinstance(w, ProgressiveScaler):
                 w.pin_to(float(standard_kl))
             else:
                 w.assign(float(standard_kl))
-        if z_hat_density is not None and comp_name in getattr(model, '_z_hat_density_weights', {}):
+        if z_hat_density is not None and comp_name in getattr(
+            model, "_z_hat_density_weights", {}
+        ):
             w = model._z_hat_density_weights[comp_name]
             if isinstance(w, ProgressiveScaler):
                 w.pin_to(float(z_hat_density))
             else:
                 w.assign(float(z_hat_density))
-        if z_hat_gmm_kl is not None and comp_name in getattr(model, '_z_hat_gmm_kl_weights', {}):
+        if z_hat_gmm_kl is not None and comp_name in getattr(
+            model, "_z_hat_gmm_kl_weights", {}
+        ):
             model._z_hat_gmm_kl_weights[comp_name].pin_to(float(z_hat_gmm_kl))
         for mod_name, var in model._data_loss_weights.get(comp_name, {}).items():
             mod_w = self.modality_weight.get(comp_name, {}).get(mod_name, 1.0)
@@ -1586,14 +1595,16 @@ class SequentialTrainingScheduler:
         else:
             component.set_progressive_scaler_iteration(1.0, 1.0)
 
-    def _zero_component_variables(
-        self, component_names: List[str]
-    ) -> None:
+    def _zero_component_variables(self, component_names: List[str]) -> None:
         """Set all loss-weight Variables for the given components to 0."""
         for comp_name in component_names:
             self._set_component_weights(
-                comp_name, data_scale=0.0, gmm_kl=0.0, standard_kl=0.0,
-                z_hat_density=0.0, z_hat_gmm_kl=0.0,
+                comp_name,
+                data_scale=0.0,
+                gmm_kl=0.0,
+                standard_kl=0.0,
+                z_hat_density=0.0,
+                z_hat_gmm_kl=0.0,
             )
 
     def setup_component_and_loss_weights(
@@ -1622,16 +1633,18 @@ class SequentialTrainingScheduler:
             self._set_component_progressive(comp_name, active=False)
 
             visited = set()
+
             def _set_trainable(layer):
                 if id(layer) in visited:
                     return
                 visited.add(id(layer))
-                if hasattr(layer, 'trainable'):
+                if hasattr(layer, "trainable"):
                     layer.trainable = should_train
-                for sub in getattr(layer, 'submodules', []):
+                for sub in getattr(layer, "submodules", []):
                     _set_trainable(sub)
-                for sub in getattr(layer, 'layers', []):
+                for sub in getattr(layer, "layers", []):
                     _set_trainable(sub)
+
             _set_trainable(component)
 
             self._set_component_weights(

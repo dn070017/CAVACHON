@@ -6,6 +6,7 @@ resolves symlinks against the real filesystem. Path computation from
 module object (not replacing sys.modules) with ``os.path.realpath`` and
 ``os.getcwd`` patched, so no filesystem lookups or subprocesses are used.
 """
+
 import importlib.util
 import os
 from pathlib import Path
@@ -30,7 +31,9 @@ def fresh_settings(monkeypatch):
         return os.path.normpath(p)
 
     def load():
-        spec = importlib.util.spec_from_file_location("_settings_under_test", SETTINGS_FILE)
+        spec = importlib.util.spec_from_file_location(
+            "_settings_under_test", SETTINGS_FILE
+        )
         module = importlib.util.module_from_spec(spec)
         with monkeypatch.context() as m:
             m.setattr(os.path, "realpath", fake_realpath)
@@ -96,7 +99,9 @@ def test_symlinks_resolved_via_realpath(monkeypatch):
         m.setattr(
             os.path,
             "realpath",
-            lambda p, *a, **k: os.path.normpath(p).replace(EXPECTED_ROOT, "/resolved/repo", 1),
+            lambda p, *a, **k: os.path.normpath(p).replace(
+                EXPECTED_ROOT, "/resolved/repo", 1
+            ),
         )
         spec.loader.exec_module(module)
     assert module.Settings.root_path == Path("/resolved/repo")

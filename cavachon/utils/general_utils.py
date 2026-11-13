@@ -38,6 +38,7 @@ class GeneralUtils:
             reordered components.
 
         """
+
         def _get(component_config, key, default=None):
             """Unified accessor for dict and Pydantic model config entries."""
             if isinstance(component_config, dict):

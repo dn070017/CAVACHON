@@ -36,7 +36,9 @@ ZINB = IndependentZeroInflatedNegativeBinomialParameterizer
         (StudenttParameterizer, "student_t", False),
     ],
 )
-def test_reflection_name_defaults_and_class(fake_layer, cls, default_name, default_libsize):
+def test_reflection_name_defaults_and_class(
+    fake_layer, cls, default_name, default_libsize
+):
     model = cls.make(input_dims=6, event_dims=2)
     fake_layer.assert_called_once_with(cls.__name__, "layers/parameterizers", "Layer")
     assert isinstance(model, cls) and isinstance(model, Parameterizer)
@@ -49,7 +51,9 @@ def test_reflection_name_defaults_and_class(fake_layer, cls, default_name, defau
 
 class TestBernoulli:
     def test_logits_pass_through(self, fake_layer):
-        model = IndependentBernoulliParameterizer.make(input_dims=3, event_dims=3, name="b")
+        model = IndependentBernoulliParameterizer.make(
+            input_dims=3, event_dims=3, name="b"
+        )
         x = np.array([[-2.0, 0.0, 3.0]], dtype=np.float32)
         out = model({X: tf.constant(x)})
         np.testing.assert_allclose(out.numpy(), x)
@@ -79,7 +83,9 @@ class TestZINB:
         model = ZINB.make(input_dims=6, event_dims=2)
         mean = np.array([[0.5, 10.0], [0.0, -1.0]], dtype=np.float32)
         libsize = np.array([[2.0], [3.0]], dtype=np.float32)
-        out = model({X: _zinb_in(self.LOGITS, mean, self.DISP), L: tf.constant(libsize)}).numpy()
+        out = model(
+            {X: _zinb_in(self.LOGITS, mean, self.DISP), L: tf.constant(libsize)}
+        ).numpy()
         assert out.shape == (2, 6)
         logits, m, disp = np.split(out, 3, axis=-1)
         np.testing.assert_allclose(logits, self.LOGITS)
@@ -94,17 +100,26 @@ class TestZINB:
         assert m[1, 0] == pytest.approx(1e-7) and m[1, 1] == pytest.approx(1e-7)
 
     def test_no_libsize_no_exp_only_floors_mean(self, fake_layer):
-        model = ZINB.make(input_dims=6, event_dims=2, libsize_scaling=False, exp_transform=False)
+        model = ZINB.make(
+            input_dims=6, event_dims=2, libsize_scaling=False, exp_transform=False
+        )
         assert list(model.input) == [X]
         mean = np.array([[0.5, -3.0], [0.0, 8.0]], dtype=np.float32)
         out = model({X: _zinb_in(self.LOGITS, mean, self.DISP)}).numpy()
         _, m, _ = np.split(out, 3, axis=-1)
         np.testing.assert_allclose(m, np.where(mean <= 0, 1e-7, mean), rtol=1e-6)
 
-    @pytest.mark.parametrize("libsize_scaling, exp_transform", [(True, True), (True, False), (False, True)])
-    def test_attribution_target_equals_mean_slice(self, fake_layer, libsize_scaling, exp_transform):
+    @pytest.mark.parametrize(
+        "libsize_scaling, exp_transform", [(True, True), (True, False), (False, True)]
+    )
+    def test_attribution_target_equals_mean_slice(
+        self, fake_layer, libsize_scaling, exp_transform
+    ):
         model = ZINB.make(
-            input_dims=6, event_dims=2, libsize_scaling=libsize_scaling, exp_transform=exp_transform
+            input_dims=6,
+            event_dims=2,
+            libsize_scaling=libsize_scaling,
+            exp_transform=exp_transform,
         )
         mean = np.array([[0.5, 10.0], [0.0, -1.0]], dtype=np.float32)
         inputs = {X: _zinb_in(self.LOGITS, mean, self.DISP)}
@@ -117,7 +132,9 @@ class TestZINB:
 
 class TestMVN:
     def test_loc_scale_pass_through(self, fake_layer):
-        model = MultivariateNormalDiagParameterizer.make(input_dims=4, event_dims=2, name="mvn")
+        model = MultivariateNormalDiagParameterizer.make(
+            input_dims=4, event_dims=2, name="mvn"
+        )
         x = np.array([[1.0, -2.0, 0.3, 0.7]], dtype=np.float32)
         out = model({X: tf.constant(x)})
         np.testing.assert_allclose(out.numpy(), x)
@@ -128,9 +145,13 @@ class TestMVN:
         reason="BUG: base modify_outputs applies tf.math.exp to a KerasTensor -> make(exp_transform=True) raises",
     )
     def test_exp_transform_option(self, fake_layer):
-        model = MultivariateNormalDiagParameterizer.make(input_dims=2, event_dims=1, exp_transform=True)
+        model = MultivariateNormalDiagParameterizer.make(
+            input_dims=2, event_dims=1, exp_transform=True
+        )
         x = np.array([[0.0, 1.0]], dtype=np.float32)
-        np.testing.assert_allclose(model({X: tf.constant(x)}).numpy(), np.exp(x), rtol=1e-6)
+        np.testing.assert_allclose(
+            model({X: tf.constant(x)}).numpy(), np.exp(x), rtol=1e-6
+        )
 
 
 class TestMixtureMVN:
@@ -139,7 +160,9 @@ class TestMixtureMVN:
             input_dims=4, event_dims=2, n_components=3
         )
         fake_layer.assert_called_once_with(
-            "MixtureMultivariateNormalDiagParameterizer", "layers/parameterizers", "Layer"
+            "MixtureMultivariateNormalDiagParameterizer",
+            "layers/parameterizers",
+            "Layer",
         )
         layer = FakeParameterizerLayer.instances[0]
         assert layer.extra_kwargs == {"n_components": 3}

@@ -27,9 +27,7 @@ def make_adata(is_sparse: bool = False, modality: str = "RNA") -> anndata.AnnDat
     and a 'gene' column carrying the gene names."""
     X = sparse.csr_matrix(COUNTS) if is_sparse else COUNTS.copy()
     obs = pd.DataFrame(index=pd.Index(CELLS, name=f"{modality}:barcode"))
-    var = pd.DataFrame(
-        {"gene": GENES}, index=pd.Index(GENES, name=f"{modality}:gene")
-    )
+    var = pd.DataFrame({"gene": GENES}, index=pd.Index(GENES, name=f"{modality}:gene"))
     return anndata.AnnData(X=X, obs=obs, var=var)
 
 

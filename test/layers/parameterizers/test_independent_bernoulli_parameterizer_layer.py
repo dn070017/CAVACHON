@@ -31,7 +31,11 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = IndependentBernoulliParameterizerLayer.from_config(IndependentBernoulliParameterizerLayer(**dict(event_dims=2, name="bern")).get_config())
+    clone = IndependentBernoulliParameterizerLayer.from_config(
+        IndependentBernoulliParameterizerLayer(
+            **dict(event_dims=2, name="bern")
+        ).get_config()
+    )
     assert clone.event_dims == 2 and clone.name == "bern"
 
 

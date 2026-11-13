@@ -11,7 +11,9 @@ import pytest
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
-from cavachon.modules.base.encoder_latent_parameterizer import EncoderLatentParameterizer
+from cavachon.modules.base.encoder_latent_parameterizer import (
+    EncoderLatentParameterizer,
+)
 from test.modules.base.conftest import FakeMVNLayer
 
 MODULE = "cavachon.modules.base.encoder_latent_parameterizer"
@@ -23,7 +25,9 @@ def patched(monkeypatch, backbone_factory):
     max_n = mock.MagicMock(return_value=77)
     monkeypatch.setattr(f"{MODULE}.TensorUtils.create_backbone_layers", backbone)
     monkeypatch.setattr(f"{MODULE}.TensorUtils.max_n_neurons", max_n)
-    monkeypatch.setattr(f"{MODULE}.MultivariateNormalDiagParameterizerLayer", FakeMVNLayer)
+    monkeypatch.setattr(
+        f"{MODULE}.MultivariateNormalDiagParameterizerLayer", FakeMVNLayer
+    )
     return backbone, max_n
 
 
@@ -68,7 +72,9 @@ class TestCall:
         np.testing.assert_allclose(recorder.calls[-1]["inputs"].numpy(), x.numpy())
         hidden = enc.backbone_network(x)
         np.testing.assert_allclose(
-            FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(), hidden.numpy(), atol=1e-6
+            FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(),
+            hidden.numpy(),
+            atol=1e-6,
         )
         # (batch, 2 * n_latent_dims): loc = sum(hidden), scale = softplus(0)
         assert tuple(out.shape) == (2, 6)
@@ -102,7 +108,9 @@ class TestConfig:
         assert config["n_latent_dims"] == 4
 
     def test_from_config_accepts_keras_base_keys(self, patched):
-        config = dict(name="enc2", n_layers=2, n_latent_dims=3, trainable=False, dtype="float32")
+        config = dict(
+            name="enc2", n_layers=2, n_latent_dims=3, trainable=False, dtype="float32"
+        )
         enc = EncoderLatentParameterizer.from_config(config)
         assert enc.name == "enc2"
         assert enc.trainable is False

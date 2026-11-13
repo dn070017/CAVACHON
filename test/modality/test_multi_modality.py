@@ -14,8 +14,10 @@ def make(names, n_vars=3, value_offset=0.0):
     """AnnData whose row values encode the cell id (c<k> -> k + offset)."""
     ids = np.array([int(n[1:]) for n in names], dtype=np.float32)
     X = np.repeat(ids[:, None], n_vars, axis=1) + value_offset
-    obs = pd.DataFrame({"batch": ["a", "b"] * (len(names) // 2) + ["a"] * (len(names) % 2)},
-                       index=list(names))
+    obs = pd.DataFrame(
+        {"batch": ["a", "b"] * (len(names) // 2) + ["a"] * (len(names) % 2)},
+        index=list(names),
+    )
     adata = ad.AnnData(X=sp.csr_matrix(X), obs=obs)
     adata.var_names = [f"g{j}" for j in range(n_vars)]
     return adata
@@ -96,7 +98,10 @@ def test_uns_config_preserved():
     r = Modality(make(NAMES), name="rna", modality_type="rna")
     mm = MultiModality({"atac": a, "rna": r})
     assert mm["atac"].uns["cavachon"]["distribution"] == "IndependentBernoulli"
-    assert mm["rna"].uns["cavachon"]["distribution"] == "IndependentZeroInflatedNegativeBinomial"
+    assert (
+        mm["rna"].uns["cavachon"]["distribution"]
+        == "IndependentZeroInflatedNegativeBinomial"
+    )
 
 
 def test_shared_var_names_across_modalities_kept_per_modality():

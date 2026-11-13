@@ -82,7 +82,14 @@ class TestKMeansPlusPlus:
         centers = s._kmeans_plus_plus(X, 3, seed=1).numpy()
         assert centers.shape == (3, 2)
         # every center is a data point, and they are all in distinct clusters
-        groups = {int(np.argmin([np.linalg.norm(c - g) for g in ([0, 0], [100, 100], [-100, 50])])) for c in centers}
+        groups = {
+            int(
+                np.argmin(
+                    [np.linalg.norm(c - g) for g in ([0, 0], [100, 100], [-100, 50])]
+                )
+            )
+            for c in centers
+        }
         assert groups == {0, 1, 2}
 
     def test_cluster_assignments_are_nearest_center(self, fakes):
@@ -142,7 +149,10 @@ class TestInitializeGMMPriorsWithKMeans:
         assert probs == [pytest.approx(0.2), pytest.approx(0.8)]
         assert model.predict_args == ("MDATA", 17, 0)
         # untouched: z_hat prior
-        assert all(np.all(v.numpy() == 0) for v in model.components["B"].z_hat_prior_parameterizer.loc_bias)
+        assert all(
+            np.all(v.numpy() == 0)
+            for v in model.components["B"].z_hat_prior_parameterizer.loc_bias
+        )
 
     def test_z_hat_target(self, fakes):
         s, model, z, out = self._run(
@@ -154,7 +164,10 @@ class TestInitializeGMMPriorsWithKMeans:
         np.testing.assert_array_equal(out, z + 1000.0)
         means = sorted(float(v.numpy()[0, 0]) for v in prior.loc_bias)
         assert means[0] == pytest.approx(900.0, abs=3)
-        assert all(np.all(v.numpy() == 0) for v in model.components["B"].z_prior_parameterizer.loc_bias)
+        assert all(
+            np.all(v.numpy() == 0)
+            for v in model.components["B"].z_prior_parameterizer.loc_bias
+        )
 
     def test_toggles_model_trainable_and_restores_progressive_state(self, fakes):
         s, model, _, _ = self._run(0.5)
@@ -248,8 +261,14 @@ class TestCompileModel:
 
         model.compile = compile_resets
         s._compile_model(1e-4)
-        assert (float(std.current_iteration), float(std.total_iterations)) == (4.0, 12.0)
-        assert (float(data.current_iteration), float(data.total_iterations)) == (0.25, 1.0)
+        assert (float(std.current_iteration), float(std.total_iterations)) == (
+            4.0,
+            12.0,
+        )
+        assert (float(data.current_iteration), float(data.total_iterations)) == (
+            0.25,
+            1.0,
+        )
 
     def test_z_hat_density_variable_keeps_its_value(self, fakes):
         configs = [make_config("A")]

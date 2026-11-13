@@ -82,9 +82,7 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
 
         self.model.trainable = original_trainable_state
 
-        np.save(
-            os.path.join(self.output_dir, f"{epoch + 1}_z.h5"), z_full
-        )
+        np.save(os.path.join(self.output_dir, f"{epoch + 1}_z.h5"), z_full)
         np.save(os.path.join(self.output_dir, f"{epoch + 1}_logpy_z.h5"), logpy_z)
         np.save(
             os.path.join(self.output_dir, f"{epoch + 1}_prior_params.npy"),

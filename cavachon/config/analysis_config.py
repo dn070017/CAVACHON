@@ -197,9 +197,7 @@ class AnalysisConfig(BaseConfigModel):
     differential_analysis: List[AnalysisDifferentialAnalysisConfig] = []
     visualize_embedding: List[AnalysisVisualizeEmbeddingConfig] = []
     conditional_attribution_scores: List[AnalysisAttributionScoreConfig] = []
-    differential_attribution_analysis: List[
-        AnalysisDifferentialAttributionConfig
-    ] = []
+    differential_attribution_analysis: List[AnalysisDifferentialAttributionConfig] = []
     hierarchical_differential_analysis: List[
         AnalysisHierarchicalDifferentialAnalysisConfig
     ] = []

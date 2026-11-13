@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 
 from cavachon.environment.constants import Constants
-from test.scheduler.conftest import UserCallback, callbacks_of, make_config, make_scheduler
+from test.scheduler.conftest import (
+    UserCallback,
+    callbacks_of,
+    make_config,
+    make_scheduler,
+)
 
 
 def run_names(fakes):
@@ -40,8 +45,10 @@ class TestSingleRoot:
         assert call.kwargs == {"shuffle": False}  # 'epochs' stripped
         types = [type(cb).__name__ for cb in call.callbacks]
         assert types == [
-            "VerboseCallback", "AnnealingCallback",
-            "OptimizerStateCallback", "EarlyStoppingCallback",
+            "VerboseCallback",
+            "AnnealingCallback",
+            "OptimizerStateCallback",
+            "EarlyStoppingCallback",
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         assert ann["kmeans_epoch"] is None
@@ -71,19 +78,31 @@ class TestSingleRoot:
         fakes.EarlyStoppingConfig.assert_called_once_with()
         es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0].kwargs
         assert es == dict(
-            cumulative_offset=0, monitor="loss", mode="min", min_delta=5.0,
-            patience=25, restore_best_weights=True, verbose=0,
+            cumulative_offset=0,
+            monitor="loss",
+            mode="min",
+            min_delta=5.0,
+            patience=25,
+            restore_best_weights=True,
+            verbose=0,
         )
 
     @pytest.mark.parametrize("epochs", [2, 40, 400])
-    def test_early_stopping_patience_independent_of_epochs(self, fakes, dataset, epochs):
+    def test_early_stopping_patience_independent_of_epochs(
+        self, fakes, dataset, epochs
+    ):
         s, model = make_scheduler([make_config("A", max_regular_training_epochs=2)])
         s.fit(dataset, epochs=epochs)
         es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0]
         assert es.kwargs["patience"] == 25
 
     def test_early_stopping_config_values_are_used(self, fakes, dataset):
-        config = SimpleNamespace(monitor="A_negative_log_data_likelihood", mode="max", patience=50, min_delta=0.5)
+        config = SimpleNamespace(
+            monitor="A_negative_log_data_likelihood",
+            mode="max",
+            patience=50,
+            min_delta=0.5,
+        )
         s, model = make_scheduler(
             [make_config("A", max_regular_training_epochs=2)], early_stopping=config
         )
@@ -91,8 +110,13 @@ class TestSingleRoot:
         fakes.EarlyStoppingConfig.assert_not_called()
         es = callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback)[0].kwargs
         assert es == dict(
-            cumulative_offset=0, monitor="A_negative_log_data_likelihood", mode="max",
-            min_delta=0.5, patience=50, restore_best_weights=True, verbose=0,
+            cumulative_offset=0,
+            monitor="A_negative_log_data_likelihood",
+            mode="max",
+            min_delta=0.5,
+            patience=50,
+            restore_best_weights=True,
+            verbose=0,
         )
 
     def test_early_stopping_disabled(self, fakes, dataset):
@@ -105,20 +129,28 @@ class TestSingleRoot:
     def test_periodic_tsne_only_with_outdir(self, fakes, dataset):
         s, model = make_scheduler(
             [make_config("A", max_regular_training_epochs=2)],
-            outdir="/out", batch_size=64,
-            distribution_names={"rna": "NB"}, batch_effect_colnames={"rna": ["b"]},
+            outdir="/out",
+            batch_size=64,
+            distribution_names={"rna": "NB"},
+            batch_effect_colnames={"rna": ["b"]},
         )
         s.fit(dataset, epochs=2)
         (tsne,) = callbacks_of(model.fit_calls[0], fakes.PeriodicTSNECallback)
         assert tsne.kwargs == dict(
-            mdata="MDATA", component="A", outdir="/out/snapshots", batch_size=64,
-            batch_effect_colnames={"rna": ["b"]}, distribution_names={"rna": "NB"},
+            mdata="MDATA",
+            component="A",
+            outdir="/out/snapshots",
+            batch_size=64,
+            batch_effect_colnames={"rna": ["b"]},
+            distribution_names={"rna": "NB"},
         )
 
     def test_no_periodic_tsne_for_multiple_components(self, fakes, dataset):
         s, model = make_scheduler(
-            [make_config("A", max_regular_training_epochs=1),
-             make_config("B", z=["A"], max_regular_training_epochs=1)],
+            [
+                make_config("A", max_regular_training_epochs=1),
+                make_config("B", z=["A"], max_regular_training_epochs=1),
+            ],
             outdir="/out",
         )
         s.fit(dataset, epochs=2)
@@ -203,11 +235,16 @@ class TestKLAnnealing:
 
     def test_kl_phase_callbacks_and_state(self, fakes, dataset):
         s, model = self._fit(
-            fakes, dataset, kl_annealing_ratio=(0.4, 0.2, 0.4), enable_kmeans_init=True,
+            fakes,
+            dataset,
+            kl_annealing_ratio=(0.4, 0.2, 0.4),
+            enable_kmeans_init=True,
         )
         kl = model.fit_calls[0]
         assert [type(cb).__name__ for cb in kl.callbacks] == [
-            "VerboseCallback", "AnnealingCallback", "OptimizerStateCallback",
+            "VerboseCallback",
+            "AnnealingCallback",
+            "OptimizerStateCallback",
         ]  # no early stopping while the loss changes by design
         ann = callbacks_of(kl, fakes.AnnealingCallback)[0].kwargs
         assert ann["kmeans_epoch"] == 4  # end of the standard-KL-only stage
@@ -228,7 +265,10 @@ class TestKLAnnealing:
 
     def test_z_hat_kmeans_in_kl_phase(self, fakes, dataset):
         s, model = self._fit(
-            fakes, dataset, learn_z_hat=("A",), enable_kmeans_init=True,
+            fakes,
+            dataset,
+            learn_z_hat=("A",),
+            enable_kmeans_init=True,
             kl_annealing_ratio=(0.5, 0.2, 0.3),
         )
         anns = callbacks_of(model.fit_calls[0], fakes.AnnealingCallback)
@@ -240,15 +280,22 @@ class TestKLAnnealing:
     def test_warns_when_kmeans_epoch_is_zero(self, fakes, dataset):
         with pytest.warns(UserWarning, match="Kmeans initialization epoch is 0"):
             self._fit(
-                fakes, dataset, n_kl_annealing_epochs=1, enable_kmeans_init=True,
+                fakes,
+                dataset,
+                n_kl_annealing_epochs=1,
+                enable_kmeans_init=True,
                 kl_annealing_ratio=(0.5, 0.2, 0.3),
             )
 
     def test_no_warning_with_kl_annealing(self, fakes, dataset):
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            self._fit(fakes, dataset, enable_kmeans_init=True,
-                      kl_annealing_ratio=(0.5, 0.2, 0.3))
+            self._fit(
+                fakes,
+                dataset,
+                enable_kmeans_init=True,
+                kl_annealing_ratio=(0.5, 0.2, 0.3),
+            )
 
     @pytest.mark.xfail(
         strict=True,
@@ -257,7 +304,10 @@ class TestKLAnnealing:
     )
     def test_kmeans_fires_somewhere_with_full_standard_kl_stage(self, fakes, dataset):
         s, model = self._fit(
-            fakes, dataset, n_kl_annealing_epochs=4, enable_kmeans_init=True,
+            fakes,
+            dataset,
+            n_kl_annealing_epochs=4,
+            enable_kmeans_init=True,
             kl_annealing_ratio=(1.0, 0.0, 0.0),
         )
         fired = [
@@ -289,12 +339,16 @@ class TestParentAnnealing:
         s, model = make_scheduler(_parent_child())
         history = s.fit(dataset, epochs=5)
         assert phases(model, fakes) == [
-            "Regular Training", "Parent Annealing", "Regular Training",
+            "Regular Training",
+            "Parent Annealing",
+            "Regular Training",
         ]
         assert [c.epochs for c in model.fit_calls] == [2, 3, 4]
         assert len(history) == 3
         assert run_names(fakes) == [
-            "Training/0/A", "Training/1/ParentAnnealing/A_to_B", "Training/1/B",
+            "Training/0/A",
+            "Training/1/ParentAnnealing/A_to_B",
+            "Training/1/B",
         ]
 
     def test_parents_frozen_and_zeroed(self, fakes, dataset):
@@ -334,7 +388,9 @@ class TestParentAnnealing:
             s.fit(dataset, epochs=5)
         call = model.fit_calls[1]
         assert [type(cb).__name__ for cb in call.callbacks] == [
-            "VerboseCallback", "AnnealingCallback", "OptimizerStateCallback",
+            "VerboseCallback",
+            "AnnealingCallback",
+            "OptimizerStateCallback",
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         assert ann.get("kmeans_epoch") is None
@@ -365,8 +421,13 @@ class TestParentAnnealing:
         configs = [
             make_config("A", max_regular_training_epochs=1),
             make_config("B", max_regular_training_epochs=1),
-            make_config("C", z=["A"], z_hat=["B"], n_parent_annealing_epochs=2,
-                        max_regular_training_epochs=1),
+            make_config(
+                "C",
+                z=["A"],
+                z_hat=["B"],
+                n_parent_annealing_epochs=2,
+                max_regular_training_epochs=1,
+            ),
         ]
         s, model = make_scheduler(configs)
         s.fit(dataset, epochs=1)
@@ -385,7 +446,11 @@ class TestParentAnnealing:
 
     def test_root_never_runs_parent_annealing(self, fakes, dataset):
         s, model = make_scheduler(
-            [make_config("A", n_parent_annealing_epochs=3, max_regular_training_epochs=1)]
+            [
+                make_config(
+                    "A", n_parent_annealing_epochs=3, max_regular_training_epochs=1
+                )
+            ]
         )
         s.fit(dataset, epochs=1)
         assert phases(model, fakes) == ["Regular Training"]
@@ -394,7 +459,10 @@ class TestParentAnnealing:
         s, model = make_scheduler(_parent_child(n_kl_annealing_epochs=4))
         s.fit(dataset, epochs=5)
         assert phases(model, fakes) == [
-            "Regular Training", "Parent Annealing", "KL Annealing", "Regular Training",
+            "Regular Training",
+            "Parent Annealing",
+            "KL Annealing",
+            "Regular Training",
         ]
         kl = model.fit_calls[2].state
         # KL annealing starts with alpha back at 1 and parents still zeroed
@@ -413,12 +481,15 @@ def _z_hat_setup(fakes, **cfg):
     cfg.setdefault("n_z_hat_training_epochs", 3)
     configs = [
         make_config("A", max_regular_training_epochs=2),
-        make_config("B", z_hat=["A"], max_regular_training_epochs=2,
-                    z_hat_kl_weight=2.0, **cfg),
+        make_config(
+            "B", z_hat=["A"], max_regular_training_epochs=2, z_hat_kl_weight=2.0, **cfg
+        ),
     ]
     s, model = make_scheduler(configs, learn_z_hat=("B",))
     rng = np.random.default_rng(0)
-    z = np.concatenate([rng.normal(-5, 1, (50, 2)), rng.normal(5, 1, (50, 2))]).astype(np.float32)
+    z = np.concatenate([rng.normal(-5, 1, (50, 2)), rng.normal(5, 1, (50, 2))]).astype(
+        np.float32
+    )
     model.predict_outputs = {"B_z_hat": z}
     return s, model, z
 
@@ -434,7 +505,12 @@ class TestZHatPhases:
         for call in model.fit_calls:
             assert all(st["z_stochastic"] == 1.0 for st in call.state.values())
         # z_hat of B: deterministic until its annealing, stochastic afterwards
-        assert [c.state["B"]["stochastic"] for c in model.fit_calls] == [0.0, 0.0, 1.0, 1.0]
+        assert [c.state["B"]["stochastic"] for c in model.fit_calls] == [
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+        ]
         # training completed: posterior means
         for comp in model.components.values():
             assert float(comp.z_sampler.stochastic) == 0.0
@@ -456,11 +532,17 @@ class TestZHatPhases:
         s, model, _ = _z_hat_setup(fakes)
         s.fit(dataset, epochs=5)
         assert phases(model, fakes) == [
-            "Regular Training", "Regular Training", "Z_hat Annealing", "Z_hat Training",
+            "Regular Training",
+            "Regular Training",
+            "Z_hat Annealing",
+            "Z_hat Training",
         ]
         assert [c.epochs for c in model.fit_calls] == [2, 2, 4, 3]
         assert run_names(fakes) == [
-            "Training/0/A", "Training/1/B", "Z_hat Annealing/1/B", "Z_hat Training/1/B",
+            "Training/0/A",
+            "Training/1/B",
+            "Z_hat Annealing/1/B",
+            "Z_hat Training/1/B",
         ]
         assert fakes.mlflow.end_run.call_count == 4
 
@@ -485,9 +567,11 @@ class TestZHatPhases:
         s, model, z = _z_hat_setup(fakes)
         s.fit(dataset, epochs=5)
         comp = model.components["B"]
-        means = sorted(float(v.numpy()[0, 0]) for v in comp.z_hat_prior_parameterizer.loc_bias)
+        means = sorted(
+            float(v.numpy()[0, 0]) for v in comp.z_hat_prior_parameterizer.loc_bias
+        )
         assert means[0] < -2 and means[1] > 2
-        (args, _), = comp.hierarchical_encoder.initialize_scale_diag.call_args_list
+        ((args, _),) = comp.hierarchical_encoder.initialize_scale_diag.call_args_list
         np.testing.assert_allclose(args[0], 0.1 * np.std(z, axis=0), rtol=1e-6)
 
     def test_annealing_schedule_and_callbacks(self, fakes, dataset):
@@ -495,21 +579,29 @@ class TestZHatPhases:
         s.fit(dataset, epochs=5)
         call = model.fit_calls[2]
         assert [type(cb).__name__ for cb in call.callbacks] == [
-            "VerboseCallback", "AnnealingCallback",
+            "VerboseCallback",
+            "AnnealingCallback",
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         name = f"B_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
         # regression: the ramp used epoch / n, so the last annealing epoch
         # only reached (n - 1) / n of the target (and n = 1 gave weight 0)
         assert [ann["schedule"](e) for e in range(4)] == [
-            {name: 0.5}, {name: 1.0}, {name: 1.5}, {name: 2.0},
+            {name: 0.5},
+            {name: 1.0},
+            {name: 1.5},
+            {name: 2.0},
         ]
         assert ann["schedule"](10) == {name: 2.0}  # capped at the target
 
     def test_single_annealing_epoch_uses_target_weight(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes, n_z_hat_annealing_epochs=1)
         s.fit(dataset, epochs=5)
-        call = [c for c in model.fit_calls if c.epochs == 1 and callbacks_of(c, fakes.AnnealingCallback)][-1]
+        call = [
+            c
+            for c in model.fit_calls
+            if c.epochs == 1 and callbacks_of(c, fakes.AnnealingCallback)
+        ][-1]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         name = f"B_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
         assert ann["schedule"](0) == {name: 2.0}
@@ -523,7 +615,9 @@ class TestZHatPhases:
         assert b["layers"]["B_encoder"] is False  # still frozen
         assert b["stochastic"] == 1.0
         assert [type(cb).__name__ for cb in call.callbacks] == [
-            "VerboseCallback", "OptimizerStateCallback", "EarlyStoppingCallback",
+            "VerboseCallback",
+            "OptimizerStateCallback",
+            "EarlyStoppingCallback",
         ]
         # same variables as the annealing phase -> optimizer reused
         assert call.optimizer is model.fit_calls[2].optimizer
@@ -541,12 +635,18 @@ class TestZHatPhases:
     def test_next_component_unfreezes_nothing_of_previous(self, fakes, dataset):
         configs = [
             make_config("A", max_regular_training_epochs=1),
-            make_config("B", z_hat=["A"], max_regular_training_epochs=1,
-                        n_z_hat_annealing_epochs=1),
+            make_config(
+                "B",
+                z_hat=["A"],
+                max_regular_training_epochs=1,
+                n_z_hat_annealing_epochs=1,
+            ),
             make_config("C", z_hat=["B"], max_regular_training_epochs=1),
         ]
         s, model = make_scheduler(configs, learn_z_hat=("B",))
-        model.predict_outputs = {"B_z_hat": np.random.default_rng(0).normal(size=(20, 2)).astype(np.float32)}
+        model.predict_outputs = {
+            "B_z_hat": np.random.default_rng(0).normal(size=(20, 2)).astype(np.float32)
+        }
         s.fit(dataset, epochs=1)
         c_call = model.fit_calls[-1]
         assert c_call.state["B"]["trainable"] is False
@@ -563,17 +663,27 @@ class TestZHatPhases:
 class TestCumulativeEpochs:
     def test_offsets_totals_and_phase_numbers(self, fakes, dataset):
         configs = [
-            make_config("A", n_kl_annealing_epochs=4, max_regular_training_epochs=5,
-                        kl_annealing_ratio=(0.5, 0.2, 0.3)),
-            make_config("B", z=["A"], n_parent_annealing_epochs=2,
-                        max_regular_training_epochs=3),
+            make_config(
+                "A",
+                n_kl_annealing_epochs=4,
+                max_regular_training_epochs=5,
+                kl_annealing_ratio=(0.5, 0.2, 0.3),
+            ),
+            make_config(
+                "B", z=["A"], n_parent_annealing_epochs=2, max_regular_training_epochs=3
+            ),
         ]
         s, model = make_scheduler(configs)
         # A's regular phase early-stops after 2 of its 5 epochs
         model.epochs_run = [None, 2, None, None]
         s.fit(dataset, epochs=5)
-        verbose = [callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls]
-        got = [(v["cumulative_offset"], v["cumulative_total"], v["phase_number"]) for v in verbose]
+        verbose = [
+            callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls
+        ]
+        got = [
+            (v["cumulative_offset"], v["cumulative_total"], v["phase_number"])
+            for v in verbose
+        ]
         assert got == [(0, 14, 1), (4, 14, 2), (6, 11, 3), (8, 11, 4)]
         assert verbose[0]["component_order"] == ["A", "B"]
         es = [callbacks_of(c, fakes.EarlyStoppingCallback) for c in model.fit_calls]
@@ -582,18 +692,28 @@ class TestCumulativeEpochs:
     def test_total_includes_z_hat_phases(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes)
         s.fit(dataset, epochs=5)
-        verbose = [callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls]
-        got = [(v["cumulative_offset"], v["cumulative_total"], v["phase_number"]) for v in verbose]
+        verbose = [
+            callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls
+        ]
+        got = [
+            (v["cumulative_offset"], v["cumulative_total"], v["phase_number"])
+            for v in verbose
+        ]
         assert got == [(0, 11, 1), (2, 11, 2), (4, 11, 3), (8, 11, 4)]
 
     def test_second_fit_starts_from_scratch(self, fakes, dataset):
         configs = _parent_child()
         s, model = make_scheduler(configs)
         s.fit(dataset, epochs=5)
-        first = [callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls]
+        first = [
+            callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls
+        ]
         model.fit_calls.clear()
         s.fit(dataset, epochs=5)
-        second = [callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls]
+        second = [
+            callbacks_of(c, fakes.VerboseCallback)[0].kwargs for c in model.fit_calls
+        ]
+
         def key(v):
             return (v["cumulative_offset"], v["cumulative_total"], v["phase_number"])
 

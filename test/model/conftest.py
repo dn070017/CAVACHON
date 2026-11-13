@@ -88,8 +88,12 @@ class FakeConfig:
         )
         self.conditioned_on_z = list(conditioned_on_z)
         self.conditioned_on_z_hat = list(conditioned_on_z_hat)
-        self.save_x = dict(save_x) if save_x is not None else {m: True for m in modality_names}
-        self.save_z = dict(save_z) if save_z is not None else {m: True for m in modality_names}
+        self.save_x = (
+            dict(save_x) if save_x is not None else {m: True for m in modality_names}
+        )
+        self.save_z = (
+            dict(save_z) if save_z is not None else {m: True for m in modality_names}
+        )
         self.z_hat_kl_weight = z_hat_kl_weight
         self.latent_dim = latent_dim
         self.kernel_value = kernel_value
@@ -174,7 +178,9 @@ class FakeComponent(tf.keras.Model):
         }
 
     def call(self, inputs, training=None):
-        self.recorder.calls.append({"keys": sorted(inputs.keys()), "training": training})
+        self.recorder.calls.append(
+            {"keys": sorted(inputs.keys()), "training": training}
+        )
         z = self._z(inputs)
         z_hat = z + self.z_hat_offset
         outputs = {

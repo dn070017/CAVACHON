@@ -42,7 +42,9 @@ class TestMaxNNeurons:
         assert TensorUtils.max_n_neurons([]) == 0
 
     def test_sequential_layers(self):
-        seq = TensorUtils.create_backbone_layers(n_layers=3, base_n_neurons=4, max_n_neurons=10)
+        seq = TensorUtils.create_backbone_layers(
+            n_layers=3, base_n_neurons=4, max_n_neurons=10
+        )
         assert TensorUtils.max_n_neurons(seq.layers) == 10
 
 
@@ -58,7 +60,9 @@ class TestRemoveNanGradients:
         np.testing.assert_allclose(out[1].numpy(), [1.0])
 
     def test_custom_clip(self):
-        out = TensorUtils.remove_nan_gradients([tf.constant([[5.0, -5.0, 0.5]])], clip_value=1)
+        out = TensorUtils.remove_nan_gradients(
+            [tf.constant([[5.0, -5.0, 0.5]])], clip_value=1
+        )
         np.testing.assert_allclose(out[0].numpy(), [[1.0, -1.0, 0.5]])
 
     def test_empty(self):
@@ -92,18 +96,24 @@ class TestCreateBackboneLayers:
         seq = TensorUtils.create_backbone_layers()
         assert isinstance(seq, tf.keras.Sequential)
         assert seq.name == "backbone_network"
-        dense = [layer for layer in seq.layers if isinstance(layer, tf.keras.layers.Dense)]
+        dense = [
+            layer for layer in seq.layers if isinstance(layer, tf.keras.layers.Dense)
+        ]
         assert [d.units for d in dense] == [32, 64]
         assert all(d.get_config()["activation"] in ("swish", "silu") for d in dense)
 
     def test_alternating_dense_norm(self):
-        seq = TensorUtils.create_backbone_layers(n_layers=3, base_n_neurons=2, max_n_neurons=100)
+        seq = TensorUtils.create_backbone_layers(
+            n_layers=3, base_n_neurons=2, max_n_neurons=100
+        )
         kinds = [type(layer).__name__ for layer in seq.layers]
         assert kinds == ["Dense", "LayerNormalization"] * 3
         assert [layer.units for layer in seq.layers[::2]] == [2, 4, 8]
 
     def test_max_neurons_caps(self):
-        seq = TensorUtils.create_backbone_layers(n_layers=4, base_n_neurons=8, max_n_neurons=20, rate=3)
+        seq = TensorUtils.create_backbone_layers(
+            n_layers=4, base_n_neurons=8, max_n_neurons=20, rate=3
+        )
         assert [layer.units for layer in seq.layers[::2]] == [8, 20, 20, 20]
 
     def test_layer_names_unique_and_prefixed(self):
@@ -117,14 +127,20 @@ class TestCreateBackboneLayers:
         assert seq.layers == []
 
     def test_forward_shape(self):
-        seq = TensorUtils.create_backbone_layers(n_layers=2, base_n_neurons=4, max_n_neurons=8)
+        seq = TensorUtils.create_backbone_layers(
+            n_layers=2, base_n_neurons=4, max_n_neurons=8
+        )
         assert seq(tf.zeros((3, 5))).shape == (3, 8)
 
     def test_reverse_last_layer_units(self):
         seq = TensorUtils.create_backbone_layers(
             n_layers=3, base_n_neurons=2, max_n_neurons=100, reverse=True
         )
-        dense_units = [layer.units for layer in seq.layers if isinstance(layer, tf.keras.layers.Dense)]
+        dense_units = [
+            layer.units
+            for layer in seq.layers
+            if isinstance(layer, tf.keras.layers.Dense)
+        ]
         assert dense_units == [8, 4, 2]
         assert seq(tf.zeros((1, 3))).shape == (1, 2)
 
@@ -141,9 +157,12 @@ class TestCreateBackboneLayers:
             n_layers=3, base_n_neurons=2, max_n_neurons=100, reverse=True, name="b"
         )
         assert [layer.name for layer in seq.layers] == [
-            "b_dense_0", "b_layer_norm_0",
-            "b_dense_1", "b_layer_norm_1",
-            "b_dense_2", "b_layer_norm_2",
+            "b_dense_0",
+            "b_layer_norm_0",
+            "b_dense_1",
+            "b_layer_norm_1",
+            "b_dense_2",
+            "b_layer_norm_2",
         ]
         assert [layer.units for layer in seq.layers[::2]] == [8, 4, 2]
 
@@ -232,9 +251,11 @@ class TestCreateTensorFromDf:
         assert out is d and "A" in d
 
     def test_encoder_dict_default_is_none(self):
-        default = inspect.signature(TensorUtils.create_tensor_from_df).parameters[
-            "encoder_dict"
-        ].default
+        default = (
+            inspect.signature(TensorUtils.create_tensor_from_df)
+            .parameters["encoder_dict"]
+            .default
+        )
         assert default is None
 
     def test_default_encoder_dict_not_shared_between_calls(self):
@@ -324,7 +345,9 @@ class TestSpmatrixToSparseTensor:
             m = sp.csr_matrix((m.data, (m.row, m.col)), shape=m.shape)
             m.has_canonical_format = False
         st = TensorUtils.spmatrix_to_sparse_tensor(m)
-        np.testing.assert_array_equal(tf.sparse.to_dense(st).numpy(), [[3.0, 0.0], [0.0, 4.0]])
+        np.testing.assert_array_equal(
+            tf.sparse.to_dense(st).numpy(), [[3.0, 0.0], [0.0, 4.0]]
+        )
         np.testing.assert_array_equal(st.indices.numpy(), [[0, 0], [1, 1]])
 
     def test_input_not_mutated(self):

@@ -75,7 +75,9 @@ def test_default_distribution(X, modality_type, expected):
 
 
 def test_explicit_distribution_overrides_default(X):
-    m = Modality(X, name="m", modality_type="rna", distribution_name="MultivariateNormalDiag")
+    m = Modality(
+        X, name="m", modality_type="rna", distribution_name="MultivariateNormalDiag"
+    )
     assert m.uns["cavachon"]["distribution"] == "MultivariateNormalDiag"
 
 
@@ -139,7 +141,10 @@ def test_write_h5ad_delegates_with_cavachon_config(monkeypatch, X, obs):
     path, written = writer.call_args.args
     assert path == Path("m.h5ad")
     assert written is m
-    assert written.uns["cavachon"]["distribution"] == "IndependentZeroInflatedNegativeBinomial"
+    assert (
+        written.uns["cavachon"]["distribution"]
+        == "IndependentZeroInflatedNegativeBinomial"
+    )
 
 
 def test_wraps_anndata_returned_by_reader(monkeypatch, X, obs):

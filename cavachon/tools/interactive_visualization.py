@@ -639,7 +639,8 @@ class InteractiveVisualization:
             color="Direction",
             size=size_values,
             hover_name=data.index,
-            hover_data=contrib_columns + ([logfc_column] if logfc_column in data.columns else []),
+            hover_data=contrib_columns
+            + ([logfc_column] if logfc_column in data.columns else []),
             title=title,
         )
 

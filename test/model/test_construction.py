@@ -295,7 +295,9 @@ class TestMakeWiring:
 
     def test_grandchild_wiring_uses_direct_parent(self, make_model):
         a = FakeConfig("a", ["rna"], z_hat_offset=1.0)
-        b = FakeConfig("b", ["rna"], kernel_value=3.0, z_hat_offset=5.0, conditioned_on_z_hat=["a"])
+        b = FakeConfig(
+            "b", ["rna"], kernel_value=3.0, z_hat_offset=5.0, conditioned_on_z_hat=["a"]
+        )
         c = FakeConfig("c", ["rna"], conditioned_on_z_hat=["b"], conditioned_on_z=["a"])
         model = make_model(a, b, c)
         out = model(make_batch({"rna": 2}))
@@ -316,7 +318,9 @@ class TestMakeWiring:
         assert build_call_a["keys"] == ["rna_batch_effect", "rna_matrix"]
 
     def test_numeric_outputs(self, make_model):
-        model = make_model(FakeConfig("a", ["rna"], kernel_value=0.5, z_hat_offset=10.0))
+        model = make_model(
+            FakeConfig("a", ["rna"], kernel_value=0.5, z_hat_offset=10.0)
+        )
         batch = make_batch({"rna": 2})
         out = model(batch)
         x = batch["rna_matrix"].numpy()

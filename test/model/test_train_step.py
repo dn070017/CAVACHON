@@ -132,7 +132,9 @@ class TestLossAggregation:
     )
     def test_standard_kl_only_is_trained(self, single):
         m, batch, x, S = single
-        m.compile(standard_kl_weights={"a": 1.0}, optimizer=tf.keras.optimizers.SGD(0.0))
+        m.compile(
+            standard_kl_weights={"a": 1.0}, optimizer=tf.keras.optimizers.SGD(0.0)
+        )
         assert set(m.loss) == {f"a_{STD}", f"a_rna_{NLL}"}
         out = _f(m.train_step(batch))
         assert len(m.loss[f"a_{STD}"].calls) > 0
@@ -165,7 +167,9 @@ class TestLossAggregation:
             )
         out = _f(m.train_step(batch))
         # no weight attribute -> metric is the raw (already weighted) value
-        assert out == pytest.approx({"loss": 2 * (2 * S + 120), f"a_rna_{NLL}": 2 * (2 * S + 120)})
+        assert out == pytest.approx(
+            {"loss": 2 * (2 * S + 120), f"a_rna_{NLL}": 2 * (2 * S + 120)}
+        )
 
 
 class TestWeightedMetrics:
@@ -224,7 +228,9 @@ class TestZHatLosses:
         np.testing.assert_allclose(dens.calls[0][1], z_hat)
         zkl = m.loss[f"a_{ZKL}"]
         np.testing.assert_allclose(zkl.calls[0][0], np.full((3, 2), 11.0))
-        np.testing.assert_allclose(zkl.calls[0][1], np.concatenate([z_hat, 3 * z_hat], -1))
+        np.testing.assert_allclose(
+            zkl.calls[0][1], np.concatenate([z_hat, 3 * z_hat], -1)
+        )
 
         sum_zh = z_hat.sum()
         assert out["loss"] == pytest.approx(

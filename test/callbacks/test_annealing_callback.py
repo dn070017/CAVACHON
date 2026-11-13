@@ -44,9 +44,7 @@ def child_losses(loss_factory):
 
 def test_longest_pattern_wins_and_unmatched_untouched(make_model, child_losses):
     model = make_model(loss=child_losses)
-    cb = AnnealingCallback(
-        schedule=lambda e: {"child1": 0.5, f"child1_{STD}": 0.2}
-    )
+    cb = AnnealingCallback(schedule=lambda e: {"child1": 0.5, f"child1_{STD}": 0.2})
     cb.set_model(model)
     cb.on_epoch_begin(0)
     w = _weights(model)
@@ -62,9 +60,7 @@ def test_z_hat_kl_only_matched_by_pattern_containing_its_postfix(
     make_model, child_losses
 ):
     model = make_model(loss=child_losses)
-    cb = AnnealingCallback(
-        schedule=lambda e: {GMM: 0.3, f"child1_{ZHAT_KL}": 0.7}
-    )
+    cb = AnnealingCallback(schedule=lambda e: {GMM: 0.3, f"child1_{ZHAT_KL}": 0.7})
     cb.set_model(model)
     cb.on_epoch_begin(0)
     w = _weights(model)

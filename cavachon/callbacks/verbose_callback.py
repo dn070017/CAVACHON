@@ -15,11 +15,18 @@ class VerboseCallback(tf.keras.callbacks.Callback):
     _BOLD = "\033[1m"
     _RESET = "\033[0m"
 
-    def __init__(self, labels, phase="Regular Training",
-                 loss_prefixes=None, phase_epochs=None,
-                 cumulative_offset=0, cumulative_total=None,
-                 phase_number=1, component_order=None,
-                 debug=True):
+    def __init__(
+        self,
+        labels,
+        phase="Regular Training",
+        loss_prefixes=None,
+        phase_epochs=None,
+        cumulative_offset=0,
+        cumulative_total=None,
+        phase_number=1,
+        component_order=None,
+        debug=True,
+    ):
         super().__init__()
         self.labels = labels
         self.phase = phase
@@ -51,7 +58,7 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         comp_name = self._match_component(key)
         if comp_name is None:
             return key
-        return key[len(comp_name) + 1:]
+        return key[len(comp_name) + 1 :]
 
     def on_epoch_begin(self, epoch, logs=None):
         self._epoch_start = time.time()
@@ -61,8 +68,16 @@ class VerboseCallback(tf.keras.callbacks.Callback):
             parts.append(f"{c}{self._BOLD}{name}{self._RESET}")
         label = " → ".join(parts)
         cumul = self.cumulative_offset + epoch + 1
-        cumul_str = f" (Total Epoch: {cumul}/{self.cumulative_total})" if self.cumulative_total else ""
-        epoch_str = f" Phase Epoch: {epoch + 1}/{self.phase_epochs}" if self.phase_epochs else ""
+        cumul_str = (
+            f" (Total Epoch: {cumul}/{self.cumulative_total})"
+            if self.cumulative_total
+            else ""
+        )
+        epoch_str = (
+            f" Phase Epoch: {epoch + 1}/{self.phase_epochs}"
+            if self.phase_epochs
+            else ""
+        )
         print(
             f"{self._RED}Phase {self.phase_number}. {self.phase}{self._RESET} "
             f"[{label}]"
@@ -90,7 +105,11 @@ class VerboseCallback(tf.keras.callbacks.Callback):
 
         for cn in self.component_order:
             metrics = comp_metrics[cn]
-            comp = self.model.components.get(cn) if hasattr(self.model, 'components') else None
+            comp = (
+                self.model.components.get(cn)
+                if hasattr(self.model, "components")
+                else None
+            )
             is_trainable = comp.trainable if comp else False
 
             if metrics:
@@ -123,13 +142,17 @@ class VerboseCallback(tf.keras.callbacks.Callback):
         parts = []
         try:
             gmm = self.model._gmm_kl_weights.get(cn)
-            parts.append(f"GMM weight={gmm.numpy():.2f}" if gmm is not None else "GMM weight=N/A")
+            parts.append(
+                f"GMM weight={gmm.numpy():.2f}" if gmm is not None else "GMM weight=N/A"
+            )
         except Exception:
             parts.append("GMM weight=N/A")
 
         try:
             std = self.model._standard_kl_weights.get(cn)
-            parts.append(f"KL weight={std.numpy():.2f}" if std is not None else "KL weight=N/A")
+            parts.append(
+                f"KL weight={std.numpy():.2f}" if std is not None else "KL weight=N/A"
+            )
         except Exception:
             parts.append("KL weight=N/A")
 

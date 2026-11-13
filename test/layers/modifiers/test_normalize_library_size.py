@@ -12,6 +12,7 @@ def tensor_utils(mock_tensor_utils):
     """cavachon.utils.TensorUtils mocked at its lookup site in normalize_library_size."""
     return mock_tensor_utils("normalize_library_size")
 
+
 LIB = X.sum(-1, keepdims=True)
 
 

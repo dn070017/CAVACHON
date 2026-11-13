@@ -123,9 +123,7 @@ def test_decoder_layers_must_be_positive():
         )
 
 
-@pytest.mark.parametrize(
-    "ratio", [(-0.1, 0.6, 0.5), (0.5, 0.2, 0.2), (0.5, 0.5, 0.5)]
-)
+@pytest.mark.parametrize("ratio", [(-0.1, 0.6, 0.5), (0.5, 0.2, 0.2), (0.5, 0.5, 0.5)])
 def test_invalid_kl_annealing_ratio_rejected(ratio):
     # regression: negative ratios (or ratios not summing to 1) were accepted
     with pytest.raises(ValidationError):
@@ -134,7 +132,9 @@ def test_invalid_kl_annealing_ratio_rejected(ratio):
 
 def test_kl_annealing_ratio_none_and_valid_accepted():
     assert ComponentConfig(name="c").kl_annealing_ratio is None
-    assert ComponentConfig(name="c", kl_annealing_ratio=(1.0, 0.0, 0.0)).kl_annealing_ratio == (1.0, 0.0, 0.0)
+    assert ComponentConfig(
+        name="c", kl_annealing_ratio=(1.0, 0.0, 0.0)
+    ).kl_annealing_ratio == (1.0, 0.0, 0.0)
 
 
 def test_kl_annealing_ratio_parsed_as_tuple():

@@ -162,7 +162,9 @@ def test_deg_single_pair_mode(deps, to_csv_calls):
     ]
 
 
-@pytest.mark.parametrize("keep, expected", [(True, ["gene0", "gene2"]), (False, ["gene0", "gene1", "gene2"])])
+@pytest.mark.parametrize(
+    "keep, expected", [(True, ["gene0", "gene2"]), (False, ["gene0", "gene1", "gene2"])]
+)
 def test_deg_single_pair_keep_only_significant(deps, to_csv_calls, keep, expected):
     deps.DifferentialAnalysis.return_value.between_two_groups.return_value = deg_table()
     wf = deg_workflow([deg_cfg(group_a="a", group_b="b", keep_only_significant=keep)])
@@ -174,7 +176,10 @@ def test_deg_single_pair_keep_only_significant(deps, to_csv_calls, keep, expecte
 
 def test_deg_results_accumulate_and_all_are_written(deps, to_csv_calls):
     analysis = deps.DifferentialAnalysis.return_value
-    analysis.across_clusters_pairwise.return_value = {"a/b": deg_table(), "a/c": deg_table()}
+    analysis.across_clusters_pairwise.return_value = {
+        "a/b": deg_table(),
+        "a/c": deg_table(),
+    }
     analysis.between_two_groups.return_value = deg_table()
     wf = deg_workflow([deg_cfg(), deg_cfg(group_a="b", group_b="c")])
 
@@ -227,7 +232,10 @@ def test_deg_single_pair_configs_on_different_annotations_are_kept(deps, to_csv_
     analysis = deps.DifferentialAnalysis.return_value
     first, second = deg_table(), deg_table(k_ab=(9.0, 9.0, 9.0))
     analysis.between_two_groups.side_effect = [first, second]
-    obs = {"cluster_comp": ["a", "a", "b", "b", "b", "b"], "celltype": ["a", "b", "a", "b", "a", "b"]}
+    obs = {
+        "cluster_comp": ["a", "a", "b", "b", "b", "b"],
+        "celltype": ["a", "b", "a", "b", "a", "b"],
+    }
     wf = deg_workflow(
         [
             deg_cfg(group_a="a", group_b="b"),
@@ -241,7 +249,8 @@ def test_deg_single_pair_configs_on_different_annotations_are_kept(deps, to_csv_
 
 
 @pytest.mark.parametrize(
-    "method", ["perform_differential_analysis", "perform_hierarchical_differential_analysis"]
+    "method",
+    ["perform_differential_analysis", "perform_hierarchical_differential_analysis"],
 )
 def test_unconfigured_analysis_creates_no_source_directory(deps, makedirs, method):
     # regression: fixed bug, see UNIT_TEST_REPORT.md
@@ -287,7 +296,9 @@ def test_hdeg_constructs_analysis(deps, makedirs):
     wf = hdeg_workflow([hdeg_cfg()])
     wf.perform_hierarchical_differential_analysis()
 
-    makedirs.assert_called_once_with("/out/hierarchical_differential_analysis", exist_ok=True)
+    makedirs.assert_called_once_with(
+        "/out/hierarchical_differential_analysis", exist_ok=True
+    )
     deps.HierarchicalDifferentialAnalysis.assert_called_once_with(
         wf.mdata,
         wf.model,
@@ -302,7 +313,9 @@ def test_hdeg_single_pair_mode(deps, to_csv_calls):
     analysis = deps.HierarchicalDifferentialAnalysis.return_value
     analysis.between_clusters.return_value = table
     cfg = hdeg_cfg(
-        donor_cluster="Cluster 001", recipient_cluster="T/NK", donor_components=["p1", "p2"]
+        donor_cluster="Cluster 001",
+        recipient_cluster="T/NK",
+        donor_components=["p1", "p2"],
     )
     hdeg_workflow([cfg]).perform_hierarchical_differential_analysis()
 
@@ -348,7 +361,9 @@ def test_hdeg_pairwise_mode(deps, to_csv_calls):
         sort_output=False,
     )
     analysis.between_clusters.assert_not_called()
-    prefix = "/out/hierarchical_differential_analysis/rna_from_child_comp_substitute_all_"
+    prefix = (
+        "/out/hierarchical_differential_analysis/rna_from_child_comp_substitute_all_"
+    )
     assert [p for _, p, _ in to_csv_calls] == [
         prefix + "cluster_001_to_cluster_002.tsv",
         prefix + "cluster_002_to_cluster_001.tsv",
@@ -358,6 +373,8 @@ def test_hdeg_pairwise_mode(deps, to_csv_calls):
 def test_hdeg_pairwise_when_only_donor_given(deps):
     analysis = deps.HierarchicalDifferentialAnalysis.return_value
     analysis.across_clusters_pairwise.return_value = {}
-    hdeg_workflow([hdeg_cfg(donor_cluster="a")]).perform_hierarchical_differential_analysis()
+    hdeg_workflow(
+        [hdeg_cfg(donor_cluster="a")]
+    ).perform_hierarchical_differential_analysis()
     analysis.between_clusters.assert_not_called()
     analysis.across_clusters_pairwise.assert_called_once()

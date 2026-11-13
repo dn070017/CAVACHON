@@ -38,15 +38,16 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
     def on_epoch_begin(self, epoch, logs=None):
         targets = self.schedule(epoch)
         for loss_name, loss_fn in self.model.loss.items():
-            if not hasattr(loss_fn, "weight") or not hasattr(
-                loss_fn.weight, "assign"
-            ):
+            if not hasattr(loss_fn, "weight") or not hasattr(loss_fn.weight, "assign"):
                 continue
             best_match = None
             best_len = 0
             is_z_hat_kl = Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX in loss_name
             for pattern, weight in targets.items():
-                if is_z_hat_kl and Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX not in pattern:
+                if (
+                    is_z_hat_kl
+                    and Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX not in pattern
+                ):
                     continue
                 if pattern in loss_name and len(pattern) > best_len:
                     best_match = weight
@@ -60,8 +61,7 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
             and not self._kmeans_done
         ):
             saved_trainable = {
-                name: comp.trainable
-                for name, comp in self.model.components.items()
+                name: comp.trainable for name, comp in self.model.components.items()
             }
             self.model.trainable = False
             self.scheduler.initialize_gmm_priors_with_kmeans(
@@ -86,13 +86,24 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
             pass
         try:
             for cn in self.scheduler.component_order:
-                for wdict in ('_standard_kl_weights', '_gmm_kl_weights', '_data_loss_weights'):
+                for wdict in (
+                    "_standard_kl_weights",
+                    "_gmm_kl_weights",
+                    "_data_loss_weights",
+                ):
                     w = getattr(self.model, wdict, {}).get(cn)
-                    if wdict == '_data_loss_weights' and isinstance(w, dict):
+                    if wdict == "_data_loss_weights" and isinstance(w, dict):
                         for v in w.values():
-                            if isinstance(v, ProgressiveScaler) and float(v.total_iterations) > 1.0:
+                            if (
+                                isinstance(v, ProgressiveScaler)
+                                and float(v.total_iterations) > 1.0
+                            ):
                                 v.increment()
-                    elif w is not None and isinstance(w, ProgressiveScaler) and float(w.total_iterations) > 1.0:
+                    elif (
+                        w is not None
+                        and isinstance(w, ProgressiveScaler)
+                        and float(w.total_iterations) > 1.0
+                    ):
                         w.increment()
         except Exception:
             pass

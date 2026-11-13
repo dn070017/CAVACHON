@@ -14,6 +14,7 @@ def tensor_utils(mock_tensor_utils):
     """cavachon.utils.TensorUtils mocked at its lookup site in scale_library_size."""
     return mock_tensor_utils("scale_library_size")
 
+
 KEY = f"rna_{Constants.TENSOR_NAME_LIBSIZE}"
 
 
@@ -42,7 +43,10 @@ def test_missing_libsize_warns_once_and_is_identity():
 
 
 def test_tuple_key():
-    inputs = {("rna", "x"): dense(), ("rna", Constants.TENSOR_NAME_LIBSIZE): tf.constant([[2.0], [3.0]])}
+    inputs = {
+        ("rna", "x"): dense(),
+        ("rna", Constants.TENSOR_NAME_LIBSIZE): tf.constant([[2.0], [3.0]]),
+    }
     out = ScaleLibrarySize(("rna", "x"))(inputs)
     np.testing.assert_allclose(out[("rna", "x")].numpy(), X * np.array([[2.0], [3.0]]))
 

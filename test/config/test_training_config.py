@@ -57,7 +57,9 @@ def test_early_stopping_config_defaults():
 
 
 def test_early_stopping_min_delta_configurable():
-    es = TrainingConfig(early_stopping={"min_delta": 0.5, "patience": 50}).early_stopping
+    es = TrainingConfig(
+        early_stopping={"min_delta": 0.5, "patience": 50}
+    ).early_stopping
     assert (es.min_delta, es.patience) == (0.5, 50)
 
 
@@ -85,7 +87,11 @@ def test_early_stopping_known_fields_do_not_warn():
 def test_kl_annealing_ratio_length_checked():
     with pytest.raises(ValidationError):
         TrainingConfig(kl_annealing_ratio=[1.0])
-    assert TrainingConfig(kl_annealing_ratio=[1, 0, 0]).kl_annealing_ratio == (1.0, 0.0, 0.0)
+    assert TrainingConfig(kl_annealing_ratio=[1, 0, 0]).kl_annealing_ratio == (
+        1.0,
+        0.0,
+        0.0,
+    )
 
 
 def test_type_errors():

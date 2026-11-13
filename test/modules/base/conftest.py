@@ -63,7 +63,9 @@ class FakeMVNLayer(tf.keras.layers.Layer):
     def call(self, inputs, training=None, mask=None):
         self.calls.append(dict(inputs=inputs, training=training, mask=mask))
         loc = tf.matmul(inputs, self.loc_weight) + self.loc_bias
-        scale = tf.math.softplus(tf.matmul(inputs, self.scale_diag_weight) + self.scale_diag_bias)
+        scale = tf.math.softplus(
+            tf.matmul(inputs, self.scale_diag_weight) + self.scale_diag_bias
+        )
         return tf.concat([loc, scale], axis=-1)
 
 
@@ -123,7 +125,10 @@ def make_backbone(units=(6, 4), name="backbone"):
     for i, u in enumerate(units):
         layers.append(
             tf.keras.layers.Dense(
-                u, kernel_initializer="ones", bias_initializer="zeros", name=f"{name}_dense_{i}"
+                u,
+                kernel_initializer="ones",
+                bias_initializer="zeros",
+                name=f"{name}_dense_{i}",
             )
         )
         layers.append(tf.keras.layers.LayerNormalization(name=f"{name}_ln_{i}"))

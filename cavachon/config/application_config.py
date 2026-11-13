@@ -169,9 +169,7 @@ class ApplicationConfig(BaseConfigModel):
                 )
             for mname in comp.modality_names:
                 if mname not in self.modality:
-                    raise KeyError(
-                        f"'{mname}' is not in the config of modality."
-                    )
+                    raise KeyError(f"'{mname}' is not in the config of modality.")
                 modality_dist = self.modality[mname].dist
                 comp.distribution_names[mname] = modality_dist
             if comp.name in component_by_name:
@@ -203,16 +201,12 @@ class ApplicationConfig(BaseConfigModel):
         self.components = [component_by_name[c["name"]] for c in ordered]
 
         # Build a fast component lookup
-        comp_map: Dict[str, ComponentConfig] = {
-            c.name: c for c in self.components
-        }
+        comp_map: Dict[str, ComponentConfig] = {c.name: c for c in self.components}
 
         # 7. Propagate training-level defaults to components when not set
         for comp in self.components:
             if comp.n_parent_annealing_epochs is None:
-                comp.n_parent_annealing_epochs = (
-                    self.training.n_parent_annealing_epochs
-                )
+                comp.n_parent_annealing_epochs = self.training.n_parent_annealing_epochs
             if comp.n_kl_annealing_epochs is None:
                 comp.n_kl_annealing_epochs = self.training.n_kl_annealing_epochs
             if comp.enable_kmeans_init is None:
@@ -222,9 +216,7 @@ class ApplicationConfig(BaseConfigModel):
             if comp.kl_annealing_ratio is None:
                 comp.kl_annealing_ratio = self.training.kl_annealing_ratio
             if comp.n_z_hat_annealing_epochs is None:
-                comp.n_z_hat_annealing_epochs = (
-                    self.training.n_z_hat_annealing_epochs
-                )
+                comp.n_z_hat_annealing_epochs = self.training.n_z_hat_annealing_epochs
             if comp.n_z_hat_training_epochs is None:
                 comp.n_z_hat_training_epochs = self.training.n_z_hat_training_epochs
             if comp.z_hat_kl_weight is None:
@@ -247,9 +239,7 @@ class ApplicationConfig(BaseConfigModel):
 
         # 7b. visualize_embedding (modality only)
         for viz in self.analysis.visualize_embedding:
-            found = any(
-                viz.modality in cfg.modality_names for cfg in self.components
-            )
+            found = any(viz.modality in cfg.modality_names for cfg in self.components)
             if not found:
                 raise KeyError(
                     f"'{viz.modality}' is not in the config of any component."
@@ -259,14 +249,12 @@ class ApplicationConfig(BaseConfigModel):
         for attr in self.analysis.conditional_attribution_scores:
             if attr.component not in comp_map:
                 raise KeyError(
-                    f"'{attr.component}' (modality) is not in the config "
-                    f"of components."
+                    f"'{attr.component}' (modality) is not in the config of components."
                 )
             for wrt in attr.with_respect_to:
                 if wrt not in comp_map:
                     raise KeyError(
-                        f"'{wrt}' (with_respect_to) is not in the config "
-                        f"of components."
+                        f"'{wrt}' (with_respect_to) is not in the config of components."
                     )
 
         # 7c'. hierarchical_differential_analysis donor_components check
@@ -284,8 +272,7 @@ class ApplicationConfig(BaseConfigModel):
             for wrt in diff_attr.with_respect_to:
                 if wrt not in comp_map:
                     raise KeyError(
-                        f"'{wrt}' (with_respect_to) is not in the config "
-                        f"of components."
+                        f"'{wrt}' (with_respect_to) is not in the config of components."
                     )
             source_name = (
                 "differential_analysis"
@@ -312,9 +299,7 @@ class ApplicationConfig(BaseConfigModel):
             if cluster_cfg.use_rep == "z_hat":
                 comp_name = cluster_cfg.component
                 if comp_name not in comp_map:
-                    raise KeyError(
-                        f"'{comp_name}' is not in the config of components."
-                    )
+                    raise KeyError(f"'{comp_name}' is not in the config of components.")
                 target = comp_map[comp_name]
                 if not target.reparameterize_z_hat:
                     raise KeyError(
@@ -342,9 +327,7 @@ class ApplicationConfig(BaseConfigModel):
         contains the modality of the entry."""
         comp_cfg = comp_map.get(entry.component)
         if comp_cfg is None:
-            raise KeyError(
-                f"'{entry.component}' is not in the config of components."
-            )
+            raise KeyError(f"'{entry.component}' is not in the config of components.")
         if entry.modality not in comp_cfg.modality_names:
             raise KeyError(
                 f"'{entry.modality}' is not in the config of component "
@@ -352,9 +335,7 @@ class ApplicationConfig(BaseConfigModel):
             )
 
     @staticmethod
-    def _validate_enrichment_sources(
-        analysis: AnalysisConfig, outdir: str
-    ) -> None:
+    def _validate_enrichment_sources(analysis: AnalysisConfig, outdir: str) -> None:
         """Validate configured or previously generated enrichment inputs."""
         for enrichment in analysis.enrichment_analysis:
             source_configs = (

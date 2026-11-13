@@ -24,7 +24,9 @@ ZHC = Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
 @pytest.fixture
 def patched(monkeypatch):
     monkeypatch.setattr(f"{MODULE}.ProgressiveScaler", FakeProgressiveScaler)
-    monkeypatch.setattr(f"{MODULE}.MultivariateNormalDiagParameterizerLayer", FakeMVNLayer)
+    monkeypatch.setattr(
+        f"{MODULE}.MultivariateNormalDiagParameterizerLayer", FakeMVNLayer
+    )
 
 
 def _set_r_identity(enc, n):
@@ -41,24 +43,32 @@ ZHC_VAL = tf.constant([[20.0, 21.0, 22.0, 23.0], [24.0, 25.0, 26.0, 27.0]])
 
 class TestConstruction:
     def test_sub_layers(self, patched):
-        enc = HierarchicalEncoder(n_latent_dims=3, progressive_iterations=123, name="he")
+        enc = HierarchicalEncoder(
+            n_latent_dims=3, progressive_iterations=123, name="he"
+        )
         assert enc.name == "he"
         assert FakeProgressiveScaler.instances[0].total_iterations_arg == 123
         assert enc.progressive_scaler is FakeProgressiveScaler.instances[0]
         assert enc.z_hat_parameterizer is FakeMVNLayer.instances[0]
-        assert FakeMVNLayer.instances[0].init_args == dict(event_dims=3, name="he_b_parameterizer")
+        assert FakeMVNLayer.instances[0].init_args == dict(
+            event_dims=3, name="he_b_parameterizer"
+        )
         assert enc.r_network.name == Constants.MODULE_R_NETWORK
         assert enc.b_network.name == Constants.MODULE_B_NETWORK
         assert enc.b_network.layers == [enc.z_hat_parameterizer]
         dense = enc.r_network.layers[0]
-        assert dense.units == 3 and dense.use_bias is False and dense.name == "he_r_dense"
+        assert (
+            dense.units == 3 and dense.use_bias is False and dense.name == "he_r_dense"
+        )
 
     def test_use_bias(self, patched):
         enc = HierarchicalEncoder(n_latent_dims=3, use_bias=True)
         assert enc.r_network.layers[0].use_bias is True
 
     def test_flags_stored(self, patched):
-        enc = HierarchicalEncoder(is_conditioned_on_z=True, is_conditioned_on_z_hat=False)
+        enc = HierarchicalEncoder(
+            is_conditioned_on_z=True, is_conditioned_on_z_hat=False
+        )
         assert enc.is_conditioned_on_z is True and enc.is_conditioned_on_z_hat is False
 
     def test_unknown_kwarg_is_rejected(self, patched):
@@ -86,7 +96,9 @@ class TestCall:
         np.testing.assert_allclose(scaler.calls[-1]["inputs"].numpy(), Z_VAL.numpy())
         assert tuple(out.shape) == (2, 6)
         np.testing.assert_allclose(
-            out.numpy()[:, :3], np.repeat(0.5 * Z_VAL.numpy().sum(-1, keepdims=True), 3, -1), atol=1e-6
+            out.numpy()[:, :3],
+            np.repeat(0.5 * Z_VAL.numpy().sum(-1, keepdims=True), 3, -1),
+            atol=1e-6,
         )
         np.testing.assert_allclose(out.numpy()[:, 3:], np.log(2.0), atol=1e-6)
 
@@ -96,7 +108,9 @@ class TestCall:
         _set_r_identity(enc, 3)
         enc({Z: Z_VAL, ZC: ZC_VAL, ZHC: ZHC_VAL})
         expected = np.concatenate([ZC_VAL.numpy(), 0.5 * Z_VAL.numpy()], axis=-1)
-        np.testing.assert_allclose(FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(), expected)
+        np.testing.assert_allclose(
+            FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(), expected
+        )
 
     def test_conditioned_on_z_hat(self, patched):
         enc = HierarchicalEncoder(n_latent_dims=3, is_conditioned_on_z_hat=True)
@@ -104,7 +118,9 @@ class TestCall:
         _set_r_identity(enc, 3)
         enc({Z: Z_VAL, ZC: ZC_VAL, ZHC: ZHC_VAL})
         expected = np.concatenate([ZHC_VAL.numpy(), 0.5 * Z_VAL.numpy()], axis=-1)
-        np.testing.assert_allclose(FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(), expected)
+        np.testing.assert_allclose(
+            FakeMVNLayer.instances[0].calls[-1]["inputs"].numpy(), expected
+        )
 
     def test_conditioned_on_both_order(self, patched):
         enc = HierarchicalEncoder(
@@ -134,7 +150,10 @@ class TestCall:
         enc({Z: 2.0 * Z_VAL})
         mvn_in = FakeMVNLayer.instances[0].calls
         np.testing.assert_allclose(
-            mvn_in[-1]["inputs"].numpy(), 2.0 * mvn_in[-2]["inputs"].numpy(), rtol=1e-5, atol=1e-6
+            mvn_in[-1]["inputs"].numpy(),
+            2.0 * mvn_in[-2]["inputs"].numpy(),
+            rtol=1e-5,
+            atol=1e-6,
         )
 
     def test_train_step_not_implemented(self, patched):
@@ -152,10 +171,14 @@ class TestInitializeScaleDiag:
         np.testing.assert_array_equal(p.scale_diag_weight.numpy(), 0.0)
         assert p.scale_diag_bias.shape == (1, 3)
         np.testing.assert_allclose(
-            tf.math.softplus(p.scale_diag_bias).numpy(), target.reshape(1, -1), rtol=1e-5
+            tf.math.softplus(p.scale_diag_bias).numpy(),
+            target.reshape(1, -1),
+            rtol=1e-5,
         )
         out = enc({Z: Z_VAL})
-        np.testing.assert_allclose(out.numpy()[:, 3:], np.tile(target, (2, 1)), rtol=1e-5)
+        np.testing.assert_allclose(
+            out.numpy()[:, 3:], np.tile(target, (2, 1)), rtol=1e-5
+        )
 
     def test_clamps_non_positive(self, patched):
         enc = HierarchicalEncoder(n_latent_dims=2)
@@ -184,7 +207,10 @@ class TestConfig:
     )
     def test_get_config_round_trip(self, patched):
         enc = HierarchicalEncoder(
-            n_latent_dims=3, is_conditioned_on_z=True, progressive_iterations=7, name="he"
+            n_latent_dims=3,
+            is_conditioned_on_z=True,
+            progressive_iterations=7,
+            name="he",
         )
         config = enc.get_config()
         assert config["n_latent_dims"] == 3

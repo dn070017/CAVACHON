@@ -18,7 +18,9 @@ def make_adata(sparse=False, n_obs=4, n_vars=3):
         {"label": list("xxyy")[:n_obs], "num": np.arange(n_obs, dtype=float)},
         index=[f"c{i}" for i in range(n_obs)],
     )
-    var = pd.DataFrame({"gene_type": ["g"] * n_vars}, index=[f"g{j}" for j in range(n_vars)])
+    var = pd.DataFrame(
+        {"gene_type": ["g"] * n_vars}, index=[f"g{j}" for j in range(n_vars)]
+    )
     return AnnData(X=sp.csr_matrix(X) if sparse else X, obs=obs, var=var)
 
 
@@ -30,7 +32,9 @@ class TestReorderOrFilterAdataObs:
     @pytest.mark.parametrize("sparse", [False, True])
     def test_reorder(self, sparse):
         adata = make_adata(sparse)
-        out = AnnDataUtils.reorder_or_filter_adata_obs(adata, pd.Index(["c3", "c1", "c0", "c2"]))
+        out = AnnDataUtils.reorder_or_filter_adata_obs(
+            adata, pd.Index(["c3", "c1", "c0", "c2"])
+        )
         assert list(out.obs_names) == ["c3", "c1", "c0", "c2"]
         np.testing.assert_array_equal(to_dense(out.X), to_dense(adata.X)[[3, 1, 0, 2]])
         assert sp.issparse(out.X) == sparse
@@ -60,11 +64,15 @@ class TestReorderOrFilterAdataObs:
         assert list(adata.obs_names) == names
 
     def test_empty_index(self):
-        out = AnnDataUtils.reorder_or_filter_adata_obs(make_adata(), pd.Index([], dtype=object))
+        out = AnnDataUtils.reorder_or_filter_adata_obs(
+            make_adata(), pd.Index([], dtype=object)
+        )
         assert out.shape == (0, 3)
 
     def test_duplicate_index_entries_duplicate_rows(self):
-        out = AnnDataUtils.reorder_or_filter_adata_obs(make_adata(), pd.Index(["c0", "c0"]))
+        out = AnnDataUtils.reorder_or_filter_adata_obs(
+            make_adata(), pd.Index(["c0", "c0"])
+        )
         assert out.n_obs == 2
 
     def test_missing_obs_raises_keyerror(self):
@@ -73,7 +81,10 @@ class TestReorderOrFilterAdataObs:
 
     def test_non_anndata_warns_and_returns_none(self):
         with pytest.warns(RuntimeWarning, match="not an AnnData"):
-            assert AnnDataUtils.reorder_or_filter_adata_obs(np.zeros((2, 2)), pd.Index([])) is None
+            assert (
+                AnnDataUtils.reorder_or_filter_adata_obs(np.zeros((2, 2)), pd.Index([]))
+                is None
+            )
 
     def test_drops_layers_obsm_uns(self):
         # documents current behaviour: only X/obs/var are carried over
@@ -110,10 +121,14 @@ class TestMergeMdataOnObsAnnotation:
     @pytest.mark.parametrize("sparse", [False, True])
     def test_group_means(self, sparse):
         mdata = make_mdata(sparse)
-        out = AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": [], "atac": []})
+        out = AnnDataUtils.merge_mdata_on_obs_annotation(
+            mdata, "label", {"rna": [], "atac": []}
+        )
         assert isinstance(out, mu.MuData)
         assert set(out.mod) == {"rna", "atac"}
-        np.testing.assert_allclose(to_dense(out["rna"].X), [[1.5, 2.5, 3.5], [7.5, 8.5, 9.5]])
+        np.testing.assert_allclose(
+            to_dense(out["rna"].X), [[1.5, 2.5, 3.5], [7.5, 8.5, 9.5]]
+        )
         # atac lacks 'label' -> filtered with rna's obs index
         np.testing.assert_allclose(to_dense(out["atac"].X), [[2.0, 0.0], [0.0, 6.0]])
         assert list(out["rna"].obs_names) == ["x", "y"]
@@ -122,7 +137,9 @@ class TestMergeMdataOnObsAnnotation:
         assert list(out["rna"].var_names) == ["g0", "g1", "g2"]
 
     def test_output_is_sparse_csr(self):
-        out = AnnDataUtils.merge_mdata_on_obs_annotation(make_mdata(), "label", {"rna": [], "atac": []})
+        out = AnnDataUtils.merge_mdata_on_obs_annotation(
+            make_mdata(), "label", {"rna": [], "atac": []}
+        )
         assert sp.issparse(out["rna"].X)
 
     def test_batch_effect_categorical_mode_and_numeric_mean(self):
@@ -137,31 +154,41 @@ class TestMergeMdataOnObsAnnotation:
 
     def test_missing_group_col_raises(self):
         with pytest.raises(KeyError, match="not found in any modality"):
-            AnnDataUtils.merge_mdata_on_obs_annotation(make_mdata(), "nope", {"rna": [], "atac": []})
+            AnnDataUtils.merge_mdata_on_obs_annotation(
+                make_mdata(), "nope", {"rna": [], "atac": []}
+            )
 
     def test_missing_modality_in_batch_colnames_raises(self):
         with pytest.raises(KeyError):
-            AnnDataUtils.merge_mdata_on_obs_annotation(make_mdata(), "label", {"rna": []})
+            AnnDataUtils.merge_mdata_on_obs_annotation(
+                make_mdata(), "label", {"rna": []}
+            )
 
     def test_does_not_mutate_input(self):
         mdata = make_mdata()
         rna_X = mdata["rna"].X.copy()
         obs_cols = list(mdata["rna"].obs.columns)
-        AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": ["batch"], "atac": []})
+        AnnDataUtils.merge_mdata_on_obs_annotation(
+            mdata, "label", {"rna": ["batch"], "atac": []}
+        )
         np.testing.assert_array_equal(mdata["rna"].X, rna_X)
         assert list(mdata["rna"].obs.columns) == obs_cols
 
     def test_group_col_in_both_modalities_uses_own_labels(self):
         mdata = make_mdata()
         mdata["atac"].obs["label"] = ["y", "y", "x", "x"]
-        out = AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": [], "atac": []})
+        out = AnnDataUtils.merge_mdata_on_obs_annotation(
+            mdata, "label", {"rna": [], "atac": []}
+        )
         # group "x" for atac now = rows 2,3
         np.testing.assert_allclose(to_dense(out["atac"].X), [[0.0, 6.0], [2.0, 0.0]])
 
     def test_single_group(self):
         mdata = make_mdata()
         mdata["rna"].obs["label"] = "only"
-        out = AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": [], "atac": []})
+        out = AnnDataUtils.merge_mdata_on_obs_annotation(
+            mdata, "label", {"rna": [], "atac": []}
+        )
         assert out["rna"].n_obs == 1
         np.testing.assert_allclose(to_dense(out["rna"].X), [[4.5, 5.5, 6.5]])
 
@@ -169,13 +196,19 @@ class TestMergeMdataOnObsAnnotation:
     def test_nan_group_label_skipped(self, categorical):
         # regression: a NaN label produced an all-NaN pseudo-bulk row
         mdata = make_mdata()
-        labels = pd.Series(["x", "x", np.nan, "y"], index=mdata["rna"].obs_names, dtype=object)
+        labels = pd.Series(
+            ["x", "x", np.nan, "y"], index=mdata["rna"].obs_names, dtype=object
+        )
         mdata["rna"].obs["label"] = labels.astype("category") if categorical else labels
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)  # no mean of empty slice
-            out = AnnDataUtils.merge_mdata_on_obs_annotation(mdata, "label", {"rna": [], "atac": []})
+            out = AnnDataUtils.merge_mdata_on_obs_annotation(
+                mdata, "label", {"rna": [], "atac": []}
+            )
         for mod in ("rna", "atac"):
             assert list(out[mod].obs_names) == ["x", "y"]
             assert not np.isnan(to_dense(out[mod].X)).any()
-        np.testing.assert_allclose(to_dense(out["rna"].X), [[1.5, 2.5, 3.5], [9.0, 10.0, 11.0]])
+        np.testing.assert_allclose(
+            to_dense(out["rna"].X), [[1.5, 2.5, 3.5], [9.0, 10.0, 11.0]]
+        )
         np.testing.assert_allclose(to_dense(out["atac"].X), [[2.0, 0.0], [0.0, 7.0]])

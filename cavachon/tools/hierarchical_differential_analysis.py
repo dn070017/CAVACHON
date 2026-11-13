@@ -37,9 +37,11 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
     def _get_cluster_mdata(
         self, cluster: str, use_cluster: str, modality: str
     ) -> mu.MuData:
-        cluster_index = self.mdata[modality].obs[
-            self.mdata[modality].obs[use_cluster] == cluster
-        ].index
+        cluster_index = (
+            self.mdata[modality]
+            .obs[self.mdata[modality].obs[use_cluster] == cluster]
+            .index
+        )
 
         adata_dict = dict()
         with warnings.catch_warnings():
@@ -159,7 +161,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             )
             z_hat_substituted = hier_outputs_substituted[Constants.MODEL_OUTPUTS_Z_HAT]
 
-            random_batch_index = np.random.choice(np.arange(self.mdata.n_obs), n_obs_batch)
+            random_batch_index = np.random.choice(
+                np.arange(self.mdata.n_obs), n_obs_batch
+            )
             for modality_name in modality_names:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 batch[batch_effect_key] = tf.gather(
@@ -273,7 +277,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             raise ValueError(f"Recipient cluster '{recipient_cluster}' is empty.")
 
         donor_mdata = self._get_cluster_mdata(donor_cluster, use_cluster, modality)
-        donor_z_pools = self._encode_z_pool(donor_mdata, normalized_donor_components, batch_size)
+        donor_z_pools = self._encode_z_pool(
+            donor_mdata, normalized_donor_components, batch_size
+        )
 
         if all(len(v) == 0 for v in donor_z_pools.values()):
             raise ValueError(f"Donor cluster '{donor_cluster}' is empty.")
@@ -318,8 +324,12 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             x_means_substituted, x_means_original, var_index
         )
         result["InterventionType"] = "donor_pool_z_substitution"
-        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN] = donor_cluster
-        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN] = recipient_cluster
+        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN] = (
+            donor_cluster
+        )
+        result[
+            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
+        ] = recipient_cluster
         result["SamplingStrategy"] = "donor_pool"
         result["RandomSeed"] = seed
         result["MeanDelta(Substituted-Original)"] = (

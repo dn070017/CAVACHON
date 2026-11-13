@@ -13,7 +13,4 @@ class EarlyStoppingCallback(tf.keras.callbacks.EarlyStopping):
         super().on_train_end(logs)
         if stopped_epoch > 0 and self.restore_best_weights:
             epoch = self._cumulative_offset + self.best_epoch
-            print(
-                f"\033[91mRestoring Model Weights from Epoch {epoch}"
-                f"\033[0m"
-            )
+            print(f"\033[91mRestoring Model Weights from Epoch {epoch}\033[0m")

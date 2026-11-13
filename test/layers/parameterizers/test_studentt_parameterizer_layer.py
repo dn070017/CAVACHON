@@ -11,7 +11,9 @@ def test_shape_and_linear_reference():
     assert out.shape == (3, 6)
     assert tuple(layer.weight.shape) == (4, 6)
     assert tuple(layer.bias.shape) == (1, 6)
-    np.testing.assert_allclose(out, x.numpy() @ layer.weight.numpy() + layer.bias.numpy(), rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(
+        out, x.numpy() @ layer.weight.numpy() + layer.bias.numpy(), rtol=1e-5, atol=1e-6
+    )
 
 
 def test_weights_registered():
@@ -29,5 +31,7 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = StudenttParameterizerLayer.from_config(StudenttParameterizerLayer(**dict(event_dims=3)).get_config())
+    clone = StudenttParameterizerLayer.from_config(
+        StudenttParameterizerLayer(**dict(event_dims=3)).get_config()
+    )
     assert clone.event_dims == 3

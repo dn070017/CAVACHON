@@ -73,8 +73,12 @@ class HierarchicalEncoder(tf.keras.Model):
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)
         self.r_network = tf.keras.Sequential(
-            [tf.keras.layers.Dense(n_latent_dims, use_bias=use_bias, name=f"{name}_r_dense")],
-            name=Constants.MODULE_R_NETWORK
+            [
+                tf.keras.layers.Dense(
+                    n_latent_dims, use_bias=use_bias, name=f"{name}_r_dense"
+                )
+            ],
+            name=Constants.MODULE_R_NETWORK,
         )
         # loc_weight is the first weight of the parameterizer, so
         # b_network.get_weights()[0] remains the linear map of the loc.
@@ -82,8 +86,7 @@ class HierarchicalEncoder(tf.keras.Model):
             n_latent_dims, name=f"{name}_b_parameterizer"
         )
         self.b_network = tf.keras.Sequential(
-            [self.z_hat_parameterizer],
-            name=Constants.MODULE_B_NETWORK
+            [self.z_hat_parameterizer], name=Constants.MODULE_B_NETWORK
         )
 
     def call(

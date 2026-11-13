@@ -33,7 +33,10 @@ class TestTrainingOrder:
         # level 0: A, B; level 1: C, D -> flattened one component per step
         assert scheduler.training_order == [["A"], ["B"], ["C"], ["D"]]
         assert scheduler.run_progressive_training == {
-            "A": False, "B": False, "C": True, "D": True,
+            "A": False,
+            "B": False,
+            "C": True,
+            "D": True,
         }
 
     def test_level_is_max_parent_level_plus_one(self, fakes):
@@ -86,7 +89,8 @@ class TestModalityWeight:
         scheduler, _ = make_scheduler(configs)
         assert scheduler.modality_weight["A"] == {"rna": pytest.approx(1.0)}
         assert scheduler.modality_weight["B"] == {
-            "rna": pytest.approx(0.5), "atac": pytest.approx(0.5),
+            "rna": pytest.approx(0.5),
+            "atac": pytest.approx(0.5),
         }
 
     @pytest.mark.xfail(
@@ -191,8 +195,12 @@ class TestSetComponentWeights:
         configs = [make_config("A", n_vars={"rna": 100, "atac": 300})]
         s, model = make_scheduler(configs, learn_z_hat=("A",))
         s._set_component_weights(
-            "A", data_scale=2.0, gmm_kl=0.3, standard_kl=0.7,
-            z_hat_density=0.4, z_hat_gmm_kl=0.9,
+            "A",
+            data_scale=2.0,
+            gmm_kl=0.3,
+            standard_kl=0.7,
+            z_hat_density=0.4,
+            z_hat_gmm_kl=0.9,
         )
         assert model._gmm_kl_weights["A"].state == ("pin", pytest.approx(0.3))
         assert model._standard_kl_weights["A"].state == ("pin", pytest.approx(0.7))
@@ -200,7 +208,10 @@ class TestSetComponentWeights:
         assert float(model._z_hat_density_weights["A"]) == pytest.approx(0.4)
         # data weight = modality weight * data_scale
         assert model._data_loss_weights["A"]["rna"].state == ("pin", pytest.approx(1.5))
-        assert model._data_loss_weights["A"]["atac"].state == ("pin", pytest.approx(0.5))
+        assert model._data_loss_weights["A"]["atac"].state == (
+            "pin",
+            pytest.approx(0.5),
+        )
 
     def test_none_leaves_z_hat_weights_untouched(self, fakes):
         configs = [make_config("A")]

@@ -8,6 +8,7 @@ z_hat sampler fake adds Z_HAT_SHIFT (=100) to the loc so that z and z_hat
 can never be confused silently. One test runs the real
 modules.base.HierarchicalEncoder with its cavachon.layers deps patched.
 """
+
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -17,8 +18,15 @@ from cavachon.environment.constants import Constants
 from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 
 from .conftest import (
-    BATCH, MODALITIES, N_BATCH_EFFECT, N_LATENT, N_PRIORS, N_VARS,
-    Z_HAT_SHIFT, make_batch, make_component,
+    BATCH,
+    MODALITIES,
+    N_BATCH_EFFECT,
+    N_LATENT,
+    N_PRIORS,
+    N_VARS,
+    Z_HAT_SHIFT,
+    make_batch,
+    make_component,
 )
 
 Z = Constants.MODULE_INPUTS_CONDITIONED_Z
@@ -37,8 +45,13 @@ def test_root_output_keys_and_shapes(fakes):
     c = make_component()
     out = c(make_batch(), training=False)
     assert set(out) == {
-        "z", "z_hat", "z_parameters", "z_hat_parameters", "z_prior_parameters",
-        "rna_x_parameters", "atac_x_parameters",
+        "z",
+        "z_hat",
+        "z_parameters",
+        "z_hat_parameters",
+        "z_prior_parameters",
+        "rna_x_parameters",
+        "atac_x_parameters",
     }
     assert out["z"].shape == (BATCH, N_LATENT)
     assert out["z_hat"].shape == (BATCH, N_LATENT)
@@ -57,7 +70,9 @@ def test_root_z_hat_is_z_and_hierarchical_encoder_unused(fakes):
     np.testing.assert_allclose(out["z_parameters"].numpy(), z_params, rtol=1e-5)
     np.testing.assert_allclose(out["z"].numpy(), z_params[:, :N_LATENT], rtol=1e-5)
     np.testing.assert_allclose(out["z_hat"].numpy(), out["z"].numpy())
-    np.testing.assert_allclose(out["z_hat_parameters"].numpy(), out["z_parameters"].numpy())
+    np.testing.assert_allclose(
+        out["z_hat_parameters"].numpy(), out["z_parameters"].numpy()
+    )
     assert c.hierarchical_encoder.training_calls == []
     # the z_hat sampler is never used for a root
     assert c.z_hat_sampler.training_calls == []
@@ -95,9 +110,7 @@ def test_batch_dimension_not_hard_coded(fakes, batch_size):
 # ---------------------------------------------------------------------------
 # conditioning on parents
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize(
-    "z_dims, z_hat_dims", [(2, None), (None, 3), (2, 3)]
-)
+@pytest.mark.parametrize("z_dims, z_hat_dims", [(2, None), (None, 3), (2, 3)])
 def test_child_hierarchical_encoder_receives_own_z_and_parent_tensors(
     fakes, z_dims, z_hat_dims
 ):
@@ -144,7 +157,9 @@ def test_decoders_receive_z_hat_not_z_and_own_batch_effect(fakes):
     for m in MODALITIES:
         matrix = c.decoders[m].last_inputs["matrix"].numpy()
         np.testing.assert_allclose(matrix[:, :N_LATENT], out["z_hat"].numpy())
-        np.testing.assert_allclose(matrix[:, N_LATENT:], batch[f"{m}_batch_effect"].numpy())
+        np.testing.assert_allclose(
+            matrix[:, N_LATENT:], batch[f"{m}_batch_effect"].numpy()
+        )
         assert matrix.shape[1] == N_LATENT + N_BATCH_EFFECT[m]
     # z_hat really differs from z here (shifted sampler)
     assert not np.allclose(out["z_hat"].numpy(), out["z"].numpy())
@@ -174,7 +189,9 @@ def test_real_hierarchical_encoder_concat_order(
     c.hierarchical_encoder.r_network.layers[0].kernel.assign(np.eye(N_LATENT))
     batch = make_batch(z_dims=2, z_hat_dims=2)
     out = c(batch)
-    expected = np.concatenate([batch[Z].numpy(), batch[ZH].numpy(), out["z"].numpy()], -1)
+    expected = np.concatenate(
+        [batch[Z].numpy(), batch[ZH].numpy(), out["z"].numpy()], -1
+    )
     np.testing.assert_allclose(out["z_hat_parameters"].numpy(), expected, rtol=1e-6)
     via_api = c.hierarchical_encode(batch, out["z"])
     np.testing.assert_allclose(via_api["z_hat_parameters"].numpy(), expected, rtol=1e-6)
@@ -203,8 +220,14 @@ def test_gradient_flows_to_parent_inputs_and_own_encoder(fakes):
 def test_call_propagates_training_flag(fakes, training):
     c = make_component(z_dims=2)
     c(make_batch(z_dims=2), training=training)
-    modules = [c.preprocessor, c.encoder, c.z_sampler, c.hierarchical_encoder,
-               c.z_hat_sampler, *c.decoders.values()]
+    modules = [
+        c.preprocessor,
+        c.encoder,
+        c.z_sampler,
+        c.hierarchical_encoder,
+        c.z_hat_sampler,
+        *c.decoders.values(),
+    ]
     for module in modules:
         assert module.training_calls[-1] is training, module.name
 
@@ -213,8 +236,14 @@ def test_call_propagates_training_flag(fakes, training):
 def test_split_api_propagates_training_flag(fakes, training):
     c = make_component(z_dims=2)
     batch = make_batch(z_dims=2)
-    for module in [c.preprocessor, c.encoder, c.z_sampler, c.hierarchical_encoder,
-                   c.z_hat_sampler, *c.decoders.values()]:
+    for module in [
+        c.preprocessor,
+        c.encoder,
+        c.z_sampler,
+        c.hierarchical_encoder,
+        c.z_hat_sampler,
+        *c.decoders.values(),
+    ]:
         module.training_calls.clear()
     enc = c.encode(batch, training=training)
     hier = c.hierarchical_encode(batch, enc["z"], training=training)
@@ -242,7 +271,9 @@ def test_split_api_matches_call(fakes):
     dec = c.decode(batch, hier["z_hat"])
     assert set(dec) == {"rna_x_parameters", "atac_x_parameters"}
     for key, value in {**enc, **hier, **dec}.items():
-        np.testing.assert_allclose(value.numpy(), full[key].numpy(), rtol=1e-5, err_msg=key)
+        np.testing.assert_allclose(
+            value.numpy(), full[key].numpy(), rtol=1e-5, err_msg=key
+        )
 
 
 def test_hierarchical_encode_root_returns_z_only(fakes):
@@ -276,7 +307,9 @@ def test_decode_missing_decoder_raises(fakes):
         c.decode(make_batch(), tf.zeros((BATCH, N_LATENT)))
 
 
-@pytest.mark.parametrize("method, name", [("hierarchical_encode", "z"), ("decode", "z_hat")])
+@pytest.mark.parametrize(
+    "method, name", [("hierarchical_encode", "z"), ("decode", "z_hat")]
+)
 def test_rank_assertions(fakes, method, name):
     # NOTE: the docstrings promise tf.errors.InvalidArgumentError, but for a
     # statically known rank tf.debugging.assert_rank raises ValueError.

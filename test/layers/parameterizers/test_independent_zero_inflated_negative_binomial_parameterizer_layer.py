@@ -34,8 +34,13 @@ def test_numeric_reference_independent():
     xn = x.numpy()
     logits = xn @ layer.logits_weight.numpy() + layer.logits_bias.numpy()
     means = _softmax(xn @ layer.mean_weight.numpy() + layer.mean_bias.numpy())
-    disp = np.maximum(_sigmoid(xn @ layer.dispersion_weight.numpy() + layer.dispersion_bias.numpy()), 0.1)
-    np.testing.assert_allclose(out, np.concatenate([logits, means, disp], -1), rtol=1e-5, atol=1e-6)
+    disp = np.maximum(
+        _sigmoid(xn @ layer.dispersion_weight.numpy() + layer.dispersion_bias.numpy()),
+        0.1,
+    )
+    np.testing.assert_allclose(
+        out, np.concatenate([logits, means, disp], -1), rtol=1e-5, atol=1e-6
+    )
 
 
 def test_shared_dispersion_independent_of_input():
@@ -68,5 +73,7 @@ def test_get_config_contains_init_args():
 
 def test_from_config_round_trip():
     # regression: __init__ lacked **kwargs, so from_config (trainable/dtype) raised TypeError
-    clone = ZINB.from_config(ZINB(**dict(event_dims=3, use_shared_dispersion=True)).get_config())
+    clone = ZINB.from_config(
+        ZINB(**dict(event_dims=3, use_shared_dispersion=True)).get_config()
+    )
     assert clone.event_dims == 3 and clone.use_shared_dispersion is True

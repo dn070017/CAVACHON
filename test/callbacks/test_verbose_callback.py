@@ -107,8 +107,7 @@ def test_epoch_begin_banner_without_epoch_counts(capsys, clock):
     cb = VerboseCallback(labels=[("rna", 2)])
     cb.on_epoch_begin(0)
     assert capsys.readouterr().out == (
-        f"{RED}Phase 1. Regular Training{RESET} "
-        f"[{C[2]}{BOLD}rna{RESET}]{RED}{RESET}\n"
+        f"{RED}Phase 1. Regular Training{RESET} [{C[2]}{BOLD}rna{RESET}]{RED}{RESET}\n"
     )
 
 

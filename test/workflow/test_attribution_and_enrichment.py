@@ -66,7 +66,9 @@ def tables(deps):
     deps.EnrichmentAnalysis._output_name.side_effect = lambda root, f: f"out-{f.stem}"
 
     def set_tables(items):
-        deps.EnrichmentAnalysis.find_deg_tables.side_effect = lambda *a, **k: iter(list(items))
+        deps.EnrichmentAnalysis.find_deg_tables.side_effect = lambda *a, **k: iter(
+            list(items)
+        )
 
     return set_tables
 
@@ -159,7 +161,9 @@ def test_attribution_hdeg_uses_donor_and_recipient(deps, tables, attributed):
     assert list(call.kwargs["group_b_index"]) == ["cell0", "cell1"]
 
 
-def test_attribution_writes_table_and_radviz(deps, tables, attributed, makedirs, to_csv_calls):
+def test_attribution_writes_table_and_radviz(
+    deps, tables, attributed, makedirs, to_csv_calls
+):
     path = Path("/out/differential_analysis/sub/t1.tsv")
     tables([(path, labelled_table(GROUP_A, GROUP_B, "x", "y"))])
     wf = attr_workflow([attr_cfg()])
@@ -185,7 +189,14 @@ def test_attribution_writes_table_and_radviz(deps, tables, attributed, makedirs,
 
 
 def test_attribution_single_wrt_skips_radviz(deps, tables, attributed, to_csv_calls):
-    tables([(Path("/out/differential_analysis/t.tsv"), labelled_table(GROUP_A, GROUP_B, "x", "y"))])
+    tables(
+        [
+            (
+                Path("/out/differential_analysis/t.tsv"),
+                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+            )
+        ]
+    )
     wf = attr_workflow([attr_cfg(with_respect_to=["parent"])])
     wf.perform_differential_attribution_analysis()
 
@@ -194,18 +205,30 @@ def test_attribution_single_wrt_skips_radviz(deps, tables, attributed, to_csv_ca
 
 
 @pytest.mark.parametrize("result", [None, pd.DataFrame()], ids=["none", "empty"])
-def test_attribution_empty_result_writes_nothing(deps, tables, makedirs, to_csv_calls, result):
-    deps.DifferentialAttributionAnalysis.return_value.from_deg_file.return_value = result
+def test_attribution_empty_result_writes_nothing(
+    deps, tables, makedirs, to_csv_calls, result
+):
+    deps.DifferentialAttributionAnalysis.return_value.from_deg_file.return_value = (
+        result
+    )
     tables(
         [
-            (Path("/out/differential_analysis/t1.tsv"), labelled_table(GROUP_A, GROUP_B, "x", "y")),
-            (Path("/out/differential_analysis/t2.tsv"), labelled_table(GROUP_A, GROUP_B, "y", "z")),
+            (
+                Path("/out/differential_analysis/t1.tsv"),
+                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+            ),
+            (
+                Path("/out/differential_analysis/t2.tsv"),
+                labelled_table(GROUP_A, GROUP_B, "y", "z"),
+            ),
         ]
     )
     wf = attr_workflow([attr_cfg()])
     wf.perform_differential_attribution_analysis()
 
-    assert deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_count == 2
+    assert (
+        deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_count == 2
+    )
     makedirs.assert_not_called()
     assert to_csv_calls == []
     deps.InteractiveVisualization.differential_attribution_radviz.assert_not_called()
@@ -224,14 +247,22 @@ def test_attribution_only_uses_tables_of_configured_component(deps, tables, attr
     root = Path("/out/differential_analysis")
     tables(
         [
-            (root / "rna_comp_a_cluster_comp_a_x_y.tsv", labelled_table(GROUP_A, GROUP_B, "x", "y")),
-            (root / "rna_comp_b_cluster_comp_b_x_y.tsv", labelled_table(GROUP_A, GROUP_B, "x", "y")),
+            (
+                root / "rna_comp_a_cluster_comp_a_x_y.tsv",
+                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+            ),
+            (
+                root / "rna_comp_b_cluster_comp_b_x_y.tsv",
+                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+            ),
         ]
     )
     wf = attr_workflow([attr_cfg(component="comp_b", use_cluster="cluster_comp")])
     wf.perform_differential_attribution_analysis()
 
-    calls = deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_args_list
+    calls = (
+        deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_args_list
+    )
     assert [Path(c.kwargs["deg_file"]).name for c in calls] == [
         "rna_comp_b_cluster_comp_b_x_y.tsv"
     ]
@@ -246,7 +277,14 @@ def test_attribution_non_string_cluster_labels(deps, tables, attributed):
     # annotation column holds integers. The workflow str()s the label but
     # compares it to the raw obs column, so both group indices are empty and
     # from_deg_file is still called.
-    tables([(Path("/out/differential_analysis/t.tsv"), labelled_table(GROUP_A, GROUP_B, 0, 2))])
+    tables(
+        [
+            (
+                Path("/out/differential_analysis/t.tsv"),
+                labelled_table(GROUP_A, GROUP_B, 0, 2),
+            )
+        ]
+    )
     wf = attr_workflow([attr_cfg()], cluster=(0, 0, 1, 1, 2, 2))
     wf.perform_differential_attribution_analysis()
 
@@ -309,7 +347,10 @@ def test_enrichment_arguments(deps, analysis_type, source):
 
 def test_enrichment_one_analysis_per_config(deps):
     config = make_config()
-    config.analysis.enrichment_analysis = [enrich_cfg("deg", "A"), enrich_cfg("hdeg", "B")]
+    config.analysis.enrichment_analysis = [
+        enrich_cfg("deg", "A"),
+        enrich_cfg("hdeg", "B"),
+    ]
     make_workflow(config).perform_enrichment_analysis()
 
     assert deps.EnrichmentAnalysis.call_args_list == [
@@ -330,7 +371,9 @@ def test_enrichment_nothing_configured(deps, makedirs):
 
 
 def test_enrichment_errors_propagate(deps):
-    deps.EnrichmentAnalysis.return_value.run_directory.side_effect = ValueError("No DEG/HDEG tables")
+    deps.EnrichmentAnalysis.return_value.run_directory.side_effect = ValueError(
+        "No DEG/HDEG tables"
+    )
     config = make_config()
     config.analysis.enrichment_analysis = [enrich_cfg()]
     with pytest.raises(ValueError, match="No DEG/HDEG tables"):

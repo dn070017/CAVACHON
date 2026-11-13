@@ -8,6 +8,7 @@ the real constructor contracts: `weight` is a float that is wrapped into a
 (fake) ProgressiveScaler with scale=float(weight); the density fake keeps
 the weight object it is given, like GMMDensityLoss does.
 """
+
 import warnings
 
 import pytest

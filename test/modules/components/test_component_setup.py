@@ -7,6 +7,7 @@ patched in the cavachon.modules.components.component namespace. The real
 HierarchicalEncoder is used only with its cavachon.layers dependencies
 patched in cavachon.modules.base.hierarchical_encoder.
 """
+
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -17,8 +18,15 @@ from cavachon.modules.base.hierarchical_encoder import HierarchicalEncoder
 from cavachon.modules.components.component import Component
 
 from .conftest import (
-    BATCH, DISTRIBUTIONS, MODALITIES, N_BATCH_EFFECT, N_LATENT, N_PRIORS,
-    N_VARS, make_batch, make_component,
+    BATCH,
+    DISTRIBUTIONS,
+    MODALITIES,
+    N_BATCH_EFFECT,
+    N_LATENT,
+    N_PRIORS,
+    N_VARS,
+    make_batch,
+    make_component,
 )
 
 Z = Constants.MODULE_INPUTS_CONDITIONED_Z
@@ -31,7 +39,10 @@ ZH = Constants.MODULE_INPUTS_CONDITIONED_Z_HAT
 def test_setup_inputs_root_keys_shapes_and_names():
     inputs = Component.setup_inputs(MODALITIES, N_VARS, N_BATCH_EFFECT)
     assert list(inputs) == [
-        "rna_matrix", "rna_batch_effect", "atac_matrix", "atac_batch_effect",
+        "rna_matrix",
+        "rna_batch_effect",
+        "atac_matrix",
+        "atac_batch_effect",
     ]
     for m in MODALITIES:
         x = inputs[f"{m}_matrix"]
@@ -65,8 +76,12 @@ def test_setup_inputs_only_z_hat_conditional():
 # ---------------------------------------------------------------------------
 def test_setup_preprocessor_forwards_arguments(fakes):
     p = Component.setup_preprocessor(
-        modality_names=MODALITIES, distribution_names=DISTRIBUTIONS,
-        n_vars=N_VARS, n_dims=13, name="pp", unrelated="ignored",
+        modality_names=MODALITIES,
+        distribution_names=DISTRIBUTIONS,
+        n_vars=N_VARS,
+        n_dims=13,
+        name="pp",
+        unrelated="ignored",
     )
     assert isinstance(p, fakes.Preprocessor)
     assert p.modality_names == MODALITIES
@@ -110,8 +125,12 @@ def test_setup_decoders_does_not_mutate_mapping(fakes):
 
 
 def test_setup_prior_parameterizers(fakes):
-    zp = Component.setup_z_prior_parameterizer(n_latent_dims=3, n_latent_priors=7, name="zp")
-    zhp = Component.setup_z_hat_prior_parameterizer(n_latent_dims=4, n_latent_priors=9, name="zhp")
+    zp = Component.setup_z_prior_parameterizer(
+        n_latent_dims=3, n_latent_priors=7, name="zp"
+    )
+    zhp = Component.setup_z_hat_prior_parameterizer(
+        n_latent_dims=4, n_latent_priors=9, name="zhp"
+    )
     assert (zp.event_dims, zp.n_components, zp.name) == (3, 7, "zp")
     assert (zhp.event_dims, zhp.n_components, zhp.name) == (4, 9, "zhp")
 
@@ -125,8 +144,11 @@ def test_samplers_z_stochastic_and_z_hat_deterministic(fakes):
 
 def test_setup_hierarchical_encoder_forwards_flags_and_use_bias(fakes):
     h = Component.setup_hierarchical_encoder(
-        n_latent_dims=3, is_conditioned_on_z=True, is_conditioned_on_z_hat=False,
-        use_bias=True, name="he",
+        n_latent_dims=3,
+        is_conditioned_on_z=True,
+        is_conditioned_on_z_hat=False,
+        use_bias=True,
+        name="he",
     )
     assert isinstance(h, fakes.HierarchicalEncoder)
     assert h.n_latent_dims == 3
@@ -171,12 +193,17 @@ def test_make_root_wires_builders_and_names(fakes):
     assert c.z_sampler.name == "root_z_sampler"
     assert c.z_hat_sampler.name == "root_z_hat_sampler"
     assert {m: d.name for m, d in c.decoders.items()} == {
-        "rna": "root_rna", "atac": "root_atac",
+        "rna": "root_rna",
+        "atac": "root_atac",
     }
     # the preprocessor reduces to the widest encoder layer
     assert c.preprocessor.n_dims == c.encoder.max_n_neurons == 7
-    assert (c.z_prior_parameterizer.event_dims, c.z_prior_parameterizer.n_components) == (
-        N_LATENT, N_PRIORS,
+    assert (
+        c.z_prior_parameterizer.event_dims,
+        c.z_prior_parameterizer.n_components,
+    ) == (
+        N_LATENT,
+        N_PRIORS,
     )
     assert c.z_hat_prior_parameterizer is None
     assert c.learn_z_hat_priors is False
@@ -210,8 +237,12 @@ def test_make_learn_z_hat_priors_none_is_false(fakes):
 
 @pytest.mark.parametrize(
     "z_dims, z_hat_dims, flags",
-    [(2, None, (True, False)), (None, 3, (False, True)), (2, 3, (True, True)),
-     (None, None, (False, False))],
+    [
+        (2, None, (True, False)),
+        (None, 3, (False, True)),
+        (2, 3, (True, True)),
+        (None, None, (False, False)),
+    ],
 )
 def test_make_hierarchical_encoder_condition_flags(fakes, z_dims, z_hat_dims, flags):
     c = make_component(z_dims=z_dims, z_hat_dims=z_hat_dims)
@@ -336,7 +367,9 @@ def test_prepare_hierarchical_encoder_inputs():
 
 def test_prepare_decoder_inputs_concat_order_and_libsize():
     batch = make_batch()
-    z_hat = tf.constant(np.arange(BATCH * N_LATENT, dtype=np.float32).reshape(BATCH, N_LATENT))
+    z_hat = tf.constant(
+        np.arange(BATCH * N_LATENT, dtype=np.float32).reshape(BATCH, N_LATENT)
+    )
     libsize = tf.fill((BATCH, 1), 3.0)
     out = Component.prepare_decoder_inputs(
         batch, "rna", z_hat, {"rna_matrix_libsize": libsize}

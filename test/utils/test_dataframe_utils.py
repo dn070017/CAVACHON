@@ -15,7 +15,11 @@ def series():
 
 
 def test_operator_tables_have_same_keys():
-    assert set(THRESHOLD_OPERATORS) == set(THRESHOLD_OPERATOR_SYMBOLS) == {"leq", "geq", "lt", "gt"}
+    assert (
+        set(THRESHOLD_OPERATORS)
+        == set(THRESHOLD_OPERATOR_SYMBOLS)
+        == {"leq", "geq", "lt", "gt"}
+    )
 
 
 @pytest.mark.parametrize(

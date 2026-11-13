@@ -179,9 +179,7 @@ class Model(tf.keras.Model):
         n_vars = dict()
         n_vars_batch_effect = dict()
         for component_config in component_configs:
-            modality_names = modality_names.union(
-                set(component_config.modality_names)
-            )
+            modality_names = modality_names.union(set(component_config.modality_names))
             distributions.update(component_config.distribution_names)
             n_vars.update(component_config.n_vars)
             n_vars_batch_effect.update(component_config.n_vars_batch_effect)
@@ -563,11 +561,12 @@ class Model(tf.keras.Model):
                     # scale is the target weight; the scheduler keeps it
                     # pinned at 0 until the z_hat annealing phase.
                     z_hat_kl_name = (
-                        f"{component_name}_"
-                        f"{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
+                        f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
                     )
                     z_hat_kl_weight = getattr(component_config, "z_hat_kl_weight", None)
-                    z_hat_kl_weight = 1.0 if z_hat_kl_weight is None else z_hat_kl_weight
+                    z_hat_kl_weight = (
+                        1.0 if z_hat_kl_weight is None else z_hat_kl_weight
+                    )
                     if z_hat_kl_weight > 0 and z_hat_kl_name not in loss:
                         loss[z_hat_kl_name] = GMMKLDivergence(
                             weight=z_hat_kl_weight, name=z_hat_kl_name
@@ -693,8 +692,7 @@ class Model(tf.keras.Model):
 
                 # z_hat GMM density loss (deterministic prior density)
                 z_hat_density_name = (
-                    f"{component_name}_"
-                    f"{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
                 )
                 if z_hat_density_name in self.loss:
                     z_hat_prior_params = results.get(
@@ -709,8 +707,7 @@ class Model(tf.keras.Model):
 
                 # z_hat GMM KL divergence (stochastic z_hat)
                 z_hat_kl_name = (
-                    f"{component_name}_"
-                    f"{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
+                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
                 )
                 if z_hat_kl_name in self.loss:
                     z_hat_concat = tf.keras.layers.Lambda(
@@ -733,7 +730,7 @@ class Model(tf.keras.Model):
                     )
                     y_pred.setdefault(z_hat_kl_name, z_hat_concat)
 
-            #loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
+            # loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
             loss_values = []
             for key in y_true:
                 loss_fn = self.loss.get(key)
@@ -744,7 +741,7 @@ class Model(tf.keras.Model):
 
             if self.losses:
                 loss += tf.add_n(self.losses)
-            
+
             trainable = self.trainable_variables
             gradients = tape.gradient(loss, trainable)
             gradients = TensorUtils.remove_nan_gradients(gradients)

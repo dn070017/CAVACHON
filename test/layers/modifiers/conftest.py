@@ -6,6 +6,7 @@ replaced by a MagicMock at its lookup site in each modifier module, with a
 stand-in return value (True only for ``tf.SparseTensor``).
 ``cavachon.environment.Constants`` is plain constants and stays real.
 """
+
 import importlib
 from unittest import mock
 

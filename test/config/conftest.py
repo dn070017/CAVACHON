@@ -59,7 +59,9 @@ def fake_os(monkeypatch):
     monkeypatch.setattr(
         io_config_module,
         "os",
-        SimpleNamespace(path=SimpleNamespace(realpath=realpath, dirname=os.path.dirname)),
+        SimpleNamespace(
+            path=SimpleNamespace(realpath=realpath, dirname=os.path.dirname)
+        ),
     )
     monkeypatch.setattr(
         application_config_module,

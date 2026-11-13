@@ -44,7 +44,10 @@ class TestModifyOutputs:
 
     def test_scale_then_exp(self):
         out = Parameterizer.modify_outputs(
-            {L: tf.constant(L_VAL)}, tf.constant(X_VAL), libsize_scaling=True, exp_transform=True
+            {L: tf.constant(L_VAL)},
+            tf.constant(X_VAL),
+            libsize_scaling=True,
+            exp_transform=True,
         )
         np.testing.assert_allclose(out.numpy(), np.exp(X_VAL * L_VAL), rtol=1e-6)
 
@@ -52,7 +55,9 @@ class TestModifyOutputs:
 class TestMake:
     def test_reflection_and_layer_arguments(self, fake_layer):
         model = Parameterizer.make(input_dims=4, event_dims=2, name="param")
-        fake_layer.assert_called_once_with("Parameterizer", "layers/parameterizers", "Layer")
+        fake_layer.assert_called_once_with(
+            "Parameterizer", "layers/parameterizers", "Layer"
+        )
         layer = FakeParameterizerLayer.instances[0]
         assert layer.event_dims == 2
         assert layer.name == "param"
@@ -92,15 +97,21 @@ class TestMake:
         model = Parameterizer.make(input_dims=4, event_dims=2, libsize_scaling=True)
         inputs = {X: tf.constant(X_VAL), L: tf.constant(L_VAL)}
         np.testing.assert_allclose(
-            model.compute_attribution_target(inputs).numpy(), model(inputs).numpy(), rtol=1e-6
+            model.compute_attribution_target(inputs).numpy(),
+            model(inputs).numpy(),
+            rtol=1e-6,
         )
         # attribution path goes through the same layer object
-        np.testing.assert_allclose(FakeParameterizerLayer.instances[0].calls[-1].numpy(), X_VAL)
+        np.testing.assert_allclose(
+            FakeParameterizerLayer.instances[0].calls[-1].numpy(), X_VAL
+        )
 
     def test_compute_attribution_target_applies_exp_eagerly(self, fake_layer):
         model = Parameterizer.make(input_dims=4, event_dims=2, libsize_scaling=True)
         model.exp_transform = True  # eager path of modify_outputs supports exp
         inputs = {X: tf.constant(X_VAL), L: tf.constant(L_VAL)}
         np.testing.assert_allclose(
-            model.compute_attribution_target(inputs).numpy(), np.exp(X_VAL * L_VAL), rtol=1e-6
+            model.compute_attribution_target(inputs).numpy(),
+            np.exp(X_VAL * L_VAL),
+            rtol=1e-6,
         )

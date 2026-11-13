@@ -35,7 +35,9 @@ class TestConstruction:
         get_class, _ = patched
         DecoderDataParameterizer("IndependentZeroInflatedNegativeBinomial", name="dec")
         get_class.assert_called_once_with(
-            "IndependentZeroInflatedNegativeBinomial", "modules/parameterizers", "Parameterizer"
+            "IndependentZeroInflatedNegativeBinomial",
+            "modules/parameterizers",
+            "Parameterizer",
         )
 
     def test_backbone_name_and_activation(self, patched):
@@ -51,7 +53,11 @@ class TestConstruction:
     def test_parameterizer_make_arguments(self, patched):
         dec = DecoderDataParameterizer("Dist", n_vars=11, name="dec")
         assert FakeParameterizer.make_calls == [
-            dict(input_dims=4, event_dims=11, name=f"dec_{Constants.MODULE_X_PARAMETERIZER}")
+            dict(
+                input_dims=4,
+                event_dims=11,
+                name=f"dec_{Constants.MODULE_X_PARAMETERIZER}",
+            )
         ]
         assert isinstance(dec.x_parameterizer, FakeParameterizer)
 
@@ -61,7 +67,8 @@ class TestConstruction:
             mock.MagicMock(return_value=FakeParameterizer),
         )
         monkeypatch.setattr(
-            f"{MODULE}.TensorUtils.create_backbone_layers", backbone_factory(units=(9, 7, 13))
+            f"{MODULE}.TensorUtils.create_backbone_layers",
+            backbone_factory(units=(9, 7, 13)),
         )
         DecoderDataParameterizer("Dist", n_vars=2, name="dec")
         assert FakeParameterizer.make_calls[0]["input_dims"] == 13
@@ -89,7 +96,9 @@ class TestCall:
         _, backbone = patched
         dec = DecoderDataParameterizer("Dist", n_vars=3, name="dec")
         x = _x()
-        out = dec({Constants.TENSOR_NAME_X: x, Constants.TENSOR_NAME_LIBSIZE: tf.ones((2, 1))})
+        out = dec(
+            {Constants.TENSOR_NAME_X: x, Constants.TENSOR_NAME_LIBSIZE: tf.ones((2, 1))}
+        )
         recorder = backbone.created[0].layers[0]
         np.testing.assert_allclose(recorder.calls[-1]["inputs"].numpy(), x.numpy())
         assert tuple(out.shape) == (2, 4)
@@ -97,11 +106,18 @@ class TestCall:
     def test_parameterizer_receives_backbone_output_without_libsize(self, patched):
         dec = DecoderDataParameterizer("Dist", n_vars=3, name="dec")
         x = _x()
-        out = dec({Constants.TENSOR_NAME_X: x, Constants.TENSOR_NAME_LIBSIZE: 5 * tf.ones((2, 1))})
+        out = dec(
+            {
+                Constants.TENSOR_NAME_X: x,
+                Constants.TENSOR_NAME_LIBSIZE: 5 * tf.ones((2, 1)),
+            }
+        )
         expected = dec.backbone_network(x)
         last = dec.x_parameterizer.calls[-1]["inputs"]
         assert set(last) == {Constants.TENSOR_NAME_X}
-        np.testing.assert_allclose(last[Constants.TENSOR_NAME_X].numpy(), expected.numpy(), atol=1e-6)
+        np.testing.assert_allclose(
+            last[Constants.TENSOR_NAME_X].numpy(), expected.numpy(), atol=1e-6
+        )
         np.testing.assert_allclose(out.numpy(), expected.numpy(), atol=1e-6)
 
     def test_libsize_forwarded_when_parameterizer_scales(self, patched):
@@ -112,7 +128,9 @@ class TestCall:
         out = dec({Constants.TENSOR_NAME_X: x, Constants.TENSOR_NAME_LIBSIZE: libsize})
         last = dec.x_parameterizer.calls[-1]["inputs"]
         assert set(last) == {Constants.TENSOR_NAME_X, Constants.TENSOR_NAME_LIBSIZE}
-        np.testing.assert_allclose(last[Constants.TENSOR_NAME_LIBSIZE].numpy(), libsize.numpy())
+        np.testing.assert_allclose(
+            last[Constants.TENSOR_NAME_LIBSIZE].numpy(), libsize.numpy()
+        )
         expected = dec.backbone_network(x).numpy() * libsize.numpy()
         np.testing.assert_allclose(out.numpy(), expected, atol=1e-6)
 
@@ -135,16 +153,23 @@ class TestCall:
         )
         assert backbone.created[0].layers[0].calls[-1]["training"] is False
         att = dec.x_parameterizer.attribution_calls[-1]
-        np.testing.assert_allclose(att[Constants.TENSOR_NAME_LIBSIZE].numpy(), libsize.numpy())
+        np.testing.assert_allclose(
+            att[Constants.TENSOR_NAME_LIBSIZE].numpy(), libsize.numpy()
+        )
         expected = dec.backbone_network(x).numpy() + 100.0
         np.testing.assert_allclose(out.numpy(), expected, atol=1e-6)
 
     def test_compute_attribution_target_no_libsize(self, patched):
         dec = DecoderDataParameterizer("Dist", n_vars=3, name="dec")
         dec.compute_attribution_target(
-            {Constants.TENSOR_NAME_X: _x(), Constants.TENSOR_NAME_LIBSIZE: tf.ones((2, 1))}
+            {
+                Constants.TENSOR_NAME_X: _x(),
+                Constants.TENSOR_NAME_LIBSIZE: tf.ones((2, 1)),
+            }
         )
-        assert set(dec.x_parameterizer.attribution_calls[-1]) == {Constants.TENSOR_NAME_X}
+        assert set(dec.x_parameterizer.attribution_calls[-1]) == {
+            Constants.TENSOR_NAME_X
+        }
 
     def test_train_step_not_implemented(self, patched):
         dec = DecoderDataParameterizer("Dist", name="dec")

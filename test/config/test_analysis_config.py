@@ -42,7 +42,9 @@ def test_clustering_use_rep_invalid(rep):
 
 @pytest.mark.parametrize("n", [0, -1])
 def test_clustering_min_n_obs_positive(n):
-    with pytest.raises(ValidationError, match=f"min_n_obs should be a positive integer, got {n}"):
+    with pytest.raises(
+        ValidationError, match=f"min_n_obs should be a positive integer, got {n}"
+    ):
         AnalysisClusteringConfig(min_n_obs=n)
 
 
@@ -76,10 +78,15 @@ def test_differential_attribution_validation():
         AnalysisDifferentialAttributionConfig(threshold_operator="eq")
     with pytest.raises(ValidationError, match="n_steps"):
         AnalysisDifferentialAttributionConfig(n_steps=0)
-    with pytest.raises(ValidationError, match="n_steps should be a positive integer, got -1"):
+    with pytest.raises(
+        ValidationError, match="n_steps should be a positive integer, got -1"
+    ):
         AnalysisDifferentialAttributionConfig(n_steps=-1)
     assert AnalysisDifferentialAttributionConfig(n_steps=1).n_steps == 1
-    assert AnalysisDifferentialAttributionConfig(analysis_type="hdeg").analysis_type == "hdeg"
+    assert (
+        AnalysisDifferentialAttributionConfig(analysis_type="hdeg").analysis_type
+        == "hdeg"
+    )
 
 
 # ---------------------------------------------------------------- visualize
@@ -133,7 +140,9 @@ def test_hierarchical_defaults():
 def test_hierarchical_use_cluster_default_matches_differential():
     h = AnalysisHierarchicalDifferentialAnalysisConfig(modality="RNA", component="RNA")
     assert h.use_cluster == "cluster_RNA"
-    explicit = AnalysisHierarchicalDifferentialAnalysisConfig(component="RNA", use_cluster="ct")
+    explicit = AnalysisHierarchicalDifferentialAnalysisConfig(
+        component="RNA", use_cluster="ct"
+    )
     assert explicit.use_cluster == "ct"
 
 

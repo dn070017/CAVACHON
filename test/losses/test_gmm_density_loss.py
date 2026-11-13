@@ -68,7 +68,9 @@ def test_tf_variable_weight():
     y_true, z, ref = _inputs()
     w = tf.Variable(2.0, trainable=False)
     loss = GMMDensityLoss(weight=w)
-    np.testing.assert_allclose(loss(y_true, z), -2.0 * np.mean(ref.log_prob(z)), rtol=1e-5)
+    np.testing.assert_allclose(
+        loss(y_true, z), -2.0 * np.mean(ref.log_prob(z)), rtol=1e-5
+    )
     w.assign(0.0)
     np.testing.assert_allclose(loss(y_true, z), 0.0, atol=1e-7)
 
@@ -89,7 +91,9 @@ def test_progressive_scaler_weight_supported(fakes):
     y_true, z, ref = _inputs()
     scaler = fakes.scaler_cls(total_iterations=1, scale=2.0)
     loss = GMMDensityLoss(weight=scaler)
-    np.testing.assert_allclose(loss(y_true, z), -2.0 * np.mean(ref.log_prob(z)), rtol=1e-5)
+    np.testing.assert_allclose(
+        loss(y_true, z), -2.0 * np.mean(ref.log_prob(z)), rtol=1e-5
+    )
     assert scaler.call_args[-1].shape == ()
     np.testing.assert_allclose(scaler.call_args[-1], 1.0)
 
@@ -97,4 +101,6 @@ def test_progressive_scaler_weight_supported(fakes):
 def test_float_weight():
     y_true, z, ref = _inputs()
     loss = GMMDensityLoss(weight=0.5)
-    np.testing.assert_allclose(loss(y_true, z), -0.5 * np.mean(ref.log_prob(z)), rtol=1e-5)
+    np.testing.assert_allclose(
+        loss(y_true, z), -0.5 * np.mean(ref.log_prob(z)), rtol=1e-5
+    )

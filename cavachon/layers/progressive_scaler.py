@@ -18,7 +18,13 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
     """
 
-    def __init__(self, total_iterations: int = 5000, scale: float = 1.0, name: str = "progressive_scaler", **kwargs):
+    def __init__(
+        self,
+        total_iterations: int = 5000,
+        scale: float = 1.0,
+        name: str = "progressive_scaler",
+        **kwargs,
+    ):
         """Constructor for ProgressiveScaler
 
         Parameters
@@ -34,7 +40,9 @@ class ProgressiveScaler(tf.keras.layers.Layer):
 
         """
         super().__init__(name=name, **kwargs)
-        self.total_iterations = tf.Variable(total_iterations, trainable=False, dtype=tf.float32)
+        self.total_iterations = tf.Variable(
+            total_iterations, trainable=False, dtype=tf.float32
+        )
         self.current_iteration = tf.Variable(tf.ones(()), trainable=False)
         self.scale = tf.constant(float(scale), dtype=tf.float32)
 
@@ -68,7 +76,7 @@ class ProgressiveScaler(tf.keras.layers.Layer):
         """
         fraction = self.current_iteration / tf.maximum(self.total_iterations, 1.0)
         fraction = tf.clip_by_value(fraction, 1e-8, 1.0)
-        return fraction ** 2
+        return fraction**2
 
     def numpy(self):
         """Return current effective weight = scale × progress as a Python float."""

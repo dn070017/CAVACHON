@@ -24,9 +24,14 @@ def _inputs(batch=5, k=3, d=2, seed=0):
     z = (q_loc + q_scale * rng.normal(size=(batch, d))).astype(np.float32)
     y_pred = np.concatenate([z, q_loc, q_scale], -1)
     return dict(
-        logits=logits, p_loc=p_loc, p_scale=p_scale,
+        logits=logits,
+        p_loc=p_loc,
+        p_scale=p_scale,
         y_true=tf.constant(y_true),
-        q_loc=q_loc, q_scale=q_scale, z=z, y_pred=tf.constant(y_pred),
+        q_loc=q_loc,
+        q_scale=q_scale,
+        z=z,
+        y_pred=tf.constant(y_pred),
     )
 
 
@@ -111,7 +116,9 @@ def test_zero_scaler_output_disables_loss():
 def test_single_component_equals_standard_mc_kl():
     inp = _inputs(k=1)
     q = tfp.distributions.MultivariateNormalDiag(inp["q_loc"], inp["q_scale"])
-    p = tfp.distributions.MultivariateNormalDiag(inp["p_loc"][0, 0], inp["p_scale"][0, 0])
+    p = tfp.distributions.MultivariateNormalDiag(
+        inp["p_loc"][0, 0], inp["p_scale"][0, 0]
+    )
     ref = q.log_prob(inp["z"]) - p.log_prob(inp["z"])
     out = GMMKLDivergence().call(inp["y_true"], inp["y_pred"])
     np.testing.assert_allclose(out, ref, rtol=1e-4, atol=1e-4)

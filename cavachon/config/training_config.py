@@ -93,7 +93,9 @@ class TrainingConfig(BaseConfigModel):
     ``learn_z_hat_priors`` is ignored for them.
     """
 
-    optimizer: OptimizerConfig = Field(default_factory=lambda: OptimizerConfig(name="adam", learning_rate=1e-4))
+    optimizer: OptimizerConfig = Field(
+        default_factory=lambda: OptimizerConfig(name="adam", learning_rate=1e-4)
+    )
     max_regular_training_epochs: int = Field(500, ge=0)
     n_parent_annealing_epochs: int = Field(1, ge=0)
     n_kl_annealing_epochs: int = Field(25, ge=0)

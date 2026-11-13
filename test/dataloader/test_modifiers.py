@@ -4,6 +4,7 @@
 (see ``fake_layers`` in conftest.py); these tests check that each data
 modifier constructs the right layers with the right key and chains them.
 """
+
 from unittest import mock
 
 import numpy as np
@@ -121,7 +122,9 @@ def test_each_layer_called_once_per_call(cls):
 def test_bernoulli_output_with_fakes():
     out = IndependentBernoulliDataModifier("m")(sparse_inputs())
     assert not isinstance(out["m_matrix"], tf.SparseTensor)
-    np.testing.assert_array_equal(out["m_matrix"].numpy(), (X >= 1.0).astype(np.float32))
+    np.testing.assert_array_equal(
+        out["m_matrix"].numpy(), (X >= 1.0).astype(np.float32)
+    )
     np.testing.assert_array_equal(out["m_batch_effect"].numpy(), np.ones((2, 1)))
 
 
@@ -148,7 +151,9 @@ def test_modifier_missing_key_raises(cls):
 def test_modifier_traceable_inside_dataset_map(cls):
     ds = tf.data.Dataset.from_tensor_slices(sparse_inputs()).map(cls("m"))
     rows = np.stack([e["m_matrix"].numpy() for e in ds])
-    expected = (X >= 1.0).astype(np.float32) if cls is IndependentBernoulliDataModifier else X
+    expected = (
+        (X >= 1.0).astype(np.float32) if cls is IndependentBernoulliDataModifier else X
+    )
     np.testing.assert_array_equal(rows, expected)
 
 

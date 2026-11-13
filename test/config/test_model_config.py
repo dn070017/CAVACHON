@@ -1,4 +1,3 @@
-
 from cavachon.config import (
     ComponentConfig,
     DatasetConfig,
