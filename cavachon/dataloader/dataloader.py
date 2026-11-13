@@ -52,7 +52,7 @@ class DataLoader:
         batch_size: int = 128,
         batch_effect_colnames: Mapping[str, List[str]] = dict(),
         distribution_names: Mapping[str, str] = dict(),
-        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]] = dict(),
+        batch_effect_encoders: Optional[Dict[str, Dict[str, LabelEncoder]]] = None,
     ) -> None:
         """Constructor for DataLoader
 
@@ -80,7 +80,22 @@ class DataLoader:
             adata.uns['cavachon']['distribution'] will be used.
             Defaults to {}.
 
+        batch_effect_encoders: Optional[Dict[str, Dict[str, LabelEncoder]]], optional
+            fitted encoders to reuse for the batch effect columns. The
+            keys are the modality names, the values map the batch
+            effect column names to the encoders. The provided
+            dictionary is updated inplace. Defaults to None (a new
+            dictionary for this DataLoader).
+
+        Raises
+        ------
+        ValueError
+            if the modalities in mdata do not share the same obs_names
+            in the same order.
+
         """
+        if batch_effect_encoders is None:
+            batch_effect_encoders = dict()
         self.batch_effect_encoder: Dict[str, LabelEncoder] = dict()
         self.batch_effect_encoders = batch_effect_encoders
         self.n_vars_batch_effect: Dict[str, int] = dict()
@@ -117,6 +132,7 @@ class DataLoader:
         """
         tensor_mapping = dict()
         modality_names = self.mdata.mod.keys()
+        self.check_obs_aligned()
         for modality_name in modality_names:
             adata = self.mdata[modality_name]
             data_tensor = TensorUtils.spmatrix_to_sparse_tensor(adata.X)
@@ -130,6 +146,34 @@ class DataLoader:
             )
 
         self.dataset = tf.data.Dataset.from_tensor_slices(tensor_mapping)
+
+    def check_obs_aligned(self) -> None:
+        """Check that all modalities have the same obs_names in the
+        same order. The tensors of different modalities are paired by
+        row position, so a different order would silently pair
+        different cells.
+
+        Raises
+        ------
+        ValueError
+            if the obs_names of any modality differ (in content or in
+            order) from those of the first modality.
+
+        """
+        reference_name = None
+        reference_obs_names = None
+        for modality_name, adata in self.mdata.mod.items():
+            if reference_obs_names is None:
+                reference_name = modality_name
+                reference_obs_names = adata.obs_names
+            elif not adata.obs_names.equals(reference_obs_names):
+                raise ValueError(
+                    f"obs_names of modality '{modality_name}' do not match those of "
+                    f"modality '{reference_name}' (same cells in the same order are "
+                    "required). Align the modalities first, e.g. with MultiModality."
+                )
+
+        return
 
     def setup_batch_effect_tensor(
         self,

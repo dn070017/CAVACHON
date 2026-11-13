@@ -273,7 +273,8 @@ class TensorUtils:
         Parameters
         ----------
         spmatrix: sparse matrix
-            the provided matrix
+            the provided matrix. Dense array-like inputs are converted
+            to sparse matrix first.
 
         Returns
         -------
@@ -281,7 +282,10 @@ class TensorUtils:
             the created SparseTensor.
 
         """
-        coo_matrix = spmatrix.tocoo()
+        if scipy.sparse.issparse(spmatrix):
+            coo_matrix = spmatrix.tocoo()
+        else:
+            coo_matrix = scipy.sparse.coo_matrix(np.asarray(spmatrix))
         indices = np.mat([coo_matrix.row, coo_matrix.col]).transpose()
         sparse_tensor = tf.SparseTensor(indices, coo_matrix.data, coo_matrix.shape)
         return tf.sparse.reorder(tf.cast(sparse_tensor, tf.float32))

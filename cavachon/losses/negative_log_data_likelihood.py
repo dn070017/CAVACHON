@@ -73,6 +73,12 @@ class NegativeLogDataLikelihood(tf.keras.losses.Loss):
             the computed NegativeLogDataLikelihood loss
         """
         dist_x_z = self.dist_x_z_class.from_parameterizer_output(y_pred)
-        logpx_z = tf.reduce_sum(dist_x_z.log_prob(y_true), axis=-1)
+        logpx_z = dist_x_z.log_prob(y_true)
+        # independent distributions return per-feature log_prob
+        # (batch_dims, event_dims), while distributions with a vector
+        # event (e.g. MultivariateNormalDiag) already return
+        # per-sample log_prob (batch_dims, ).
+        if logpx_z.shape.rank == y_true.shape.rank:
+            logpx_z = tf.reduce_sum(logpx_z, axis=-1)
 
         return -self.weight(tf.ones(())) * logpx_z

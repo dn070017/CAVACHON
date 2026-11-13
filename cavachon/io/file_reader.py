@@ -102,8 +102,15 @@ class FileReader:
             var_df_list.append(var_df)
             matrix_list.append(matrix)
 
+        # samples share the same features, only the cells are stacked.
+        modality_var_df = var_df_list[0]
+        for sample_name, var_df in zip(config_sample_list[1:], var_df_list[1:]):
+            if not var_df.index.equals(modality_var_df.index):
+                raise ValueError(
+                    f"Features of sample '{sample_name}' do not match those of sample "
+                    f"'{config_sample_list[0]}' for modality '{modality_name}'."
+                )
         modality_obs_df = pd.concat(obs_df_list, axis=0)
-        modality_var_df = pd.concat(var_df_list, axis=0)
         modality_matrix = vstack(matrix_list)
 
         adata = AnnData(X=modality_matrix, dtype=np.float32)
@@ -161,7 +168,8 @@ class FileReader:
         if has_headers:
             header = 0
         df = pd.read_csv(filename, sep=delimiter, header=header, **kwargs)
-        if colnames is not None:
+        # an empty colnames (the config default) means not provided.
+        if colnames:
             df.columns = colnames
             if not isinstance(index_col, int):
                 index_col = colnames.index(index_col)
