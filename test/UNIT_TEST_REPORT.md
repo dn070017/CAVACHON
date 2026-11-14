@@ -30,9 +30,12 @@ Packages that import from exactly 4 other cavachon packages were added later, un
 | modules (components) | `test/modules/components` | 93 | 11 | (included above) |
 | model | `test/model` | 91 | 6 | 99% |
 | workflow | `test/workflow` | 86 | 3 | 100% |
-| **Whole suite (latest)** | | **1430** | **41** | |
+| tools (differential, hierarchical, differential attribution) | `test/tools/differential` | 74 | 2 | 99–100% |
+| tools (cluster, attribution) | `test/tools/cluster_attribution` | 41 | 6 | 99–100% |
+| tools (interactive visualization, enrichment) | `test/tools/visualization_enrichment` | 108 | 6 | 99–100% |
+| **Whole suite (latest)** | | **1653** | **55** | |
 
-`tools` is the only package without tests; it was deferred on purpose.
+Every package now has tests. See [Tools](#tools) for the tools findings.
 
 ### Isolation (mocking policy)
 
@@ -388,6 +391,51 @@ Code inside the package stays real. For example, `Component` tests may use the r
   - `save_z_hat` is built from `save_z` and never used; this is dead code.
   - Recompiling reuses the existing losses, so new weights for existing losses are ignored. The scheduler relies on this.
   - The losses are evaluated twice per training step, once for the loss and once for the metrics.
+
+## Tools
+
+**Rules:** the same isolation rules apply.
+- `DataLoader`, `ReflectionHandler`, the distribution classes, `MultivariateNormalDiagSampler`, `Model` and `Component` are patched where each tools module looks them up.
+- Models are small deterministic fakes built from tf ops, so gradients flow. Other tools classes imported by `interactive_visualization` / `enrichment_analysis` are mocks.
+- **gseapy is always mocked** (`get_library` downloads gene sets). `Figure.write_html` / `write_image` / `show`, `Path.mkdir`, `TemporaryDirectory`, `copytree` and `pd.read_csv` are recorders, so there is no file or network I/O.
+- TSNE and UMAP are replaced by a deterministic fake; PCA runs for real.
+
+**Checked and correct:**
+- Bayes factor / K values against hand computation, and the seeded global batch effect in `compute_x_means`.
+- `DifferentialAttributionAnalysis` integrated gradients: exact for a linear model, completeness holds, and contributions sum to 1 (0 instead of NaN when nothing changes).
+- Hierarchical donor substitution: the same donor cell is used for every donor component, and other components are untouched.
+- Cluster posteriors: rows logsumexp to 0, match the analytic sigmoid for two 1-D clusters, and don't depend on batch size. Bhattacharyya distance and moment-matched merging are checked by hand.
+- Figures: trace data, labels and axis titles; `write_html` is called only when a filename is given.
+
+### Bugs (strict xfails)
+
+| # | Location | Issue | Production impact |
+|---|---|---|---|
+| T1 | `attribution_analysis.py:146-163` | **Integrated gradients carry an extra factor of alpha.** The target is f(alpha·z) but the gradient is taken w.r.t. z, which gives alpha·f'(alpha·z). Completeness fails: with a linear decoder and steps=10, each attribution is 0.45× the correct value. (`DifferentialAttributionAnalysis` does it correctly.) | **Yes**: every attribution score is shrunk, nonlinearly for nonlinear decoders |
+| T2 | `cluster_analysis.py:486` | `_recombine_gmm_parameters` computes the child variance as `(W_r**2) @ (W_child**2)` instead of `(W_r @ W_child)**2`, so cross terms are dropped. W_r=[[1,1]], W_child=[[1],[1]], σ²=1 gives 2, expected 4. | **Yes**: wrong z_hat cluster covariances for children |
+| T3 | `cluster_analysis.py:546-566` | `_remove_small_clusters`: an empty cluster that isn't removed keeps its logpy_z column, but labels are renumbered 0..k, so `obs` labels and `obsm` columns disagree. Empty columns are dropped only when something else is removed. | Yes, when a prior component wins no cells |
+| T4 | `differential_analysis.py:142, 224` | `keep_only_significant` uses abs(K). Identical decoded means give P(A>B)=P(B>A)=0, K≈-16, so the feature is kept as "significant" and sorted to the top. | Yes, for features with no difference at all |
+| T5 | `differential_analysis.py:307-340`, `cluster_analysis.py:101, 149`, `attribution_analysis.py:68-75` | `batch_effect_colnames=None` / `distribution_names=None` defaults go straight into `DataLoader`, which calls `.get()` on them, so AttributeError. The hierarchical / differential-attribution subclasses already use `or {}`. | Only when called with defaults (the workflow always passes both) |
+| T6 | `attribution_analysis.py:183` | `compute_attribution_target_batch` returns None for an unknown component; the caller then fails with an unclear AttributeError on `.shape`. | Only on a typo in the component name |
+| T7 | `interactive_visualization.py:89-103` | `bar()` ignores `**kwargs` (title, axis titles) when `group` is None. | Cosmetic |
+| T8 | `interactive_visualization.py:200` | `adata.uns.get("cavachon", "").get(...)`: `'str' has no attribute 'get'` when uns has no `cavachon` entry. | Only for AnnData not produced by cavachon |
+| T9 | `interactive_visualization.py:540-544` | `attribution_score` writes every `with_respect_to` figure to the same filename; only the last survives. | Yes, with 2+ `with_respect_to` |
+| T10 | `interactive_visualization.py:848` | `float(x[:-2])` on gseapy's `"12.35%"` gives 12.3; should strip only `%`. | Small numeric error in ring plots |
+| T11 | `interactive_visualization.py:956-1041` | `prerank_enrichment_score` passes the full `Target` column as hover text to traces that plot a subset, so hover labels are offset. | Misleading hover labels |
+| T12 | `enrichment_analysis.py:286-292` | `run()` applies the **term** threshold (default FDR q-val <= 0.05) to the **DEG ranking** column, keeping only genes with K <= 0.05. Added on purpose in a841a53 with `min_num_degs`, but one threshold can't serve both. Needs the author's call. | **Yes**, if unintended: the ranked list fed to prerank is mostly discarded |
+
+### Worth a look (not marked as bugs)
+- `_merge_similar_gmm_components` returns early when `n_clusters <= max_k`, so with the default `max_k=100` the Bhattacharyya `bc_threshold` merge never runs. The agglomerative path can hit a ZeroDivisionError if `fcluster` returns fewer than `max_k` clusters.
+- `compute_attribution_target_batch` scales **every** component's z by alpha, not only `with_respect_to`, so the IG baseline is "all latents zero".
+- The `HierarchicalDifferentialAnalysis.across_clusters_pairwise` parameter list differs from the base (`donor_components` where the base has `z_sampling_size`): a `type: ignore[override]` marks it.
+- `across_clusters` with a single cluster or a NaN label crashes with numpy's "'a' cannot be empty"; results are keyed by the raw label (int keys despite `Mapping[str, ...]`).
+- `compute_differential_attribution(n_steps=0)` silently returns NaN.
+- `differential_volcano_plot` adds columns to the caller's DataFrame; `prerank_ringplot` crashes on an empty selection and always filters `<=` regardless of `threshold_operator`; `_safe_filename` can collide (`"A B"` and `"A/B"`).
+- `compute_neighbors_with_same_annotations` writes `obsm["z_custom"]` into the user's MuData.
+- Docstrings: `z_sampling_size` default (10 vs 5), radviz `logfc_column` default, contingency matrix "var" vs obs.
+
+### Typing
+`pixi run mypy` now reports no errors in the whole package. In tools, `embedding(color=...)` is annotated `Optional[str]` (a list never worked), `differential_volcano_plot` raises a ValueError when `component`/`modality` are missing (it previously crashed with KeyError later), and the remaining `type: ignore`s mark T5 (12 lines), T6 and the override above.
 
 ## Suspicious but not marked as bugs
 
