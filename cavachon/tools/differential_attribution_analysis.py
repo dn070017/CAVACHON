@@ -1,6 +1,6 @@
 import gc
 import warnings
-from typing import List, Mapping, Optional, Sequence, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Union
 
 import muon as mu
 import numpy as np
@@ -68,8 +68,8 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             self.batch_effect_encoders,
         )
 
-        sums = dict()
-        counts = dict()
+        sums: Dict[str, List[tf.Tensor]] = dict()
+        counts: Dict[str, List[tf.Tensor]] = dict()
         for batch in dataloader:
             encode_outputs = self.model.encode(batch, training=False)
             z = encode_outputs[Constants.MODEL_OUTPUTS_Z]

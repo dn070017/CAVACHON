@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Mapping
 from itertools import combinations
+from typing import Any
 
 import muon as mu
 import numpy as np
@@ -104,7 +105,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         return result
 
     def _build_batch_effect(self, batch_size: int) -> Mapping[str, tf.Tensor]:
-        batch_effect = dict()
+        # holds a list of per-batch tensors first, then their concatenation
+        batch_effect: dict[str, Any] = dict()
         dataloader = self._make_dataloader(self.mdata, batch_size)
 
         for batch in dataloader:
@@ -286,8 +288,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         batch_effect = self._build_batch_effect(batch_size)
 
-        x_means_substituted = []
-        x_means_original = []
+        x_means_substituted_list: list[np.ndarray] = []
+        x_means_original_list: list[np.ndarray] = []
         for _ in tqdm(range(n_samples), desc=desc, leave=False):
             recipient_mdata = self.sample_mdata_x(
                 recipient_index, x_sampling_size=len(recipient_index)
@@ -296,7 +298,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
             recipient_dataset = self._require_dataset(recipient_dataloader)
 
-            x_means_substituted.append(
+            x_means_substituted_list.append(
                 self._compute_substituted_x_means(
                     dataset=recipient_dataset,
                     component=component,
@@ -306,7 +308,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     batch_size=batch_size,
                 )
             )
-            x_means_original.append(
+            x_means_original_list.append(
                 self.compute_x_means(
                     dataset=recipient_dataset,
                     component=component,
@@ -316,8 +318,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 )
             )
 
-        x_means_substituted = np.vstack(x_means_substituted)
-        x_means_original = np.vstack(x_means_original)
+        x_means_substituted = np.vstack(x_means_substituted_list)
+        x_means_original = np.vstack(x_means_original_list)
         var_index = self.mdata.mod[modality].var.index
 
         result = self.compute_bayesian_factor(
@@ -343,7 +345,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         return result
 
-    def across_clusters_pairwise(
+    def across_clusters_pairwise(  # type: ignore[override]  # deliberately different parameters (donor substitution), not a drop-in for the base method
         self,
         component: str,
         modality: str,

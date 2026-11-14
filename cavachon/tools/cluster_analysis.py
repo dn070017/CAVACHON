@@ -59,7 +59,7 @@ class ClusterAnalysis:
         distribution_names: Optional[Dict[str, str]] = None,
         batch_size: int = 128,
         min_n_obs=36,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Compute the log probability of a sample being assigned to
         each cluster in the latent space of the specified component.
 
@@ -96,14 +96,19 @@ class ClusterAnalysis:
             params["mu"], params["sigma2"], params["pi"]
         )
 
-        z_all = []
+        z_all_list: List[np.ndarray] = []
         dataloader = DataLoader(
-            self.mdata, batch_size, batch_effect_colnames, distribution_names
+            self.mdata,
+            batch_size,
+            # BUG: DataLoader expects Mappings and calls .get() on them,
+            # so the default None crashes there.
+            batch_effect_colnames,  # type: ignore[arg-type]
+            distribution_names,  # type: ignore[arg-type]
         )
         for batch_data in tqdm(dataloader):
             outputs = self.model(batch_data, training=False)
-            z_all.append(outputs[f"{component}_z"].numpy())
-        z_all = np.vstack(z_all)
+            z_all_list.append(outputs[f"{component}_z"].numpy())
+        z_all = np.vstack(z_all_list)
 
         logpy_z = self._score_and_cluster(
             z_all,
@@ -127,7 +132,7 @@ class ClusterAnalysis:
         distribution_names: Optional[Dict[str, str]] = None,
         batch_size: int = 128,
         min_n_obs=36,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Compute direct learned-prior cluster log probabilities in z_hat space."""
         component_obj = self.model.components[component]
         prior = component_obj.z_hat_prior_parameterizer
@@ -144,14 +149,19 @@ class ClusterAnalysis:
             params["mu"], params["sigma2"], params["pi"]
         )
 
-        z_hat_all = []
+        z_hat_all_list: List[np.ndarray] = []
         dataloader = DataLoader(
-            self.mdata, batch_size, batch_effect_colnames, distribution_names
+            self.mdata,
+            batch_size,
+            # BUG: DataLoader expects Mappings and calls .get() on them,
+            # so the default None crashes there.
+            batch_effect_colnames,  # type: ignore[arg-type]
+            distribution_names,  # type: ignore[arg-type]
         )
         for batch_data in tqdm(dataloader):
             outputs = self.model(batch_data, training=False)
-            z_hat_all.append(outputs[f"{component}_z_hat"].numpy())
-        z_hat_all = np.vstack(z_hat_all)
+            z_hat_all_list.append(outputs[f"{component}_z_hat"].numpy())
+        z_hat_all = np.vstack(z_hat_all_list)
 
         logpy_zhat = self._score_and_cluster(
             z_hat_all,
@@ -615,7 +625,7 @@ class ClusterAnalysis:
         small_cluster_label: str = "Unassigned",
         bc_threshold: float = 0.8,
         max_k: Optional[int] = 100,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Compute the log probability of a sample being assigned to
         each *integrated* cluster in z_hat space for a hierarchical
         component.
@@ -748,7 +758,7 @@ class ClusterAnalysis:
         self,
         modality: str,
         use_cluster: str,
-        use_rep: Union[str, np.array],
+        use_rep: Union[str, np.ndarray],
         n_neighbors: Union[int, Sequence[int]] = list(range(5, 25)),
     ) -> pd.DataFrame:
         """Perform K-nearest neighbor analysis.

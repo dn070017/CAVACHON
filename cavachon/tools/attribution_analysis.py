@@ -68,8 +68,10 @@ class AttributionAnalysis:
         self.dataloader = DataLoader(
             self.mdata,
             1,
-            batch_effect_colnames,
-            distribution_names,
+            # BUG: DataLoader expects Mappings and calls .get() on them,
+            # so the default None crashes there.
+            batch_effect_colnames,  # type: ignore[arg-type]
+            distribution_names,  # type: ignore[arg-type]
             batch_effect_encoders,
         )
 
@@ -113,6 +115,7 @@ class AttributionAnalysis:
             integrated gradients of ∂rho_m/∂z_m.
 
         """
+        selected_indices: Sequence[int]
         if selected_variables is not None:
             selected_indices = [
                 self.mdata[modality].var.index.get_loc(var)
@@ -122,6 +125,8 @@ class AttributionAnalysis:
             selected_indices = range(self.mdata[modality].var.shape[0])
 
         progress_message = "Computing integrated gradient"
+        # DataLoader.__init__ always builds the dataset.
+        assert self.dataloader.dataset is not None
         integrated_gradients = []
         for batch in tqdm(
             self.dataloader.dataset.batch(batch_size),
@@ -173,7 +178,9 @@ class AttributionAnalysis:
 
         return integrated_gradients
 
-    def compute_attribution_target_batch(
+    # BUG: falls through and returns None when `component` is not in
+    # self.model.component_configs.
+    def compute_attribution_target_batch(  # type: ignore[return]
         self,
         batch: Mapping[str, tf.Tensor],
         component: str,
@@ -217,8 +224,8 @@ class AttributionAnalysis:
             data distribution of the variables.
 
         """
-        z_conditional = dict()
-        z_hat_conditional = dict()
+        z_conditional: Dict[str, tf.Tensor] = dict()
+        z_hat_conditional: Dict[str, tf.Tensor] = dict()
         for component_config in self.model.component_configs:
             component_name = component_config.name
             component_network = self.model.components.get(component_name)

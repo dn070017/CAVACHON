@@ -1,6 +1,6 @@
 import warnings
 from itertools import combinations
-from typing import Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 import muon as mu
 import numpy as np
@@ -115,7 +115,7 @@ class DifferentialAnalysis:
             5.  the Bayesian factor of K(A>B|Z)
             6.  the Bayesian factor of K(B>A|Z)
         """
-        results = dict()
+        results: Dict[str, pd.DataFrame] = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
         for cluster_a, cluster_b in tqdm(
@@ -199,7 +199,7 @@ class DifferentialAnalysis:
             5.  the Bayesian factor of K(A>B|Z)
             6.  the Bayesian factor of K(B>A|Z)
         """
-        results = dict()
+        results: Dict[str, pd.DataFrame] = dict()
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
         for cluster in tqdm(unique_clusters, desc="Across clusters"):
@@ -294,17 +294,18 @@ class DifferentialAnalysis:
             when labels are provided.
 
         """
-        x_means_a = []
-        x_means_b = []
+        x_means_a_list: List[np.ndarray] = []
+        x_means_b_list: List[np.ndarray] = []
 
         modality_names = self.mdata.mod.keys()
 
-        batch_effect = dict()
+        # holds a list of per-batch tensors first, then their concatenation
+        batch_effect: Dict[str, Any] = dict()
         dataloader = DataLoader(
             self.mdata,
             batch_size,
-            self.batch_effect_colnames,
-            self.distribution_names,
+            self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+            self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
             self.batch_effect_encoders,
         )
 
@@ -328,21 +329,21 @@ class DifferentialAnalysis:
             dataloader_group_a = DataLoader(
                 mdata_group_a,
                 batch_size,
-                self.batch_effect_colnames,
-                self.distribution_names,
+                self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+                self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
                 self.batch_effect_encoders,
             )
             dataloader_group_b = DataLoader(
                 mdata_group_b,
                 batch_size,
-                self.batch_effect_colnames,
-                self.distribution_names,
+                self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+                self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
                 self.batch_effect_encoders,
             )
             batch_size = min(
                 dataloader_group_a.batch_size, dataloader_group_b.batch_size
             )
-            x_means_a.append(
+            x_means_a_list.append(
                 self.compute_x_means(
                     dataset=dataloader_group_a.dataset,
                     component=component,
@@ -351,7 +352,7 @@ class DifferentialAnalysis:
                     batch_size=batch_size,
                 )
             )
-            x_means_b.append(
+            x_means_b_list.append(
                 self.compute_x_means(
                     dataset=dataloader_group_b.dataset,
                     component=component,
@@ -361,8 +362,8 @@ class DifferentialAnalysis:
                 )
             )
 
-        x_means_a = np.vstack(x_means_a)
-        x_means_b = np.vstack(x_means_b)
+        x_means_a = np.vstack(x_means_a_list)
+        x_means_b = np.vstack(x_means_b_list)
         index = self.mdata.mod[modality].var.index
 
         result = self.compute_bayesian_factor(x_means_a, x_means_b, index)
@@ -494,19 +495,19 @@ class DifferentialAnalysis:
 
     def compute_bayesian_factor(
         self,
-        x_means_a: np.array,
-        x_means_b: np.array,
+        x_means_a: np.ndarray,
+        x_means_b: np.ndarray,
         index: Union[pd.Index, Sequence[str]],
     ) -> pd.DataFrame:
         """Compute the Bayesian factor of two groups.
 
         Parameters
         ----------
-        x_means_a : np.array
+        x_means_a : np.ndarray
             the means of the generative data distribution of the first
             group.
 
-        x_means_b : np.array
+        x_means_b : np.ndarray
             the means of the generative data distribution of the second
             group.
 

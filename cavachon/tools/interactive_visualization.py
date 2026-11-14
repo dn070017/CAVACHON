@@ -135,8 +135,8 @@ class InteractiveVisualization:
         adata: anndata.AnnData,
         method: str = "tsne",
         filename: Optional[str] = None,
-        use_rep: Union[str, np.array] = "z",
-        color: Union[str, Sequence[str], None] = None,
+        use_rep: Union[str, np.ndarray] = "z",
+        color: Optional[str] = None,
         title: Optional[str] = None,
         color_discrete_sequence: Optional[Sequence[str]] = None,
         force: bool = False,
@@ -305,7 +305,7 @@ class InteractiveVisualization:
         model: tf.keras.Model,
         modality: str,
         use_cluster: str,
-        use_rep: Union[str, np.array],
+        use_rep: Union[str, np.ndarray],
         n_neighbors: Sequence[int] = list(range(5, 25)),
         filename: Optional[str] = None,
         group_by_cluster: bool = False,
@@ -695,13 +695,13 @@ class InteractiveVisualization:
 
     @staticmethod
     def differential_volcano_plot(
-        differential_results: pd.DataFrame = None,
-        mdata: mu.MuData = None,
-        model: tf.keras.Model = None,
-        group_a_index: Union[pd.Index, Sequence[str]] = None,
-        group_b_index: Union[pd.Index, Sequence[str]] = None,
-        component: str = None,
-        modality: str = None,
+        differential_results: Optional[pd.DataFrame] = None,
+        mdata: Optional[mu.MuData] = None,
+        model: Optional[tf.keras.Model] = None,
+        group_a_index: Optional[Union[pd.Index, Sequence[str]]] = None,
+        group_b_index: Optional[Union[pd.Index, Sequence[str]]] = None,
+        component: Optional[str] = None,
+        modality: Optional[str] = None,
         significant_threshold: float = 3.2,
         filename: Optional[str] = None,
         title: str = "Volcano Plot for Differential Analysis",
@@ -760,6 +760,11 @@ class InteractiveVisualization:
 
         """
         if differential_results is None:
+            if component is None or modality is None:
+                raise ValueError(
+                    "component and modality are required when "
+                    "differential_results is not provided."
+                )
             analysis = DifferentialAnalysis(mdata=mdata, model=model)
             differential_results = analysis.between_two_groups(
                 group_a_index=group_a_index,
