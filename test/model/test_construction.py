@@ -6,6 +6,7 @@ model.py dependencies are patched by the autouse ``fakes`` fixture.
 """
 
 import numpy as np
+import pytest
 import tensorflow as tf
 
 import cavachon.model.model as model_module
@@ -47,7 +48,7 @@ class TestSetupComponents:
             conditioned_on_z=["a", "b"],
             conditioned_on_z_hat=["b"],
         )
-        make_model(a, b, c)
+        model = make_model(a, b, c)
         calls = {kw["name"]: kw for kw in fakes.component.make_calls}
         assert calls["a"]["z_conditional_dims"] is None
         assert calls["a"]["z_hat_conditional_dims"] is None
@@ -57,8 +58,10 @@ class TestSetupComponents:
         # the rest of model_dump() is forwarded verbatim
         assert calls["c"]["conditioned_on_z"] == ["a", "b"]
         assert calls["c"]["latent_dim"] == 4
-        # also written back to the config object
-        assert c.z_conditional_dims == 5 and c.z_hat_conditional_dims == 3
+        # written to the model's own copy of the config, not the caller's
+        (model_c,) = [x for x in model.component_configs if x.name == "c"]
+        assert model_c.z_conditional_dims == 5 and model_c.z_hat_conditional_dims == 3
+        assert not hasattr(c, "z_conditional_dims")
 
     def test_setup_components_returns_union_of_modalities_and_vars(self, fakes):
         a = FakeConfig("a", ["rna"], n_vars={"rna": 4}, n_vars_batch_effect={"rna": 2})
@@ -230,7 +233,23 @@ class TestMakeWiring:
         assert isinstance(model, Model)
         assert model.name == "mymodel"
         assert set(model.components) == {"a", "b"}
-        assert list(model.component_configs) == [a, b]
+        assert [c.name for c in model.component_configs] == ["a", "b"]
+        # the model keeps copies, not the caller's objects
+        assert all(c is not x for c, x in zip(model.component_configs, (a, b)))
+
+    def test_component_configs_are_read_only(self, make_model):
+        a = FakeConfig("a")
+        b = FakeConfig("b", conditioned_on_z=["a"])
+        model = make_model(a, b)
+        configs = model.component_configs
+        assert isinstance(configs, tuple)
+        with pytest.raises(TypeError):
+            configs[0] = FakeConfig("x")
+        # modifying a returned config, or the caller's original, does not
+        # change the model
+        configs[1].conditioned_on_z.append("x")
+        b.conditioned_on_z.append("y")
+        assert model.component_configs[1].conditioned_on_z == ["a"]
 
     def test_default_name(self, make_model):
         assert make_model(FakeConfig("a")).name == "cavachon"

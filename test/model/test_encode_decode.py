@@ -135,15 +135,46 @@ class TestHierarchicalEncode:
         with pytest.raises(ValueError, match="parent z_hat for component 'b': 'a'"):
             model.hierarchical_encode(batch, self._z(), components=["b"])
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: strict=False skips the parent but prepare_component_inputs still concats None",
-    )
-    def test_non_strict_skips_missing_parent(self, model, batch):
+    def test_non_strict_skips_component_with_missing_parent(self, model, batch):
+        # regression: strict=False dropped the parent but still concatenated
+        # None in its place. A component needs all its parents (fixed input
+        # width), so it is skipped instead.
         out = model.hierarchical_encode(
             batch, {"b": tf.ones((3, 2))}, components=["b"], strict=False
         )
-        np.testing.assert_allclose(out["z_hat"]["b"], np.full((3, 2), 21.0))
+        assert out["z_hat"] == {}
+        assert _rec(model, "b").hierarchical_encode_calls == []
+
+    def test_non_strict_skips_children_of_skipped_component(self, make_model, batch):
+        a = FakeConfig("a", ["rna"])
+        b = FakeConfig("b", ["atac"], n_vars={"atac": 3}, conditioned_on_z=["a"])
+        c = FakeConfig("c", ["rna"], conditioned_on_z_hat=["b"])
+        d = FakeConfig("d", ["rna"])
+        model = make_model(a, b, c, d)
+        z = {name: tf.ones((3, 2)) for name in ("b", "c", "d")}  # no z of a
+        out = model.hierarchical_encode(
+            batch, z, components=["b", "c", "d"], strict=False
+        )
+        # b lacks parent a, so c lacks parent z_hat b; d is unaffected
+        assert set(out["z_hat"]) == {"d"}
+
+    @pytest.mark.parametrize("strict", [True, False])
+    def test_parent_width_is_checked(self, model, batch, strict):
+        z = {"a": tf.ones((3, 5)), "b": tf.ones((3, 2))}  # a has 2 latent dims
+        with pytest.raises(
+            ValueError, match="Parent z 'a' of component 'b': expected width 2, got 5"
+        ):
+            model.hierarchical_encode(batch, z, components=["b"], strict=strict)
+
+    def test_parent_z_hat_width_is_checked(self, model, batch):
+        seed = {"a": tf.ones((3, 4))}
+        with pytest.raises(ValueError, match="Parent z_hat 'a' of component 'b'"):
+            model.hierarchical_encode(
+                batch,
+                {"a": tf.ones((3, 2)), "b": tf.ones((3, 2))},
+                z_hat_seed=seed,
+                components=["b"],
+            )
 
     @pytest.mark.parametrize(
         "training,trainable,expected",

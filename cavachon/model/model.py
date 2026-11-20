@@ -1,3 +1,4 @@
+import copy
 import warnings
 from typing import (
     Any,
@@ -41,8 +42,9 @@ class Model(tf.keras.Model):
     components: Mapping[str, Component]
         the components which makes up the model.
 
-    component_configs: List[ComponentConfig]
-        the config used to create the components in the model.
+    component_configs: Tuple[ComponentConfig, ...]
+        the configs the components were built with (read-only copies;
+        the model keeps its own private copy).
 
     """
 
@@ -89,7 +91,18 @@ class Model(tf.keras.Model):
         """
         super().__init__(inputs=inputs, outputs=outputs, name=name)
         self.components: Mapping[str, Component] = components
-        self.component_configs: List[ComponentConfig] = component_configs
+        # a private copy: the model's structure must not change when the
+        # caller (or anyone else) later modifies the configs passed in
+        self._component_configs: List[ComponentConfig] = [
+            copy.deepcopy(config) for config in component_configs
+        ]
+
+    @property
+    def component_configs(self) -> Tuple[ComponentConfig, ...]:
+        """The configs the components were built with, in training
+        order. Read-only: a tuple of copies, so modifying it does not
+        change the model."""
+        return tuple(copy.deepcopy(config) for config in self._component_configs)
 
     @classmethod
     def setup_inputs(
@@ -305,6 +318,9 @@ class Model(tf.keras.Model):
             created model using Tensorflow functional API.
 
         """
+        # work on copies: setup_components writes the conditional dims
+        # into the configs, which must not change the caller's objects
+        component_configs = [copy.deepcopy(config) for config in component_configs]
         components, component_configs, modality_names, n_vars, n_vars_batch_effect = (
             cls.setup_components(component_configs=component_configs, **kwargs)
         )
@@ -365,7 +381,7 @@ class Model(tf.keras.Model):
             save_x: Dict[str, Optional[bool]] = dict()
             save_z: Dict[str, Optional[bool]] = dict()
             save_z_hat: Dict[str, Optional[bool]] = dict()
-            for component_config in self.component_configs:
+            for component_config in self._component_configs:
                 component_name = component_config.name
                 outputs.setdefault(f"{component_name}_z", list())
                 outputs.setdefault(f"{component_name}_z_hat", list())
@@ -478,7 +494,7 @@ class Model(tf.keras.Model):
         if "loss" not in kwargs:
             loss = getattr(self, "loss", None)
             loss = loss if isinstance(loss, dict) else {}
-            for component_config in self.component_configs:
+            for component_config in self._component_configs:
                 component_name = component_config.name
 
                 standard_w = standard_kl_weights.get(component_name, 0.0)
@@ -657,7 +673,7 @@ class Model(tf.keras.Model):
             y_true: Dict[str, Any] = dict()
             y_pred: Dict[str, Any] = dict()
 
-            for component_config in self.component_configs:
+            for component_config in self._component_configs:
                 component_name = component_config.name
 
                 kl_divergence_name = (
@@ -1035,7 +1051,7 @@ class Model(tf.keras.Model):
             Constants.MODEL_OUTPUTS_Z_PARAMS: dict(),
             Constants.MODEL_OUTPUTS_Z: dict(),
         }
-        for component_config in self.component_configs:
+        for component_config in self._component_configs:
             component_name = component_config.name
             if component_name not in requested_components:
                 continue
@@ -1095,8 +1111,10 @@ class Model(tf.keras.Model):
             Component names to process. Defaults to all components.
 
         strict: bool
-            If ``True``, missing parent ``z`` or ``z_hat`` raises
-            ``ValueError``. If ``False``, missing parents are skipped.
+            If ``True``, a missing parent ``z`` or ``z_hat`` raises
+            ``ValueError``. If ``False``, a component with a missing
+            parent is skipped (no ``z_hat`` output), and so are the
+            components conditioned on its ``z_hat``.
 
         training: bool
             Whether to run the sublayers in training mode.
@@ -1109,8 +1127,10 @@ class Model(tf.keras.Model):
         Raises
         ------
         ValueError
-            Raised when unknown components, missing ``z``, or missing
-            required parent values are requested in strict mode.
+            Raised when unknown components or missing ``z`` are
+            requested, when a parent tensor's width differs from the
+            parent's latent dimension, or when parent values are missing
+            in strict mode.
 
         """
         requested_components = set(components or self.components.keys())
@@ -1120,7 +1140,7 @@ class Model(tf.keras.Model):
 
         accumulated_z_hat = dict(z_hat_seed or {})
         outputs: Dict[str, Dict[str, Any]] = {Constants.MODEL_OUTPUTS_Z_HAT: dict()}
-        for component_config in self.component_configs:
+        for component_config in self._component_configs:
             component_name = component_config.name
             if component_name not in requested_components:
                 continue
@@ -1128,25 +1148,29 @@ class Model(tf.keras.Model):
             if component_name not in z:
                 raise ValueError(f"Missing z for component '{component_name}'.")
 
-            z_conditional = dict()
-            for parent_name in component_config.conditioned_on_z:
-                if parent_name in z:
-                    z_conditional[parent_name] = z.get(parent_name)
-                elif strict:
+            z_conditional, missing_z = self._collect_parents(
+                component_name, component_config.conditioned_on_z, z, "z"
+            )
+            z_hat_conditional, missing_z_hat = self._collect_parents(
+                component_name,
+                component_config.conditioned_on_z_hat,
+                accumulated_z_hat,
+                "z_hat",
+            )
+            missing = [("z", name) for name in missing_z] + [
+                ("z_hat", name) for name in missing_z_hat
+            ]
+            if missing:
+                if strict:
+                    kind, parent_name = missing[0]
                     raise ValueError(
-                        "Missing required parent z for component "
+                        f"Missing required parent {kind} for component "
                         f"'{component_name}': '{parent_name}'."
                     )
-
-            z_hat_conditional = dict()
-            for parent_name in component_config.conditioned_on_z_hat:
-                if parent_name in accumulated_z_hat:
-                    z_hat_conditional[parent_name] = accumulated_z_hat.get(parent_name)
-                elif strict:
-                    raise ValueError(
-                        "Missing required parent z_hat for component "
-                        f"'{component_name}': '{parent_name}'."
-                    )
+                # without all its parents the component cannot be encoded
+                # (the hierarchical encoder has a fixed input width), so
+                # it is skipped, and so are its children
+                continue
 
             component_batch = Model.prepare_component_inputs(
                 batch,
@@ -1168,6 +1192,58 @@ class Model(tf.keras.Model):
             outputs[Constants.MODEL_OUTPUTS_Z_HAT][component_name] = component_z_hat
 
         return outputs
+
+    def _collect_parents(
+        self,
+        component_name: str,
+        parent_names: Iterable[str],
+        available: Mapping[str, tf.Tensor],
+        kind: str,
+    ) -> Tuple[Dict[str, tf.Tensor], List[str]]:
+        """Collect the parent tensors of a component and check their
+        widths against the ones the model was built with.
+
+        Parameters
+        ----------
+        component_name: str
+            the child component.
+
+        parent_names: Iterable[str]
+            names of the parents conditioned on (z or z_hat).
+
+        available: Mapping[str, tf.Tensor]
+            component-keyed tensors to take the parents from.
+
+        kind: str
+            "z" or "z_hat" (for error messages).
+
+        Returns
+        -------
+        Tuple[Dict[str, tf.Tensor], List[str]]
+            the parent tensors found, and the names of missing parents.
+
+        Raises
+        ------
+        ValueError
+            if a parent tensor's last dimension differs from the
+            parent's latent dimension.
+        """
+        found: Dict[str, tf.Tensor] = dict()
+        missing: List[str] = list()
+        for parent_name in parent_names:
+            if parent_name not in available:
+                missing.append(parent_name)
+                continue
+            tensor = available[parent_name]
+            expected = self.components[parent_name].z_prior_parameterizer.event_dims
+            width = tensor.shape[-1]
+            if width is not None and width != expected:
+                raise ValueError(
+                    f"Parent {kind} '{parent_name}' of component "
+                    f"'{component_name}': expected width {expected}, got {width}."
+                )
+            found[parent_name] = tensor
+        return found, missing
 
     def decode(
         self,
@@ -1217,7 +1293,7 @@ class Model(tf.keras.Model):
             raise ValueError(f"Unknown component names: {sorted(unknown_components)}")
 
         outputs: Dict[str, Dict[str, Any]] = {Constants.MODEL_OUTPUTS_X_PARAMS: dict()}
-        for component_config in self.component_configs:
+        for component_config in self._component_configs:
             component_name = component_config.name
             if component_name not in requested_components:
                 continue
