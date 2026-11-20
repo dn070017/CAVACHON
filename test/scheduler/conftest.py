@@ -1,7 +1,8 @@
 """Shared fakes for the ``cavachon.scheduler`` unit tests.
 
 Everything the scheduler package imports from other cavachon packages
-(callbacks, EarlyStoppingConfig, the Model and its Components) and mlflow is
+(callbacks, EarlyStoppingConfig, GeneralUtils, the Model and its Components)
+and mlflow is
 replaced by lightweight recording fakes, so only the scheduler code itself
 runs. Loss weights are FakeScaler (ProgressiveScaler-like: pin_to /
 activate) or FakeVar (plain Variable: assign).
@@ -281,6 +282,36 @@ class FakeModel:
 
 
 # ---------------------------------------------------------------------------
+# GeneralUtils.order_components fake
+# ---------------------------------------------------------------------------
+
+
+def fake_order_components(configs):
+    """Reference topological sort with GeneralUtils.order_components's
+    contract: parents before children, config order kept otherwise,
+    ValueError for an unknown parent, AttributeError for a cycle."""
+    configs = list(configs)
+    names = {c.name for c in configs}
+    ordered, done = [], set()
+    remaining = list(configs)
+    while remaining:
+        progressed = False
+        for config in list(remaining):
+            parents = list(config.conditioned_on_z) + list(config.conditioned_on_z_hat)
+            unknown = [p for p in parents if p not in names]
+            if unknown:
+                raise ValueError(f"unknown component {unknown[0]!r}")
+            if all(p in done for p in parents):
+                ordered.append(config)
+                done.add(config.name)
+                remaining.remove(config)
+                progressed = True
+        if not progressed:
+            raise AttributeError("cycle")
+    return ordered
+
+
+# ---------------------------------------------------------------------------
 # Callback fakes
 # ---------------------------------------------------------------------------
 
@@ -340,6 +371,9 @@ def fakes(monkeypatch):
         ),
     )
     monkeypatch.setattr(sts_module, "EarlyStoppingConfig", ns.EarlyStoppingConfig)
+    ns.GeneralUtils = MagicMock(name="GeneralUtils")
+    ns.GeneralUtils.order_components.side_effect = fake_order_components
+    monkeypatch.setattr(sts_module, "GeneralUtils", ns.GeneralUtils)
     ns.mlflow = MagicMock(name="mlflow")
     ns.mlflow.get_experiment_by_name.return_value = SimpleNamespace(
         experiment_id="exp-1"

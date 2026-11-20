@@ -195,11 +195,7 @@ class GMMPriorInitializer:
                 if len(members) > 1
                 else np.full(event_dims, 0.5)
             )
-            scale_biases[k] = np.where(
-                std > 1.0,
-                std - 0.5,  # approximation of the inverse softplus
-                np.log(np.exp(std) - 1 + 1e-7),  # exact inverse softplus
-            )
+            scale_biases[k] = self.inverse_softplus(std)
 
         return GMMPriorEstimate(locs=centers, logits=logits, scale_biases=scale_biases)
 
@@ -225,6 +221,26 @@ class GMMPriorInitializer:
                 )
             )
         prior_layer.logits_bias.assign(tf.constant(estimate.logits, dtype=tf.float32))
+
+    @staticmethod
+    def inverse_softplus(std: np.ndarray) -> np.ndarray:
+        """Bias whose softplus is ``std``: log(exp(std) - 1), written
+        as std + log(1 - exp(-std)) so it neither overflows for large
+        std nor loses precision for small std. std is floored at 1e-6
+        (a cluster of identical points has std 0).
+
+        Parameters
+        ----------
+        std: np.ndarray
+            target standard deviations.
+
+        Returns
+        -------
+        np.ndarray
+            the scale_diag biases, as float32.
+        """
+        std = np.maximum(np.asarray(std, dtype=np.float64), 1e-6)
+        return (std + np.log(-np.expm1(-std))).astype(np.float32)
 
     @staticmethod
     def kmeans_plus_plus(

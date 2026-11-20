@@ -52,12 +52,9 @@ class TestKLSchedule:
         schedule = PhasePlanner.make_kl_schedule("A", 4, (0.5, 0.0, 0.5))
         assert [schedule(e)[GMM] for e in range(4)] == [0.0, 0.0, 1.0, 1.0]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: int() truncation of n*(r0+r1) (0.1+0.7=0.7999..) moves the "
-        "GMM start one epoch early and cuts the crossfade short",
-    )
     def test_crossfade_boundary_robust_to_float_rounding(self):
+        # regression: int() truncation of n*(r0+r1) (0.1+0.7=0.7999..) moved
+        # the GMM start one epoch early and cut the crossfade short
         schedule = PhasePlanner.make_kl_schedule("A", 10, (0.1, 0.7, 0.2))
         # standard KL ends at epoch 1, GMM-only should start at epoch 8:
         # epoch 7 is the last crossfade epoch with t = 6/7
@@ -118,6 +115,20 @@ def _initializer(model=None, add_noise=False):
     return GMMPriorInitializer(
         model, "MDATA", 17, ["A", "B"], add_noise=add_noise, seed=42
     )
+
+
+class TestInverseSoftplus:
+    @pytest.mark.parametrize("std", [1e-3, 0.5, 1.0, 3.0, 10.0, 100.0, 500.0])
+    def test_softplus_recovers_std(self, std):
+        bias = GMMPriorInitializer.inverse_softplus(np.array([std]))
+        assert bias.dtype == np.float32
+        assert np.all(np.isfinite(bias))  # no overflow for large std
+        np.testing.assert_allclose(softplus(bias.astype(np.float64)), [std], rtol=1e-5)
+
+    def test_zero_std_is_floored(self):
+        bias = GMMPriorInitializer.inverse_softplus(np.array([0.0, 2.0]))
+        assert np.all(np.isfinite(bias))
+        assert softplus(float(bias[0])) == pytest.approx(1e-6, rel=1e-3)
 
 
 class TestEstimate:
@@ -263,12 +274,10 @@ class TestInitialize:
         got, expected = self._prior_std_vs_cluster_std(model, z)
         np.testing.assert_allclose(got, expected, rtol=1e-3)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: for cluster std > 1 the inverse softplus is approximated "
-        "by std - 0.5, so the prior std starts well below the cluster spread",
-    )
     def test_large_std_is_inverted_exactly(self, fakes):
+        # regression: for cluster std > 1 the inverse softplus was
+        # approximated by std - 0.5, so the prior std started ~15% below
+        # the cluster spread at std 3
         s, model, z, _ = self._run(3.0)
         got, expected = self._prior_std_vs_cluster_std(model, z)
         # softplus(bias) should reproduce the per-cluster std (within 5%)

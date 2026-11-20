@@ -284,12 +284,9 @@ class TestKLAnnealing:
                 kl_annealing_ratio=(0.5, 0.2, 0.3),
             )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: kl_annealing_ratio[0] == 1 puts kmeans_epoch == n_epochs (never "
-        "reached) yet the regular phase skips k-means, so it never runs",
-    )
     def test_kmeans_fires_somewhere_with_full_standard_kl_stage(self, fakes, dataset):
+        # regression: kl_annealing_ratio[0] == 1 put kmeans_epoch == n_epochs
+        # (never reached) while the regular phase skipped k-means
         s, model = self._fit(
             fakes,
             dataset,

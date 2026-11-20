@@ -2,12 +2,14 @@
 each phase sets up) and PhaseProgress (epoch book-keeping)."""
 
 import warnings
+from fractions import Fraction
 
 import numpy as np
 import pytest
 
 from cavachon.environment.constants import Constants
 from cavachon.scheduler.component_schedule import ComponentSchedule
+from cavachon.scheduler.phase_planner import PhasePlanner
 from cavachon.scheduler.training_phase import PhaseProgress
 from test.scheduler.conftest import make_config, make_scheduler
 
@@ -140,6 +142,22 @@ class TestKMeansEpochs:
         assert kl.z_hat_kmeans_epoch is None
         assert regular.z_hat_kmeans_epoch is None
 
+    def test_deferred_to_regular_phase_when_standard_kl_fills_kl_phase(self, fakes):
+        config = make_config(
+            "A",
+            n_kl_annealing_epochs=4,
+            enable_kmeans_init=True,
+            kl_annealing_ratio=(1.0, 0.0, 0.0),
+        )
+        s, model = make_scheduler([config], learn_z_hat=("A",))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            kl, regular = plan_of(s, model, "A")
+        # the epoch after the standard-KL stage is the regular phase's first
+        assert kl.kmeans_epoch is None and kl.z_hat_kmeans_epoch is None
+        assert regular.kmeans_epoch == 0 and regular.z_hat_kmeans_epoch == 0
+        assert not any("KL annealing is disabled" in str(w.message) for w in caught)
+
     def test_disabled(self, fakes):
         s, model = make_scheduler([make_config("A", n_kl_annealing_epochs=4)])
         kl, regular = plan_of(s, model, "A")
@@ -246,3 +264,23 @@ class TestPhaseProgress:
         assert (progress.offset, progress.total, progress.phase_number) == (4, 14, 2)
         progress.advance(5, 2)  # early-stopped after 2 of 5 epochs
         assert (progress.offset, progress.total, progress.phase_number) == (6, 11, 3)
+
+
+# ---------------------------------------------------------------------------
+# epoch boundaries
+# ---------------------------------------------------------------------------
+
+
+class TestEpochBoundary:
+    def test_float_error_does_not_move_the_boundary(self):
+        assert PhasePlanner.epoch_boundary(10, 0.1 + 0.7) == 8
+        assert PhasePlanner.epoch_boundary(10, 0.25) == 2  # floor, not round
+        assert PhasePlanner.epoch_boundary(3, 0.5) == 1
+
+    def test_matches_exact_arithmetic_for_all_tenths(self):
+        # regression: 12 of 144 ratio/epoch combinations were off by one
+        for n in range(1, 17):
+            for a in range(11):
+                for b in range(11 - a):
+                    exact = (n * Fraction(a + b, 10)).__floor__()
+                    assert PhasePlanner.epoch_boundary(n, a / 10 + b / 10) == exact

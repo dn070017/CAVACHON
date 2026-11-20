@@ -49,15 +49,35 @@ class TestTrainingOrder:
         # it's listed after A only
         assert scheduler.training_order == [["A"], ["X"], ["B"], ["C"]]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: training order is not a topological sort; a child listed "
-        "before its parent raises KeyError",
-    )
     def test_child_listed_before_parent_is_sorted(self, fakes):
-        configs = [make_config("B", z=["A"]), make_config("A")]
-        scheduler, _ = make_scheduler(configs)
-        assert scheduler.training_order == [["A"], ["B"]]
+        # regression: the order was not a topological sort, so a child
+        # listed before its parent raised KeyError
+        configs = [
+            make_config("C", z=["B"]),
+            make_config("B", z=["A"]),
+            make_config("A"),
+        ]
+        scheduler, model = make_scheduler(configs)
+        assert scheduler.training_order == [["A"], ["B"], ["C"]]
+        fakes.GeneralUtils.order_components.assert_called_once_with(
+            model.component_configs
+        )
+        assert [c.name for c in scheduler.component_configs] == ["A", "B", "C"]
+
+    @pytest.mark.parametrize(
+        "configs, error",
+        [
+            ([make_config("A"), make_config("B", z=["missing"])], ValueError),
+            (
+                [make_config("A", z=["B"]), make_config("B", z_hat=["A"])],
+                AttributeError,
+            ),
+        ],
+        ids=["unknown parent", "cycle"],
+    )
+    def test_ordering_errors_propagate(self, fakes, configs, error):
+        with pytest.raises(error):
+            make_scheduler(configs)
 
 
 # ---------------------------------------------------------------------------
@@ -91,15 +111,15 @@ class TestModalityWeight:
             "atac": pytest.approx(0.5),
         }
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: constant=True reads n_vars before assignment (UnboundLocalError)",
-    )
     def test_constant_weights_are_one(self, fakes):
-        configs = [make_config("A", n_vars={"rna": 100, "atac": 300})]
+        # regression: constant=True read n_vars before assignment
+        configs = [
+            make_config("A", n_vars={"rna": 100, "atac": 300}),
+            make_config("B", z=["A"], n_vars={"atac": 5}),
+        ]
         scheduler, _ = make_scheduler(configs)
         w = scheduler.compute_modality_weight(constant=True)
-        assert w["A"] == {"rna": 1.0, "atac": 1.0}
+        assert w == {"A": {"rna": 1.0, "atac": 1.0}, "B": {"atac": 1.0}}
 
 
 # ---------------------------------------------------------------------------

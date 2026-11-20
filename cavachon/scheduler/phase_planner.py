@@ -1,5 +1,6 @@
+import math
 import warnings
-from typing import Any, Callable, List, Mapping, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -175,13 +176,15 @@ class PhasePlanner:
     def kl_annealing(self, schedule: ComponentSchedule) -> TrainingPhase:
         """KL annealing phase: standard KL, crossfade to the GMM KL,
         then GMM KL only. K-means initializes the GMM prior at the end
-        of the standard-KL stage, while the GMM KL weight is still 0.
-        No early stopping, since the loss changes by design."""
+        of the standard-KL stage, while the GMM KL weight is still 0
+        (when that stage fills the whole phase, k-means runs at the
+        start of the regular training phase instead). No early
+        stopping, since the loss changes by design."""
         name = schedule.name
         n_epochs = schedule.n_kl_annealing_epochs
         ratios = schedule.kl_annealing_ratios
-        kmeans_epoch = int(n_epochs * ratios[0])
-        if schedule.enable_kmeans_init and kmeans_epoch == 0:
+        kmeans_epoch = self.kl_kmeans_epoch(schedule)
+        if kmeans_epoch == 0:
             warnings.warn(
                 f"Kmeans initialization epoch is 0 for component "
                 f"'{name}': ratio[0] ({ratios[0]}) × "
@@ -205,7 +208,7 @@ class PhasePlanner:
             reset_before=True,
             setup=setup,
             schedule=self.make_kl_schedule(name, n_epochs, ratios),
-            kmeans_epoch=kmeans_epoch if schedule.enable_kmeans_init else None,
+            kmeans_epoch=kmeans_epoch,
             z_hat_kmeans_epoch=(
                 kmeans_epoch if self._initializes_z_hat_prior_early(schedule) else None
             ),
@@ -214,7 +217,8 @@ class PhasePlanner:
     def regular_training(self, schedule: ComponentSchedule) -> TrainingPhase:
         """Regular training phase with the GMM KL and early stopping.
         K-means initializes the GMM prior at its start when the KL
-        annealing phase did not."""
+        annealing phase did not (no KL annealing, or a standard-KL
+        stage that fills the whole KL annealing phase)."""
         name = schedule.name
         if schedule.enable_kmeans_init and not schedule.runs_kl_annealing:
             warnings.warn(
@@ -225,7 +229,9 @@ class PhasePlanner:
                 f"in poor cluster priors. Consider enabling KL annealing "
                 f"for better initialization quality."
             )
-        run_kmeans = schedule.enable_kmeans_init and not schedule.runs_kl_annealing
+        run_kmeans = (
+            schedule.enable_kmeans_init and self.kl_kmeans_epoch(schedule) is None
+        )
 
         def setup() -> None:
             # GMMDensityLoss is kept but disabled: z_hat is regularized
@@ -361,9 +367,11 @@ class PhasePlanner:
         gmm_kl = f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
         # GMMDensityLoss disabled (replaced by the z_hat GMM KL)
         density = f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
-        standard_kl_end = int(total_epochs * kl_annealing_ratios[0])
-        gmm_kl_start = int(
-            total_epochs * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
+        standard_kl_end = PhasePlanner.epoch_boundary(
+            total_epochs, kl_annealing_ratios[0]
+        )
+        gmm_kl_start = PhasePlanner.epoch_boundary(
+            total_epochs, kl_annealing_ratios[0] + kl_annealing_ratios[1]
         )
 
         def schedule(epoch: int) -> Mapping[str, float]:
@@ -379,6 +387,28 @@ class PhasePlanner:
             return {standard_kl: 0.0, gmm_kl: 1.0, density: 0.0}
 
         return schedule
+
+    @staticmethod
+    def epoch_boundary(total_epochs: int, fraction: float) -> int:
+        """First epoch after the first ``fraction`` of ``total_epochs``
+        (floor of their product). The product is rounded first, so
+        floating-point error such as 10 * (0.1 + 0.7) = 7.999... still
+        gives 8."""
+        return math.floor(round(total_epochs * fraction, 6))
+
+    @staticmethod
+    def kl_kmeans_epoch(schedule: ComponentSchedule) -> Optional[int]:
+        """Epoch of the KL annealing phase at which k-means initializes
+        the GMM prior: the end of the standard-KL stage. None when
+        k-means is disabled, there is no KL annealing, or the
+        standard-KL stage fills the whole phase (k-means then runs at
+        the start of the regular training phase)."""
+        if not (schedule.enable_kmeans_init and schedule.runs_kl_annealing):
+            return None
+        epoch = PhasePlanner.epoch_boundary(
+            schedule.n_kl_annealing_epochs, schedule.kl_annealing_ratios[0]
+        )
+        return epoch if epoch < schedule.n_kl_annealing_epochs else None
 
     @staticmethod
     def _initializes_z_hat_prior_early(schedule: ComponentSchedule) -> bool:

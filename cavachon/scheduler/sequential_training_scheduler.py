@@ -15,6 +15,7 @@ from cavachon.callbacks import (
     VerboseCallback,
 )
 from cavachon.config.training_config import EarlyStoppingConfig
+from cavachon.utils.general_utils import GeneralUtils
 from cavachon.scheduler.component_schedule import ComponentSchedule
 from cavachon.scheduler.gmm_prior_initializer import GMMPriorInitializer
 from cavachon.scheduler.phase_planner import PhasePlanner
@@ -125,7 +126,11 @@ class SequentialTrainingScheduler:
         """
         self.model = model
         self.mdata = mdata
-        self.component_configs = self.model.component_configs
+        # ordered again here (Model.make already orders them), so the
+        # scheduler also works on configs that are not ordered
+        self.component_configs = GeneralUtils.order_components(
+            self.model.component_configs
+        )
         self.optimizer = optimizer
         self.learning_rate = learning_rate
         if early_stopping is True:
@@ -154,6 +159,12 @@ class SequentialTrainingScheduler:
     def compute_component_training_order(self) -> List[List[str]]:
         """Compute the training order of the components based on the
         order of topological sort of the input dependency graph.
+
+        ``self.component_configs`` is topologically sorted by
+        ``GeneralUtils.order_components`` (parents before children,
+        config order kept otherwise; unknown parents raise ValueError
+        and cycles AttributeError). Each component's stage is one more
+        than its latest parent's.
 
         Design note: the order is a list of stages, each holding the
         components trained together. Components whose parents are
@@ -197,8 +208,9 @@ class SequentialTrainingScheduler:
         Parameters
         ----------
         constant : bool, optional
-            whether or not to use constant weight for the data
-            distribution. Defaults to False.
+            whether to give every modality the same weight (1.0)
+            instead of weights inversely proportional to their number
+            of variables (normalized to sum to 1). Defaults to False.
 
         Returns
         -------
@@ -214,8 +226,8 @@ class SequentialTrainingScheduler:
         for component_config in self.component_configs:
             component_name = component_config.name
             modality_weight: Dict[str, float] = dict()
+            n_vars = component_config.n_vars
             if not constant:
-                n_vars = component_config.n_vars
                 total_vars = 0
                 total_scaled_weight = 0
                 for modality_name, n_var in n_vars.items():
