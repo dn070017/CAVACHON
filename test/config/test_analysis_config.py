@@ -103,13 +103,10 @@ def test_visualize_methods_invalid(method):
         AnalysisVisualizeEmbeddingConfig(embedding_method=method)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: embedding_method default '' bypasses its validator "
-    "(explicit '' is rejected, omitted field is accepted)",
-)
 def test_visualize_missing_embedding_method_rejected():
-    with pytest.raises(ValidationError):
+    # regression: the default '' skipped the validator, so an omitted
+    # embedding_method was accepted while an explicit '' was rejected
+    with pytest.raises(ValidationError, match="embedding_method"):
         AnalysisVisualizeEmbeddingConfig(modality="RNA")
 
 

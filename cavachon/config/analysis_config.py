@@ -78,7 +78,8 @@ class AnalysisVisualizeEmbeddingConfig(BaseConfigModel):
 
     modality: TensorflowCompatibleStr = ""
     use_rep: TensorflowCompatibleStr = ""
-    embedding_method: str = ""
+    # required: an omitted field would skip the validator below
+    embedding_method: str
     color_by: str = ""
     interactive: bool = False
 
