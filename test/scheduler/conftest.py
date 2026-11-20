@@ -318,8 +318,6 @@ def fakes(monkeypatch):
     for cb in (
         "AnnealingCallback",
         "EarlyStoppingCallback",
-        "OptimizerStateCallback",
-        "PeriodicTSNECallback",
         "VerboseCallback",
     ):
         rec = _make_recording_callback(cb)

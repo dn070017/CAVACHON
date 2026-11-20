@@ -1,5 +1,4 @@
 import itertools
-import os
 import warnings
 from collections import defaultdict
 from copy import deepcopy
@@ -12,8 +11,6 @@ import tensorflow as tf
 from cavachon.callbacks import (
     AnnealingCallback,
     EarlyStoppingCallback,
-    OptimizerStateCallback,
-    PeriodicTSNECallback,
     VerboseCallback,
 )
 from cavachon.config.training_config import EarlyStoppingConfig
@@ -786,7 +783,6 @@ class SequentialTrainingScheduler:
                 component_name=component_name,
             )
         )
-        callbacks_prog.append(OptimizerStateCallback())
 
         history.append(
             self.model.fit(
@@ -895,7 +891,6 @@ class SequentialTrainingScheduler:
                     },
                 )
             )
-        callbacks.append(OptimizerStateCallback())
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
@@ -991,15 +986,7 @@ class SequentialTrainingScheduler:
                     },
                 )
             )
-        callbacks.append(OptimizerStateCallback())
-        callbacks.extend(
-            self._common_callbacks(
-                kwargs,
-                is_single_component,
-                component_name,
-                cumulative_offset=cumulative_offset,
-            )
-        )
+        callbacks.extend(self._common_callbacks(cumulative_offset=cumulative_offset))
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
@@ -1175,15 +1162,7 @@ class SequentialTrainingScheduler:
                 component_order=self.component_order,
             )
         )
-        callbacks.append(OptimizerStateCallback())
-        callbacks.extend(
-            self._common_callbacks(
-                kwargs,
-                is_single_component,
-                component_name,
-                cumulative_offset=cumulative_offset,
-            )
-        )
+        callbacks.extend(self._common_callbacks(cumulative_offset=cumulative_offset))
 
         kwargs_copy = deepcopy(kwargs)
         kwargs_copy.pop("epochs", None)
@@ -1470,26 +1449,9 @@ class SequentialTrainingScheduler:
         ):
             module.trainable = False
 
-    def _common_callbacks(
-        self,
-        kwargs,
-        is_single_component,
-        component_name,
-        cumulative_offset=0,
-    ):
-        """Return common callbacks: PeriodicTSNE + EarlyStopping."""
+    def _common_callbacks(self, cumulative_offset=0):
+        """Return common callbacks: EarlyStopping (if configured)."""
         callbacks = []
-        if is_single_component and self.output_dir:
-            callbacks.append(
-                PeriodicTSNECallback(
-                    mdata=self.mdata,
-                    component=component_name,
-                    outdir=os.path.join(self.output_dir, "snapshots"),
-                    batch_size=self.batch_size,
-                    batch_effect_colnames=self.batch_effect_colnames,
-                    distribution_names=self.distribution_names,
-                )
-            )
         if self.early_stopping:
             early_stopping = self.early_stopping
             callbacks.append(

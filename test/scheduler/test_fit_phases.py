@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import cavachon.scheduler.sequential_training_scheduler as sts_module
 from cavachon.environment.constants import Constants
 from test.scheduler.conftest import (
     UserCallback,
@@ -47,7 +48,6 @@ class TestSingleRoot:
         assert types == [
             "VerboseCallback",
             "AnnealingCallback",
-            "OptimizerStateCallback",
             "EarlyStoppingCallback",
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
@@ -126,37 +126,20 @@ class TestSingleRoot:
         s.fit(dataset, epochs=2)
         assert callbacks_of(model.fit_calls[0], fakes.EarlyStoppingCallback) == []
 
-    def test_periodic_tsne_only_with_outdir(self, fakes, dataset):
+    def test_no_debug_callbacks_even_with_outdir(self, fakes, dataset):
+        # OptimizerStateCallback and PeriodicTSNECallback were removed from
+        # the training phases (debug-only, both inactive on Keras 3).
         s, model = make_scheduler(
-            [make_config("A", max_regular_training_epochs=2)],
-            outdir="/out",
-            batch_size=64,
-            distribution_names={"rna": "NB"},
-            batch_effect_colnames={"rna": ["b"]},
+            [make_config("A", max_regular_training_epochs=2)], outdir="/out"
         )
         s.fit(dataset, epochs=2)
-        (tsne,) = callbacks_of(model.fit_calls[0], fakes.PeriodicTSNECallback)
-        assert tsne.kwargs == dict(
-            mdata="MDATA",
-            component="A",
-            outdir="/out/snapshots",
-            batch_size=64,
-            batch_effect_colnames={"rna": ["b"]},
-            distribution_names={"rna": "NB"},
-        )
-
-    def test_no_periodic_tsne_for_multiple_components(self, fakes, dataset):
-        s, model = make_scheduler(
-            [
-                make_config("A", max_regular_training_epochs=1),
-                make_config("B", z=["A"], max_regular_training_epochs=1),
-            ],
-            outdir="/out",
-        )
-        s.fit(dataset, epochs=2)
-        assert all(
-            callbacks_of(c, fakes.PeriodicTSNECallback) == [] for c in model.fit_calls
-        )
+        assert [type(cb).__name__ for cb in model.fit_calls[0].callbacks] == [
+            "VerboseCallback",
+            "AnnealingCallback",
+            "EarlyStoppingCallback",
+        ]
+        assert not hasattr(sts_module, "OptimizerStateCallback")
+        assert not hasattr(sts_module, "PeriodicTSNECallback")
 
     def test_regular_epochs_fall_back_to_fit_epochs(self, fakes, dataset):
         s, model = make_scheduler([make_config("A", max_regular_training_epochs=None)])
@@ -244,7 +227,6 @@ class TestKLAnnealing:
         assert [type(cb).__name__ for cb in kl.callbacks] == [
             "VerboseCallback",
             "AnnealingCallback",
-            "OptimizerStateCallback",
         ]  # no early stopping while the loss changes by design
         ann = callbacks_of(kl, fakes.AnnealingCallback)[0].kwargs
         assert ann["kmeans_epoch"] == 4  # end of the standard-KL-only stage
@@ -390,7 +372,6 @@ class TestParentAnnealing:
         assert [type(cb).__name__ for cb in call.callbacks] == [
             "VerboseCallback",
             "AnnealingCallback",
-            "OptimizerStateCallback",
         ]
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         assert ann.get("kmeans_epoch") is None
@@ -616,7 +597,6 @@ class TestZHatPhases:
         assert b["stochastic"] == 1.0
         assert [type(cb).__name__ for cb in call.callbacks] == [
             "VerboseCallback",
-            "OptimizerStateCallback",
             "EarlyStoppingCallback",
         ]
         # same variables as the annealing phase -> optimizer reused
