@@ -2,7 +2,7 @@
 
 Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
 
-**Whole suite: 1707 passed, 44 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1712 passed, 41 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -24,10 +24,10 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 46 | 4 | 89% |
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 180 | 13 | 100% |
-| [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 97 | 5 | 100% |
+| [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 102 | 2 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
 | [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 86 | 3 | 100% |
-| **Total** | | | | | **1707** | **44** | |
+| **Total** | | | | | **1712** | **41** | |
 
 **Status**
 - ✅ No open bugs.
