@@ -18,15 +18,39 @@ def test_sparse_passthrough():
     np.testing.assert_array_equal(to_np(out), X)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: to_sparse.py:51-53 only converts KerasTensor/SparseTensor; a dense tf.Tensor is "
-    "returned unchanged (and a SparseTensor branch is dead code)",
-)
 def test_dense_eager_tensor_is_converted():
+    # regression: only KerasTensor/SparseTensor inputs were considered, so a
+    # dense eager tf.Tensor was returned unchanged
     out = ToSparse("a")({"a": dense()})["a"]
     assert isinstance(out, tf.SparseTensor)
     np.testing.assert_array_equal(to_np(out), X)
+
+
+def test_dense_tensor_inside_tf_function_is_converted():
+    layer = ToSparse("a")
+
+    @tf.function
+    def f(x):
+        out = layer({"a": x})["a"]
+        assert isinstance(out, tf.SparseTensor)
+        return tf.sparse.to_dense(out)
+
+    np.testing.assert_array_equal(f(dense()).numpy(), X)
+
+
+def test_dense_keras_input_is_converted_in_functional_model():
+    inp = tf.keras.Input(shape=(X.shape[1],))
+    out = ToSparse("a")({"a": inp})["a"]
+    model = tf.keras.Model(inp, out)
+    result = model(dense())
+    assert isinstance(result, tf.SparseTensor)
+    np.testing.assert_array_equal(to_np(result), X)
+
+
+def test_other_keys_untouched():
+    other = dense()
+    out = ToSparse("a")({"a": dense(), "b": other})
+    assert out["b"] is other
 
 
 def test_sparse_input_checked_via_tensor_utils(tensor_utils):

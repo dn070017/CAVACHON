@@ -6,7 +6,7 @@ from cavachon.utils.tensor_utils import TensorUtils
 
 
 class ToSparse(tf.keras.layers.Layer):
-    """ToDense
+    """ToSparse
 
     Modifier used to convert tf.Tensor stored in a MutableMapping to
     tf.SparseTensor.
@@ -48,9 +48,8 @@ class ToSparse(tf.keras.layers.Layer):
         """
 
         tensor = inputs[self.key]
-        if isinstance(
-            tensor, (tf.keras.KerasTensor, tf.SparseTensor)
-        ) and not TensorUtils.is_sparse_tensor(tensor):
+        # any dense input (eager, symbolic or KerasTensor), like ToDense
+        if not TensorUtils.is_sparse_tensor(tensor):
             tensor = tf.sparse.from_dense(tensor)
 
         inputs[self.key] = tensor
