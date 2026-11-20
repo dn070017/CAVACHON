@@ -64,13 +64,13 @@ def test_non_tensor_input_accepted(make_params):
 
 
 def test_returns_instance_of_cls():
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     d = IndependentBernoulliDistribution.from_parameterizer_output(tf.zeros((2, 3)))
     assert isinstance(d, IndependentBernoulliDistribution)
 
 
 def test_kwargs_forwarded():
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     d = IndependentBernoulliDistribution.from_parameterizer_output(
         tf.zeros((2, 3)), validate_args=True, name="my_bern"
     )

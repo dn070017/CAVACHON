@@ -85,7 +85,7 @@ class TestConstruction:
         assert FakeParameterizer.make_calls[0]["input_dims"] == 0
 
     def test_n_layers_forwarded_to_backbone(self, patched):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         _, backbone = patched
         DecoderDataParameterizer("Dist", n_vars=3, n_layers=5, name="dec")
         assert backbone.call_args.kwargs["n_layers"] == 5

@@ -188,7 +188,7 @@ class TestSingleRoot:
         ] * 2
 
     def test_user_callbacks_are_copied_into_every_phase(self, fakes, dataset):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         user_cb = UserCallback("mine")
         s, model = make_scheduler(
             [make_config("A", n_kl_annealing_epochs=2, max_regular_training_epochs=2)]

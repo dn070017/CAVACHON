@@ -151,7 +151,7 @@ class TestPredictMuData:
         assert "b_atac_x_parameters" not in outputs
 
     def test_unused_modality_in_mudata_is_ignored(self, make_model, fakes):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         # Model only uses rna, the MuData (and so DataLoader batches) also
         # carry atac. Keras maps dict inputs positionally when the keys do
         # not match, so atac_matrix is fed as rna_matrix.
@@ -166,7 +166,7 @@ class TestPredictMuData:
 
 class TestPredictTensors:
     def test_mapping_input_delegates_to_keras_predict(self, make_model):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         model = make_model(FakeConfig("a", ["rna"]))
         batch = {
             "rna_matrix": np.ones((4, 2), np.float32),

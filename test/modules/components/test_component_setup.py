@@ -163,7 +163,7 @@ def test_setup_hierarchical_encoder_use_bias_defaults_false(fakes):
 
 
 def test_setup_hierarchical_encoder_forwards_progressive_iterations(fakes):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     h = Component.setup_hierarchical_encoder(progressive_iterations=123)
     assert h.progressive_iterations == 123
 
@@ -171,7 +171,7 @@ def test_setup_hierarchical_encoder_forwards_progressive_iterations(fakes):
 def test_real_hierarchical_encoder_gets_progressive_iterations(
     fakes, real_hierarchical_encoder_env, monkeypatch
 ):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     monkeypatch.setattr(component_module, "HierarchicalEncoder", HierarchicalEncoder)
     h = Component.setup_hierarchical_encoder(progressive_iterations=123)
     assert float(h.progressive_scaler.total_iterations) == 123.0

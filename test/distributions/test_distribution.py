@@ -44,5 +44,5 @@ def test_package_exports_concrete_distributions(name):
 
 
 def test_package_exports_mixture_distribution():
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     assert hasattr(dists, "MixtureMultivariateNormalDiagDistribution")

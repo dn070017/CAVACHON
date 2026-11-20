@@ -72,13 +72,13 @@ class TestConstruction:
         assert enc.is_conditioned_on_z is True and enc.is_conditioned_on_z_hat is False
 
     def test_unknown_kwarg_is_rejected(self, patched):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         # Keras 3 rejects unrecognized keyword arguments with ValueError
         with pytest.raises((TypeError, ValueError)):
             HierarchicalEncoder(n_latent_dims=3, progressive_step=10)
 
     def test_trainable_kwarg_forwarded(self, patched):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         enc = HierarchicalEncoder(n_latent_dims=3, trainable=False)
         assert enc.trainable is False
 

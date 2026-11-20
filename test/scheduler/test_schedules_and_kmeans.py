@@ -101,7 +101,7 @@ class TestKMeansPlusPlus:
         assert out.dtype == np.int32
 
     def test_fewer_distinct_points_than_clusters(self, fakes):
-        # regression: fixed bug, see UNIT_TEST_REPORT.md
+        # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
         s, _ = make_scheduler([make_config("A")])
         X = tf.constant([[0.0, 0.0]] * 5 + [[1.0, 1.0]] * 5, dtype=tf.float32)
         centers = s._kmeans_plus_plus(X, 3, seed=0)

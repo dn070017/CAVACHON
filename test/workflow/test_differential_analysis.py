@@ -193,7 +193,7 @@ def test_deg_results_accumulate_and_all_are_written(deps, to_csv_calls):
 
 
 def test_deg_filename_has_no_spaces(deps, to_csv_calls):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     # cluster labels written by ClusterAnalysis look like 'Cluster 001'.
     # Only the target prefix gets .replace(' ', '_'); the cluster-pair part
     # does not, unlike the HDEG filenames.
@@ -207,7 +207,7 @@ def test_deg_filename_has_no_spaces(deps, to_csv_calls):
 
 
 def test_deg_pairwise_label_with_slash(deps, to_csv_calls):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     # The tool already sets GroupA/GroupB; the workflow overwrites them with
     # cluster_pair.split('/'), which raises ValueError for a label such as
     # 'CD4/CD8 T'.
@@ -225,7 +225,7 @@ def test_deg_pairwise_label_with_slash(deps, to_csv_calls):
 
 
 def test_deg_single_pair_configs_on_different_annotations_are_kept(deps, to_csv_calls):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     # Two single-pair comparisons of the same labels on two different
     # annotation columns map to the same key (modality, component, a, b)
     # and the same file, so the first result is silently lost.
@@ -253,7 +253,7 @@ def test_deg_single_pair_configs_on_different_annotations_are_kept(deps, to_csv_
     ["perform_differential_analysis", "perform_hierarchical_differential_analysis"],
 )
 def test_unconfigured_analysis_creates_no_source_directory(deps, makedirs, method):
-    # regression: fixed bug, see UNIT_TEST_REPORT.md
+    # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
     # ApplicationConfig accepts enrichment/differential attribution without a
     # DEG/HDEG config when outdir/<analysis> exists. Every run creates that
     # directory (empty), so a later enrichment-only run passes validation
