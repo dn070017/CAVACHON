@@ -4,10 +4,10 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ⏸️ Reviewed, deferred | [`test/layers`](../../test/layers) | 153 | 1 | 99% | Moderate: depends on 2 packages, used by 7 |
+| ⏸️ Reviewed, deferred | [`test/layers`](../../test/layers) | 153 | 1 | 99% | Moderate: depends on 2 packages, used by 6 |
 
 - **Depends on:** environment, utils
-- **Used by:** callbacks, dataloader, losses, model, modules, scheduler, tools
+- **Used by:** callbacks, dataloader, losses, model, modules, tools
 - **Mocked in tests:** `TensorUtils`.
 
 ## Open bugs (strict xfails)

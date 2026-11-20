@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ⏸️ Reviewed, deferred | [`test/callbacks`](../../test/callbacks) | 45 | 4 | 90% | High: depends on 4 packages, used by 1 |
+| ⏸️ Reviewed, deferred | [`test/callbacks`](../../test/callbacks) | 46 | 4 | 89% | High: depends on 4 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers
 - **Used by:** scheduler
@@ -25,8 +25,9 @@
 - ✅ `early_stopping_callback.py` (2026-11-20): the restored epoch was printed 0-based (`offset + best_epoch`), one lower than the "Total Epoch" VerboseCallback shows. It now prints `offset + best_epoch + 1`.
 - ✅ `early_stopping_callback.py` (2026-11-20): `cumulative_offset` came before `*args`, so `EarlyStoppingCallback("loss")` set the offset to `"loss"` instead of `monitor`. It is now keyword-only; the scheduler already passes it by keyword.
 
+- ✅ (2026-11-20, scheduler refactor) `AnnealingCallback` no longer receives the scheduler. It takes `kmeans_init` (a callable, e.g. `GMMPriorInitializer.initialize` bound to a component and target) instead of `scheduler` + `kmeans_kwargs`, and `component_names` instead of `scheduler.component_order`. It no longer saves and restores trainable flags around k-means; the initializer does that, including nested layers and alpha.
+
 ## Worth a look
 
-- `AnnealingCallback` freezes the model and relies on the scheduler to unfreeze it.
 - `AnnealingCallback` loss patterns match anywhere in the loss name, not only as a prefix.
 - `EarlyStoppingConfig` is now honoured; that fix lives in the [scheduler](scheduler.md), which builds the callback.

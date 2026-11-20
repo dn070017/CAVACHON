@@ -2,7 +2,7 @@
 
 Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
 
-**Whole suite: 1659 passed, 51 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1683 passed, 50 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -18,16 +18,16 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [io](packages/io.md) | ✅ | 🟢 Low | 1 | 1 | 33 | 0 | 100% |
 | [app](packages/app.md) | ✅ | 🟢 Low | 1 | 0 | 11 | 0 | 87% |
 | [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 202 | 0 | 99% |
-| [layers](packages/layers.md) | ⏸️ | 🟡 Moderate | 2 | 7 | 153 | 1 | 99% |
+| [layers](packages/layers.md) | ⏸️ | 🟡 Moderate | 2 | 6 | 153 | 1 | 99% |
 | [losses](packages/losses.md) | ⏸️ | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
-| [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 45 | 4 | 90% |
-| [scheduler](packages/scheduler.md) | 🟡 | 🟠 High | 4 | 1 | 80 | 6 | 98% |
+| [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 46 | 4 | 89% |
+| [scheduler](packages/scheduler.md) | 🟡 | 🟡 Moderate | 3 | 1 | 103 | 5 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 180 | 13 | 100% |
 | [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 91 | 6 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
 | [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 86 | 3 | 100% |
-| **Total** | | | | | **1659** | **51** | |
+| **Total** | | | | | **1683** | **50** | |
 
 **Status**
 - ✅ No open bugs.
@@ -49,7 +49,7 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | 🟠 High | 4 | Needs fake Keras models/layers to run. |
 | 🔴 Very high | 7+ | Orchestrators: most of the package is wiring between mocked collaborators. |
 
-High fan-in packages are where a bug spreads furthest: environment (11), utils (9), layers (7), config and dataloader (4).
+High fan-in packages are where a bug spreads furthest: environment (11), utils (9), layers (6), config and dataloader (4).
 
 <details>
 <summary>Dependency list</summary>
@@ -64,12 +64,12 @@ High fan-in packages are where a bug spreads furthest: environment (11), utils (
 | environment | — | callbacks, config, dataloader, layers, modality, model, modules, scheduler, tools, utils, workflow |
 | filter | utils | workflow |
 | io | config | workflow |
-| layers | environment, utils | callbacks, dataloader, losses, model, modules, scheduler, tools |
+| layers | environment, utils | callbacks, dataloader, losses, model, modules, tools |
 | losses | distributions, layers, utils | model, modules |
 | modality | environment | workflow |
 | model | config, dataloader, environment, layers, losses, modules, utils | tools, workflow |
 | modules | environment, layers, losses, utils | model, tools |
-| scheduler | callbacks, config, environment, layers | workflow |
+| scheduler | callbacks, config, environment | workflow |
 | tools | dataloader, distributions, environment, layers, model, modules, utils | workflow |
 | utils | environment | config, dataloader, filter, layers, losses, model, modules, tools, workflow |
 | workflow | config, dataloader, environment, filter, io, modality, model, scheduler, tools, utils | app |

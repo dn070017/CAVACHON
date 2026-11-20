@@ -28,12 +28,15 @@ Packages were covered in order of coupling (see the [overview](../UNIT_TEST_REPO
 | 2026-11-13 | MD2, MD3, W3–W6 | [model](../packages/model.md), [workflow](../packages/workflow.md) |
 | 2026-11-14 | ruff check / format | whole repo |
 | 2026-11-14 | mypy setup and typing fixes | whole repo, then [tools](../packages/tools/README.md) |
+| 2026-11-20 | config, ToSparse, EarlyStoppingCallback fixes; debug callbacks removed from training | [config](../packages/config.md), [layers](../packages/layers.md), [callbacks](../packages/callbacks.md) |
+| 2026-11-20 | Scheduler refactor (behaviour preserved, checked end to end) | [scheduler](../packages/scheduler.md) |
 
 ## End-to-end checks
 
 - **After the medium round:** a run on synthetic data used the real code throughout, from config → h5ad → filter → MultiModality → DataLoader → Model. It trained 7 epochs, ran predict and saved the weights. The ATAC cells were stored in reverse order and were aligned correctly. The batch-effect widths matched `n_vars`, and the embeddings were finite. Old layer weights still loaded into the fixed layers.
 - **After EarlyStoppingConfig:** a run with `patience: 2` stopped each regular phase after 3 epochs.
 - **After the z_hat changes:** the sampler flags reset correctly, and `z_hat` stayed finite.
+- **Scheduler refactor:** the same seeded 7-phase training on synthetic data (KL annealing, k-means, parent annealing, z_hat annealing and training) gave identical per-phase losses, k-means priors, alpha and sampler flags on the old and the refactored code.
 
 ## Lint and typing
 
