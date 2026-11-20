@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 2 low bugs open | [`test/utils`](../../test/utils) | 188 | 2 | 100% | Low: depends on 1 package, used by 9 |
+| ⏸️ Reviewed, deferred | [`test/utils`](../../test/utils) | 188 | 2 | 100% | Low: depends on 1 package, used by 9 |
 
 - **Depends on:** environment
 - **Used by:** config, dataloader, filter, layers, losses, model, modules, tools, workflow
@@ -14,10 +14,12 @@ Second most widely imported package after environment.
 
 ## Open bugs (strict xfails)
 
-| Location | Issue | Impact |
-|---|---|---|
-| `reflection_handler.py` | `_camel_to_snake` does not split acronyms followed by a word (`ZINBDistribution` → `zinbdistribution`). | Edge case |
-| `reflection_handler.py` | Lookup validation uses `assert`, which `python -O` strips (a miss then becomes IndexError). | Edge case |
+> **Reviewed 2026-11-20 — deferred.** Both bugs are confirmed and accepted for now; no fix is planned. Their strict xfails stay in place, so a fix would still be flagged as XPASS.
+
+| Location | Issue | Impact | Decision |
+|---|---|---|---|
+| `reflection_handler.py` | `_camel_to_snake` does not split acronyms followed by a word (`ZINBDistribution` → `zinbdistribution`). | Edge case | ⏸️ Deferred |
+| `reflection_handler.py` | Lookup validation uses `assert`, which `python -O` strips (a miss then becomes IndexError). | Edge case | ⏸️ Deferred |
 
 ## Fixed
 

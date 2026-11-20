@@ -4,19 +4,15 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 1 low bug open | [`test/config`](../../test/config) | 201 | 1 | 99% | Moderate: depends on 2 packages, used by 4 |
+| ✅ Clean | [`test/config`](../../test/config) | 202 | 0 | 99% | Moderate: depends on 2 packages, used by 4 |
 
 - **Depends on:** environment, utils
 - **Used by:** io, model, scheduler, workflow
 - **Mocked in tests:** `GeneralUtils`, `ReflectionHandler`; `open`/`yaml.load`, `os.path` lookups.
 
-## Open bugs (strict xfails)
-
-| Location | Issue | Impact |
-|---|---|---|
-| `analysis_config.py` | `embedding_method` defaults to `''`, which bypasses its validator: an explicit `''` is rejected, an omitted field is accepted. | Edge case |
-
 ## Fixed
+
+- ✅ `analysis_config.py` (2026-11-20): `embedding_method` defaulted to `''`, which bypassed its validator: an explicit `''` was rejected but an omitted field was accepted, and the workflow then called `embedding(method="")`. It is now required. All 155 `visualize_embedding` entries in the repo's YAML configs already set it.
 
 - ✅ **H6** (with [io](io.md)): `colnames` is documented as optional, but its default `[]` led to "Length mismatch". `read_table` now treats an empty `colnames` like `None`.
 - ✅ **Every valid filter config emitted a warning** (`filter_config.py:9` + `base.py:28-36`): `FilterConfig` allows extra fields but inherited the "Unexpected field … typo" warning.

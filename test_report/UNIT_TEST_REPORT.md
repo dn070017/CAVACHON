@@ -2,7 +2,7 @@
 
 Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
 
-**Whole suite: 1653 passed, 55 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1654 passed, 54 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -12,12 +12,12 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 |---|---|---|---|---|---|---|---|
 | [environment](packages/environment.md) | ✅ | 🟢 Standalone | 0 | 11 | 39 | 0 | 100% |
 | [distributions](packages/distributions.md) | ✅ | 🟢 Standalone | 0 | 3 | 61 | 0 | 99% |
-| [utils](packages/utils.md) | 🟡 | 🟢 Low | 1 | 9 | 188 | 2 | 100% |
+| [utils](packages/utils.md) | ⏸️ | 🟢 Low | 1 | 9 | 188 | 2 | 100% |
 | [modality](packages/modality.md) | ✅ | 🟢 Low | 1 | 1 | 34 | 0 | 100% |
 | [filter](packages/filter.md) | ✅ | 🟢 Low | 1 | 1 | 109 | 0 | 100% |
 | [io](packages/io.md) | ✅ | 🟢 Low | 1 | 1 | 33 | 0 | 100% |
 | [app](packages/app.md) | ✅ | 🟢 Low | 1 | 0 | 11 | 0 | 87% |
-| [config](packages/config.md) | 🟡 | 🟡 Moderate | 2 | 4 | 201 | 1 | 99% |
+| [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 202 | 0 | 99% |
 | [layers](packages/layers.md) | 🟡 | 🟡 Moderate | 2 | 7 | 149 | 2 | 99% |
 | [losses](packages/losses.md) | 🟡 | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
@@ -27,12 +27,13 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 91 | 6 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
 | [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 86 | 3 | 100% |
-| **Total** | | | | | **1653** | **55** | |
+| **Total** | | | | | **1654** | **54** | |
 
 **Status**
 - ✅ No open bugs.
 - 🟡 Open bugs, but none changes results on a normal run: edge cases, latent code paths, or features that are silently inactive.
 - 🔴 At least one open bug gives **silently wrong results** on a normal configuration.
+- ⏸️ Reviewed and deferred: every open bug has been checked and accepted for now. The tests stay as strict xfails, so a later fix is still flagged.
 
 **Coverage** is line coverage of each package from the whole suite. Because other packages are mocked, it is essentially each package's own tests.
 
