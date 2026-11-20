@@ -177,7 +177,8 @@ class TestZHatLosses:
         assert dens.name == f"a_{ZD}"
         assert isinstance(dens.weight, tf.Variable)
         assert dens.weight is m._z_hat_density_weights["a"]
-        assert float(dens.weight) == 1.0
+        # legacy loss, replaced by the z_hat GMM KL: switched off
+        assert float(dens.weight) == 0.0
         assert dens.weight.trainable is False
         assert f"b_{ZD}" not in m.loss and "b" not in m._z_hat_density_weights
 

@@ -126,11 +126,9 @@ class TestLossAggregation:
         assert out[f"a_{STD}"] == pytest.approx(3 * S)
         assert out[f"a_{GMM}"] == pytest.approx(3 * S)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: standard-KL-only component looks up the GMM key, so its KL is never trained",
-    )
     def test_standard_kl_only_is_trained(self, single):
+        # regression: with only the standard KL compiled, its inputs were
+        # stored under the GMM key, so the standard KL was never computed
         m, batch, x, S = single
         m.compile(
             standard_kl_weights={"a": 1.0}, optimizer=tf.keras.optimizers.SGD(0.0)

@@ -140,15 +140,35 @@ class TestPredictMuData:
         # z / z_hat are still computed and returned
         assert set(outputs) == {"a_z", "a_z_hat"}
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: predict_x is sticky across modalities; x_parameters collected for save_x=False modalities (order-dependent)",
-    )
     def test_x_parameters_only_for_save_x_modalities(self, setup):
+        # regression: predict_x stayed True for the rest of a component's
+        # modalities once one had save_x, so x_parameters were collected
+        # for save_x=False modalities, depending on modality order
         model, mdata, _ = setup
         outputs = model.predict(mdata)
         # b: save_x = {rna: True, atac: False}
         assert "b_atac_x_parameters" not in outputs
+        assert "b_rna_x_parameters" in outputs
+
+    @pytest.mark.parametrize("n_vars_order", [("rna", "atac"), ("atac", "rna")])
+    def test_x_parameters_independent_of_modality_order(
+        self, make_model, fakes, n_vars_order
+    ):
+        sizes = {"rna": 2, "atac": 3}
+        b = FakeConfig(
+            "b",
+            ["rna", "atac"],
+            n_vars={m: sizes[m] for m in n_vars_order},
+            save_x={"rna": False, "atac": True},
+        )
+        model = make_model(b)
+        mdata = _mdata()
+        fakes.dataloader.return_value = _batches(mdata)
+        outputs = model.predict(mdata)
+        x_keys = {k for k in outputs if k.endswith("x_parameters")}
+        assert x_keys == {"b_atac_x_parameters"}
+        assert "x_parameters_b" in mdata.mod["atac"].obsm
+        assert "x_parameters_b" not in mdata.mod["rna"].obsm
 
     def test_unused_modality_in_mudata_is_ignored(self, make_model, fakes):
         # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md

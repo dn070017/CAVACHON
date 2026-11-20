@@ -1212,15 +1212,18 @@ class Component(tf.keras.Model):
                 loss_name = (
                     f"{self.name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
                 )
+                # legacy z_hat GMM density loss, replaced by the z_hat GMM
+                # KL: kept switched off (weight 0), never used for training.
+                # Removal is deferred (see GMMDensityLoss).
                 if comp_name not in self._z_hat_density_weights:
                     self._z_hat_density_weights[comp_name] = tf.Variable(
-                        1.0,
+                        0.0,
                         trainable=False,
                         dtype=tf.float32,
                         name=f"{comp_name}_z_hat_density_weight",
                     )
                 else:
-                    self._z_hat_density_weights[comp_name].assign(1.0)
+                    self._z_hat_density_weights[comp_name].assign(0.0)
                 weight_var = self._z_hat_density_weights[comp_name]
                 loss.setdefault(
                     loss_name,
@@ -1300,21 +1303,14 @@ class Component(tf.keras.Model):
                 [results.get(z_key), results.get(z_params_key)]
             )
 
-            # Support both new (standard_kl + gmm_kl) and legacy formats
-            if (
-                Constants.MODEL_LOSS_STANDARD_KL_POSTFIX in self.loss
-                and Constants.MODEL_LOSS_GMM_KL_POSTFIX in self.loss
+            # feed every KL loss that is compiled (standard, GMM or both)
+            for kl_name in (
+                Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+                Constants.MODEL_LOSS_GMM_KL_POSTFIX,
             ):
-                y_true.setdefault(
-                    Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, prior_params
-                )
-                y_pred.setdefault(Constants.MODEL_LOSS_STANDARD_KL_POSTFIX, z_concat)
-                y_true.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, prior_params)
-                y_pred.setdefault(Constants.MODEL_LOSS_GMM_KL_POSTFIX, z_concat)
-            else:
-                kl_name = Constants.MODEL_LOSS_GMM_KL_POSTFIX
-                y_true.setdefault(kl_name, prior_params)
-                y_pred.setdefault(kl_name, z_concat)
+                if kl_name in self.loss:
+                    y_true.setdefault(kl_name, prior_params)
+                    y_pred.setdefault(kl_name, z_concat)
 
             if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
                 z_hat_prior_params = results.get(

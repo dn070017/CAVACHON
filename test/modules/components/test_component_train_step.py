@@ -165,12 +165,9 @@ def test_compiled_metrics_receive_loss_keyed_dicts(fakes, metrics_shim):
     assert list(y_true) == list(y_pred) == [GMM, NLL_RNA, NLL_ATAC]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: with only standard_kl_weights, train_step feeds y only under "
-    "the GMM key, so compute_loss raises KeyError for the standard KL",
-)
 def test_standard_kl_only_trains(fakes, metrics_shim):
+    # regression: with only standard_kl_weights, train_step fed y only
+    # under the GMM key, so compute_loss raised KeyError for the standard KL
     c = make_component(name="c")
     _compile(c, standard_kl_weights={"c": 1.0})
     logs = _train(c, make_batch())
@@ -202,7 +199,8 @@ def test_sgd_update_matches_gradient_of_total_loss(fakes, metrics_shim, child):
     _compile(c, lr=0.1)
     variables = list(c.trainable_variables)
     with tf.GradientTape() as tape:
-        expected = _expected_loss(c, batch, density=child)
+        # the legacy z_hat density loss is compiled but switched off
+        expected = _expected_loss(c, batch, density=False)
     grads = tape.gradient(expected, variables)
     before = [v.numpy().copy() for v in variables]
     logs = _train(c, batch)

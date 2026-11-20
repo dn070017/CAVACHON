@@ -21,6 +21,14 @@ class GMMDensityLoss(tf.keras.losses.Loss):
     When a ``weight`` is provided, the loss is multiplied by it before
     being returned.  The reported metric should divide by the weight
     to recover the raw (unweighted) negative log-density.
+
+    Legacy: the z_hat GMM KL divergence replaced this loss. Model and
+    Component still create it for components that learn a z_hat prior,
+    but with weight 0, so it never affects training; it is kept only
+    because the scheduler uses its presence to decide where the z_hat
+    prior's k-means initialization runs. Removing it (and switching
+    that check to "has a z_hat prior") is deferred; see
+    test_report/packages/model.md.
     """
 
     def __init__(

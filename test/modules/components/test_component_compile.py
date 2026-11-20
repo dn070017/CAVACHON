@@ -112,17 +112,20 @@ def test_z_hat_density_loss_only_for_child_learning_priors(fakes):
     density = child.loss[key]
     assert density.name == key
     assert density.weight is child._z_hat_density_weights["child"]
-    assert float(density.weight) == 1.0
+    assert float(density.weight) == 0.0  # legacy loss, switched off
 
 
-def test_recompile_resets_density_weight_to_one_and_reuses_variable(fakes):
+def test_recompile_resets_density_weight_to_zero_and_reuses_variable(fakes):
+    # the z_hat density loss is legacy (replaced by the z_hat GMM KL):
+    # always switched off
     c = make_component(name="c", z_dims=2, learn_z_hat_priors=True)
     _compile(c)
     var = c._z_hat_density_weights["c"]
-    var.assign(0.0)
+    assert float(var) == 0.0
+    var.assign(1.0)
     _compile(c)
     assert c._z_hat_density_weights["c"] is var
-    assert float(var) == 1.0
+    assert float(var) == 0.0
     assert c.loss["c_z_hat_gmm_density"].weight is var
 
 

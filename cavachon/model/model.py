@@ -386,12 +386,8 @@ class Model(tf.keras.Model):
                 outputs.setdefault(f"{component_name}_z", list())
                 outputs.setdefault(f"{component_name}_z_hat", list())
                 modality_names = component_config.n_vars.keys()
-                predict_x = False
 
                 for modality_name in modality_names:
-                    if component_config.save_x.get(modality_name):
-                        predict_x = True
-
                     use_which_component.setdefault(modality_name, [])
                     use_which_component[modality_name].append(component_name)
                     save_x.setdefault(
@@ -406,7 +402,9 @@ class Model(tf.keras.Model):
                         f"{component_name}_{modality_name}",
                         component_config.save_z.get(modality_name),
                     )
-                    if predict_x:
+                    # x_parameters are only collected for the modalities
+                    # that save them
+                    if component_config.save_x.get(modality_name):
                         outputs.setdefault(
                             f"{component_name}_{modality_name}_x_parameters", list()
                         )
@@ -480,6 +478,11 @@ class Model(tf.keras.Model):
 
         Losses that already exist (on recompilation) are reused, so
         weights passed for them are ignored.
+
+        Components that learn a z_hat prior also get the legacy z_hat
+        GMM density loss, switched off (weight 0; see GMMDensityLoss),
+        and the z_hat GMM KL divergence, pinned to 0 until the
+        scheduler's z_hat annealing phase.
 
         """
         standard_kl_weights = standard_kl_weights or {}
@@ -565,7 +568,11 @@ class Model(tf.keras.Model):
                         nldl_name
                     ].weight
 
-                # z_hat GMM density loss (deterministic prior density)
+                # z_hat GMM density loss: legacy, replaced by the z_hat GMM
+                # KL below. Kept (switched off, weight 0) because the
+                # scheduler checks for it (ComponentSchedule
+                # .has_z_hat_density_loss); never used for training.
+                # Removal is deferred (see GMMDensityLoss).
                 component = self.components.get(component_name)
                 assert component is not None
                 if (
@@ -579,7 +586,7 @@ class Model(tf.keras.Model):
                     # Reuse existing Variable on recompile
                     if component_name not in self._z_hat_density_weights:
                         self._z_hat_density_weights[component_name] = tf.Variable(
-                            1.0,
+                            0.0,
                             trainable=False,
                             dtype=tf.float32,
                             name=f"{component_name}_z_hat_density_weight",
@@ -701,10 +708,6 @@ class Model(tf.keras.Model):
             for component_config in self._component_configs:
                 component_name = component_config.name
 
-                kl_divergence_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
-                )
-
                 modality_names = component_config.modality_names
 
                 # Get the prior parameters and z data (same for all phases)
@@ -716,22 +719,14 @@ class Model(tf.keras.Model):
                 z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
                     [results.get(z_key), results.get(z_params_key)]
                 )
-                # Check which KL losses are compiled
-                standard_kl_name = (
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
-                )
-                gmm_kl_name = f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
-
-                if standard_kl_name in self.loss and gmm_kl_name in self.loss:
-                    # PHASE 2: Both losses active
-                    y_true.setdefault(standard_kl_name, prior_params)
-                    y_pred.setdefault(standard_kl_name, z_concat)
-                    y_true.setdefault(gmm_kl_name, prior_params)
-                    y_pred.setdefault(gmm_kl_name, z_concat)
-                else:
-                    # PHASE 1 or 3: Single loss (standard name)
-                    y_true.setdefault(kl_divergence_name, prior_params)
-                    y_pred.setdefault(kl_divergence_name, z_concat)
+                # feed every KL loss that is compiled (standard, GMM or both)
+                for kl_name in (
+                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
+                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
+                ):
+                    if kl_name in self.loss:
+                        y_true.setdefault(kl_name, prior_params)
+                        y_pred.setdefault(kl_name, z_concat)
 
                 for modality_name in modality_names:
                     nldl_name = f"{component_name}_{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"

@@ -52,7 +52,12 @@ class ComponentSchedule:
         the component learns a z_hat GMM prior.
 
     has_z_hat_density_loss: bool
-        the model compiled a z_hat density loss for the component.
+        the model compiled the (legacy, always switched off) z_hat
+        density loss for the component. Only used to decide whether
+        the z_hat prior's k-means runs together with the z prior's
+        (see PhasePlanner); replacing it with ``has_z_hat_prior`` is
+        deferred together with the loss's removal (see
+        GMMDensityLoss).
 
     z_hat_annealing_enabled: bool
         the z_hat annealing phase runs for the component.
