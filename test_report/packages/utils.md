@@ -4,10 +4,10 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ⏸️ Reviewed, deferred | [`test/utils`](../../test/utils) | 188 | 2 | 100% | Low: depends on 1 package, used by 9 |
+| ⏸️ Reviewed, deferred | [`test/utils`](../../test/utils) | 188 | 2 | 100% | Low: depends on 1 package, used by 10 |
 
 - **Depends on:** environment
-- **Used by:** config, dataloader, filter, layers, losses, model, modules, tools, workflow
+- **Used by:** config, dataloader, filter, layers, losses, model, modules, scheduler, tools, workflow
 - **Mocked in tests:** `glob`/`import_module`/`os.path` for `ReflectionHandler`; everything else is pure computation.
 
 Second most widely imported package after environment.

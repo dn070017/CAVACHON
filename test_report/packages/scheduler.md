@@ -4,11 +4,11 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, mostly edge cases | [`test/scheduler`](../../test/scheduler) | 103 | 5 | 99% | Moderate: depends on 3 packages, used by 1 |
+| ✅ Clean | [`test/scheduler`](../../test/scheduler) | 121 | 0 | 99% | High: depends on 4 packages, used by 1 |
 
-- **Depends on:** callbacks, config, environment
+- **Depends on:** callbacks, config, environment, utils
 - **Used by:** workflow
-- **Mocked in tests:** the callbacks (Annealing, EarlyStopping, Verbose), `EarlyStoppingConfig`; mlflow. The scheduler drives a `FakeModel`/`FakeComponent` that records `compile`/`fit`, trainable flags and annealing state for each phase. Loss weights are `FakeScaler` (ProgressiveScaler-like) or `FakeVar` (plain Variable).
+- **Mocked in tests:** the callbacks (Annealing, EarlyStopping, Verbose), `EarlyStoppingConfig`, `GeneralUtils.order_components` (a reference topological sort with the same contract); mlflow. The scheduler drives a `FakeModel`/`FakeComponent` that records `compile`/`fit`, trainable flags and annealing state for each phase. Loss weights are `FakeScaler` (ProgressiveScaler-like) or `FakeVar` (plain Variable).
 
 **Commit 73eecd0 checked:** passing tests confirm "parent annealing ramps only alpha with the KL tied to it". During parent annealing the parents are frozen with weights 0. The child's alpha and standard KL ramp together, and its z_hat KL is 0. Afterwards alpha is pinned to (1, 1) and the standard KL to 1.
 
@@ -41,18 +41,13 @@ history = [self._run_phase(p, x, n_batches, progress, ...) for p in phases]
 
 `training_order` is a list of stages, each holding the components trained together (`[[a], [b], ...]`). Components whose parents are already trained could share a stage, and an earlier version did train them jointly. That was dropped for two reasons: summing several components' losses in one stage made the loss normalization across components inconsistent, and joint stages needed noticeably more memory. Each stage now holds exactly one component; the nested structure is kept so stages can hold several components again if needed.
 
-## Open bugs (strict xfails)
-
-| Location | Issue | Impact |
-|---|---|---|
-| `PhasePlanner.make_kl_schedule` | `int()` truncation of `n*(r0+r1)` (`int(10*(0.1+0.7)) = 7`) moves the GMM start one epoch early and cuts the crossfade short. 12 of 144 ratio/epoch combinations are affected. | Off by one epoch for some configs |
-| `PhasePlanner.kl_annealing` | With `kl_annealing_ratio[0] == 1.0`, `kmeans_epoch == n_epochs` is never reached and the regular phase skips k-means, so it never runs. | Edge case |
-| `GMMPriorInitializer.estimate` | For cluster std > 1 the inverse softplus is approximated by `std - 0.5` (about 15% too small at std ≈ 3). | Prior starts narrower than the clusters |
-| `compute_modality_weight` | `constant=True` reads `n_vars` before assignment (UnboundLocalError). | Edge case |
-| `compute_component_training_order` | Not a real topological sort: a child listed before its parent raises KeyError. | Edge case |
-
 ## Fixed
 
+- ✅ (2026-11-20) **The k-means prior std matches the cluster spread.** For cluster std > 1 the inverse softplus was approximated by `std − 0.5`, so `softplus(bias)` came out about 15% too small at std ≈ 3 (the right large-std limit is `std`; the −0.5 only made the two branches meet near std = 1). `GMMPriorInitializer.inverse_softplus` now uses the exact, stable `std + log(1 − exp(−std))` for every std (no overflow for large std; std floored at 1e-6), the same formula as `HierarchicalEncoder.initialize_scale_diag`. Clusters with std ≤ 1 are unchanged up to float rounding.
+- ✅ (2026-11-20) **`compute_modality_weight(constant=True)` works:** it read `n_vars` before assigning it (UnboundLocalError). It now gives every modality weight 1.0.
+- ✅ (2026-11-20) **The training order is a real topological sort.** The scheduler orders `component_configs` with `GeneralUtils.order_components` itself, instead of relying on `Model.make` having done it, so a child listed before its parent no longer raises KeyError. Unknown parents raise ValueError and cycles AttributeError. Already-ordered configs (everything built through `Model.make`) keep exactly the same order, checked with the end-to-end run. This makes the scheduler usable on its own, outside the workflow; the cost is one more dependency (utils).
+- ✅ (2026-11-20) **KL schedule boundaries no longer suffer from float error.** `int(n * (r0 + r1))` truncated `10 * (0.1 + 0.7) = 7.999…` to 7, which moved the GMM start one epoch early and cut the crossfade short (12 of 144 ratio/epoch combinations). `PhasePlanner.epoch_boundary` rounds the product before taking the floor; it is used for the standard-KL end, the GMM start and the k-means epoch. ⚠ For the affected configs the GMM KL now starts one epoch later than before.
+- ✅ (2026-11-20) **K-means runs when the standard-KL stage fills the KL annealing phase.** With `kl_annealing_ratio[0] == 1.0`, the k-means epoch equalled the phase length (never reached) and the regular phase skipped k-means because KL annealing had run, so the priors were never initialized. K-means (and the z_hat prior's, when it is initialized early) now runs at the start of the regular training phase, the epoch right after the standard-KL stage.
 - ✅ (2026-11-20, refactor) **The mlflow run is ended when a phase raises.** Each phase runs inside a `with self._mlflow_run(...)` block; previously a failing `fit` left the run open and broke the next `start_run`.
 - ✅ **M6**: k-means++ crashed on a collapsed latent (fewer distinct points than clusters: every logit `-inf`), aborting training exactly when posterior collapse happened. It now falls back to choosing uniformly.
 - ✅ **M7**: user `callbacks=` or `verbose=` passed to `fit` raised "multiple values for 'callbacks'". Each phase drops them from the forwarded kwargs; user callbacks are still deep-copied into every phase.
