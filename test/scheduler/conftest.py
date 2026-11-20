@@ -1,8 +1,10 @@
 """Shared fakes for the ``cavachon.scheduler`` unit tests.
 
-Everything the scheduler imports from other cavachon packages (callbacks,
-ProgressiveScaler, the Model and its Components) and mlflow is replaced by
-lightweight recording fakes, so only the scheduler code itself runs.
+Everything the scheduler package imports from other cavachon packages
+(callbacks, EarlyStoppingConfig, the Model and its Components) and mlflow is
+replaced by lightweight recording fakes, so only the scheduler code itself
+runs. Loss weights are FakeScaler (ProgressiveScaler-like: pin_to /
+activate) or FakeVar (plain Variable: assign).
 """
 
 from types import SimpleNamespace
@@ -12,6 +14,7 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
+import cavachon.scheduler.gmm_prior_initializer as gpi_module
 import cavachon.scheduler.sequential_training_scheduler as sts_module
 
 
@@ -326,7 +329,8 @@ def fakes(monkeypatch):
     ns.VerboseCallback._COLORS = ["<c0>", "<c1>", "<c2>"]
     ns.VerboseCallback._BOLD = "<b>"
     ns.VerboseCallback._RESET = "<r>"
-    monkeypatch.setattr(sts_module, "ProgressiveScaler", FakeScaler)
+    # GMMPriorInitializer reads the colors of VerboseCallback
+    monkeypatch.setattr(gpi_module, "VerboseCallback", ns.VerboseCallback)
     # EarlyStoppingConfig lives in cavachon.config: a fake with the same
     # documented defaults stands in for it.
     ns.EarlyStoppingConfig = MagicMock(

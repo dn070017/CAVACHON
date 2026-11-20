@@ -2,8 +2,8 @@
 
 Mocked: ProgressiveScaler (patched at
 ``cavachon.callbacks.annealing_callback.ProgressiveScaler``), the model
-(FakeCavachonModel), components (SimpleNamespace) and the scheduler
-(MagicMock). Loss weights are real tf.Variables.
+(FakeCavachonModel), components (SimpleNamespace) and the k-means
+initializer (MagicMock). Loss weights are real tf.Variables.
 """
 
 from types import SimpleNamespace
@@ -126,86 +126,65 @@ def test_schedule_evaluated_per_epoch(make_model, loss_factory):
 # --------------------------------------------------------------------------
 
 
-def _kmeans_setup(make_model, make_comp, fake_scheduler, **kw):
+def _kmeans_callback(make_model, make_comp, kmeans_init):
     comps = {"a": make_comp(trainable=True), "b": make_comp(trainable=False)}
     model = make_model(components=comps)
-    frozen_at_call = {}
-
-    def _init(**kwargs):
-        frozen_at_call.update(
-            model=model.trainable,
-            **{n: c.trainable for n, c in comps.items()},
-        )
-        # The real scheduler sets model.trainable back to True at the end.
-        model.trainable = True
-        for c in comps.values():
-            c.trainable = True
-
-    fake_scheduler.initialize_gmm_priors_with_kmeans.side_effect = _init
     cb = AnnealingCallback(
         schedule=lambda e: {},
         kmeans_epoch=2,
-        scheduler=fake_scheduler,
+        kmeans_init=kmeans_init,
         component_name="a",
-        **kw,
     )
     cb.set_model(model)
-    return cb, model, comps, frozen_at_call
+    return cb, model, comps
 
 
-def test_kmeans_runs_once_at_kmeans_epoch_with_expected_kwargs(
-    make_model, make_comp, fake_scheduler
-):
-    cb, model, comps, frozen = _kmeans_setup(
-        make_model,
-        make_comp,
-        fake_scheduler,
-        kmeans_kwargs={"representation_key": "_z_hat"},
-    )
-    init = fake_scheduler.initialize_gmm_priors_with_kmeans
+def test_kmeans_runs_once_at_kmeans_epoch(make_model, make_comp):
+    init = MagicMock(name="kmeans_init")
+    cb, _, _ = _kmeans_callback(make_model, make_comp, init)
     for epoch in (0, 1):
         cb.on_epoch_begin(epoch)
     init.assert_not_called()
     cb.on_epoch_begin(2)
-    init.assert_called_once_with(
-        component_name="a",
-        seed=42,
-        add_noise=True,
-        noise_std=0.1,
-        representation_key="_z_hat",
-    )
+    init.assert_called_once_with()
     # A second visit of the same epoch (e.g. a re-fit) does not re-run it.
     cb.on_epoch_begin(2)
     assert init.call_count == 1
     assert cb._kmeans_done is True
 
 
-def test_kmeans_freezes_model_then_restores_component_flags(
-    make_model, make_comp, fake_scheduler
-):
-    cb, model, comps, frozen = _kmeans_setup(make_model, make_comp, fake_scheduler)
+def test_kmeans_leaves_trainable_flags_to_the_initializer(make_model, make_comp):
+    # the initializer freezes the model and restores every flag itself
+    cb, model, comps = _kmeans_callback(make_model, make_comp, MagicMock())
     cb.on_epoch_begin(2)
-    assert frozen == {"model": False, "a": False, "b": False}
     assert comps["a"].trainable is True
     assert comps["b"].trainable is False
 
 
-def test_kmeans_disabled_when_epoch_none(make_model, make_comp, fake_scheduler):
+def test_kmeans_disabled_when_epoch_none(make_model, make_comp):
+    init = MagicMock(name="kmeans_init")
     model = make_model(components={"a": make_comp()})
-    cb = AnnealingCallback(
-        schedule=lambda e: {}, kmeans_epoch=None, scheduler=fake_scheduler
-    )
+    cb = AnnealingCallback(schedule=lambda e: {}, kmeans_epoch=None, kmeans_init=init)
     cb.set_model(model)
     for epoch in range(5):
         cb.on_epoch_begin(epoch)
-    fake_scheduler.initialize_gmm_priors_with_kmeans.assert_not_called()
+    init.assert_not_called()
 
 
-def test_default_kmeans_kwargs_not_shared():
-    a = AnnealingCallback(schedule=lambda e: {})
-    b = AnnealingCallback(schedule=lambda e: {})
-    a.kmeans_kwargs["x"] = 1
-    assert b.kmeans_kwargs == {}
+def test_kmeans_epoch_without_initializer_is_a_no_op(make_model, make_comp):
+    model = make_model(components={"a": make_comp()})
+    cb = AnnealingCallback(schedule=lambda e: {}, kmeans_epoch=0)
+    cb.set_model(model)
+    cb.on_epoch_begin(0)
+    assert cb._kmeans_done is True
+
+
+def test_component_names_are_copied():
+    names = ["a"]
+    cb = AnnealingCallback(schedule=lambda e: {}, component_names=names)
+    names.append("b")
+    assert cb.component_names == ["a"]
+    assert AnnealingCallback(schedule=lambda e: {}).component_names == []
 
 
 # --------------------------------------------------------------------------
@@ -214,7 +193,7 @@ def test_default_kmeans_kwargs_not_shared():
 
 
 def test_on_batch_end_increments_all_active_scalers(
-    make_model, make_comp, fake_scaler_cls, fake_scheduler
+    make_model, make_comp, fake_scaler_cls
 ):
     enc = fake_scaler_cls(total_iterations=100)
     std_c = fake_scaler_cls(total_iterations=50)
@@ -229,9 +208,8 @@ def test_on_batch_end_increments_all_active_scalers(
         _gmm_kl_weights={"c": gmm_c, "d": gmm_d_pinned},
         _data_loss_weights={"c": {"RNA": data_rna, "ATAC": data_atac_pinned}},
     )
-    fake_scheduler.component_order = ["c", "d"]
     cb = AnnealingCallback(
-        schedule=lambda e: {}, scheduler=fake_scheduler, component_name="c"
+        schedule=lambda e: {}, component_name="c", component_names=["c", "d"]
     )
     cb.set_model(model)
     cb.on_batch_end(0)
@@ -250,20 +228,19 @@ def test_on_train_batch_end_routes_to_on_batch_end(
 ):
     enc = fake_scaler_cls(total_iterations=5)
     model = make_model(components={"c": make_comp(scaler=enc)})
-    cb = AnnealingCallback(schedule=lambda e: {}, scheduler=None, component_name="c")
+    cb = AnnealingCallback(schedule=lambda e: {}, component_name="c")
     cb.set_model(model)
     cb.on_train_batch_end(0)
     assert enc.increment_calls == 1
 
 
-def test_on_batch_end_tolerates_missing_scheduler_and_component(
-    make_model, make_comp, fake_scaler_cls, fake_scheduler
+def test_on_batch_end_tolerates_missing_component(
+    make_model, make_comp, fake_scaler_cls
 ):
     std_c = fake_scaler_cls(total_iterations=5)
     model = make_model(components={}, _standard_kl_weights={"c": std_c})
-    fake_scheduler.component_order = ["c"]
     cb = AnnealingCallback(
-        schedule=lambda e: {}, scheduler=fake_scheduler, component_name="missing"
+        schedule=lambda e: {}, component_name="missing", component_names=["c"]
     )
     cb.set_model(model)
     cb.on_batch_end(0)  # missing component -> swallowed
@@ -271,7 +248,7 @@ def test_on_batch_end_tolerates_missing_scheduler_and_component(
 
     enc = fake_scaler_cls(total_iterations=5)
     model2 = make_model(components={"c": make_comp(scaler=enc)})
-    cb2 = AnnealingCallback(schedule=lambda e: {}, scheduler=None, component_name="c")
+    cb2 = AnnealingCallback(schedule=lambda e: {}, component_name="c")
     cb2.set_model(model2)
-    cb2.on_batch_end(0)  # scheduler None -> second block swallowed
+    cb2.on_batch_end(0)  # no component_names -> only alpha advances
     assert enc.increment_calls == 1

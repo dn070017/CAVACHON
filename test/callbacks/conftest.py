@@ -2,13 +2,12 @@
 
 Everything the callbacks import from OTHER cavachon packages
 (cavachon.layers.ProgressiveScaler, cavachon.dataloader.DataLoader,
-cavachon.distributions.*) and every model / component / scheduler object
+cavachon.distributions.*) and every model / component object (and the k-means initializer)
 they receive is replaced here by lightweight fakes. Code inside
 cavachon.callbacks stays real; tensorflow / numpy stay real.
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 import tensorflow as tf
@@ -88,8 +87,3 @@ def make_comp():
 @pytest.fixture
 def loss_factory():
     return make_loss
-
-
-@pytest.fixture
-def fake_scheduler():
-    return MagicMock(name="scheduler", component_order=[])

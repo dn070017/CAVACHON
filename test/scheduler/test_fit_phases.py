@@ -22,6 +22,15 @@ def run_names(fakes):
     return [c.kwargs["run_name"] for c in fakes.mlflow.start_run.call_args_list]
 
 
+def kmeans_target(annealing_kwargs):
+    """(component, target) that an AnnealingCallback's kmeans_init
+    initializes, or None."""
+    init = annealing_kwargs["kmeans_init"]
+    if init is None:
+        return None
+    return (*init.args, init.keywords["target"])
+
+
 def phases(model, fakes):
     return [
         callbacks_of(call, fakes.VerboseCallback)[0].kwargs["phase"]
@@ -53,7 +62,8 @@ class TestSingleRoot:
         ann = callbacks_of(call, fakes.AnnealingCallback)[0].kwargs
         assert ann["kmeans_epoch"] is None
         assert ann["schedule"](0) == {}
-        assert ann["scheduler"] is s and ann["component_name"] == "A"
+        assert ann["kmeans_init"] is None
+        assert ann["component_name"] == "A" and ann["component_names"] == ["A"]
 
         state = call.state["A"]
         assert state["trainable"] is True
@@ -155,11 +165,9 @@ class TestSingleRoot:
             s.fit(dataset, epochs=2)
         anns = callbacks_of(model.fit_calls[0], fakes.AnnealingCallback)
         assert [a.kwargs["kmeans_epoch"] for a in anns] == [0, 0]
-        assert "kmeans_kwargs" not in anns[0].kwargs
-        assert anns[1].kwargs["kmeans_kwargs"] == {
-            "representation_key": "_z_hat",
-            "target_parameterizer_attr": "z_hat_prior_parameterizer",
-        }
+        assert [kmeans_target(a.kwargs) for a in anns] == [("A", "z"), ("A", "z_hat")]
+        init = anns[0].kwargs["kmeans_init"]
+        assert init.func.__self__ is s.prior_initializer
 
     def test_forwards_other_fit_kwargs_to_each_phase(self, fakes, dataset):
         s, model = make_scheduler(
@@ -183,12 +191,9 @@ class TestSingleRoot:
             assert isinstance(first, UserCallback) and first.tag == "mine"
             assert first is not user_cb
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: mlflow.end_run is not called when model.fit raises, leaving "
-        "an active run that breaks the next start_run",
-    )
     def test_mlflow_run_closed_when_fit_raises(self, fakes, dataset):
+        # regression: mlflow.end_run was not called when model.fit raised,
+        # leaving an active run that broke the next start_run
         s, model = make_scheduler([make_config("A", max_regular_training_epochs=2)])
         model.fit_side_effect = RuntimeError("boom")
         with pytest.raises(RuntimeError):
@@ -256,7 +261,7 @@ class TestKLAnnealing:
         anns = callbacks_of(model.fit_calls[0], fakes.AnnealingCallback)
         assert len(anns) == 2
         assert anns[1].kwargs["kmeans_epoch"] == 5
-        assert anns[1].kwargs["kmeans_kwargs"]["representation_key"] == "_z_hat"
+        assert kmeans_target(anns[1].kwargs) == ("A", "z_hat")
         assert anns[1].kwargs["schedule"](3) == {}
 
     def test_warns_when_kmeans_epoch_is_zero(self, fakes, dataset):
@@ -502,7 +507,7 @@ class TestZHatPhases:
         s.fit(dataset, epochs=5)
         regular_b = model.fit_calls[1]
         anns = callbacks_of(regular_b, fakes.AnnealingCallback)
-        assert all("kmeans_kwargs" not in a.kwargs for a in anns)
+        assert all(kmeans_target(a.kwargs) != ("B", "z_hat") for a in anns)
 
     def test_warns_when_z_hat_prior_is_never_trained(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes, n_z_hat_annealing_epochs=0)
@@ -606,6 +611,26 @@ class TestZHatPhases:
         s, model, _ = _z_hat_setup(fakes, n_z_hat_training_epochs=0)
         s.fit(dataset, epochs=5)
         assert phases(model, fakes)[-1] == "Z_hat Annealing"
+
+    def test_z_hat_losses_created_by_compile_are_seen(self, fakes, dataset):
+        # regression (refactor): the z_hat losses only exist after the
+        # first compile, so the phases must be planned after compiling
+        s, model, _ = _z_hat_setup(fakes)
+        z_hat_gmm_kl = model._z_hat_gmm_kl_weights
+        z_hat_density = model._z_hat_density_weights
+        model._z_hat_gmm_kl_weights, model._z_hat_density_weights = {}, {}
+        record = model.compile
+
+        def compile_creates_z_hat_losses(**kwargs):
+            model._z_hat_gmm_kl_weights = z_hat_gmm_kl
+            model._z_hat_density_weights = z_hat_density
+            record(**kwargs)
+
+        model.compile = compile_creates_z_hat_losses
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # no "z_hat prior never trained"
+            s.fit(dataset, epochs=5)
+        assert phases(model, fakes)[-2:] == ["Z_hat Annealing", "Z_hat Training"]
 
     def test_disabled_without_annealing_epochs(self, fakes, dataset):
         s, model, _ = _z_hat_setup(fakes, n_z_hat_annealing_epochs=0)

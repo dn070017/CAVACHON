@@ -1,11 +1,13 @@
-"""KL annealing schedule, k-means++ prior initialisation and the
-compile helper of SequentialTrainingScheduler."""
+"""KL annealing schedule, GMMPriorInitializer (k-means++ prior
+initialisation), the compile helper and mlflow runs."""
 
 import numpy as np
 import pytest
 import tensorflow as tf
 
 from cavachon.environment.constants import Constants
+from cavachon.scheduler.gmm_prior_initializer import GMMPriorInitializer
+from cavachon.scheduler.phase_planner import PhasePlanner
 from cavachon.scheduler.sequential_training_scheduler import STANDARD_KL_WEIGHT
 from test.scheduler.conftest import FakeVar, make_config, make_scheduler
 
@@ -19,14 +21,13 @@ def softplus(x):
 
 
 # ---------------------------------------------------------------------------
-# _make_final_kl_schedule
+# PhasePlanner.make_kl_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestFinalKLSchedule:
-    def test_three_stages_default_ratio(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
-        schedule = s._make_final_kl_schedule("A", 10, (0.5, 0.2, 0.3))
+class TestKLSchedule:
+    def test_three_stages_default_ratio(self):
+        schedule = PhasePlanner.make_kl_schedule("A", 10, (0.5, 0.2, 0.3))
         values = [schedule(e) for e in range(10)]
         # epochs 0-4: standard KL only
         for e in range(5):
@@ -40,17 +41,15 @@ class TestFinalKLSchedule:
         for e in range(7, 10):
             assert values[e] == {STD: 0.0, GMM: 1.0, DENS: 0.0}
 
-    def test_weights_sum_to_one_during_crossfade(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
-        schedule = s._make_final_kl_schedule("A", 20, (0.25, 0.5, 0.25))
+    def test_weights_sum_to_one_during_crossfade(self):
+        schedule = PhasePlanner.make_kl_schedule("A", 20, (0.25, 0.5, 0.25))
         for e in range(20):
             v = schedule(e)
             assert v[STD] + v[GMM] == pytest.approx(1.0)
             assert v[DENS] == 0.0
 
-    def test_zero_crossfade_does_not_divide_by_zero(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
-        schedule = s._make_final_kl_schedule("A", 4, (0.5, 0.0, 0.5))
+    def test_zero_crossfade_does_not_divide_by_zero(self):
+        schedule = PhasePlanner.make_kl_schedule("A", 4, (0.5, 0.0, 0.5))
         assert [schedule(e)[GMM] for e in range(4)] == [0.0, 0.0, 1.0, 1.0]
 
     @pytest.mark.xfail(
@@ -58,28 +57,30 @@ class TestFinalKLSchedule:
         reason="BUG: int() truncation of n*(r0+r1) (0.1+0.7=0.7999..) moves the "
         "GMM start one epoch early and cuts the crossfade short",
     )
-    def test_crossfade_boundary_robust_to_float_rounding(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
-        schedule = s._make_final_kl_schedule("A", 10, (0.1, 0.7, 0.2))
+    def test_crossfade_boundary_robust_to_float_rounding(self):
+        schedule = PhasePlanner.make_kl_schedule("A", 10, (0.1, 0.7, 0.2))
         # standard KL ends at epoch 1, GMM-only should start at epoch 8:
         # epoch 7 is the last crossfade epoch with t = 6/7
         assert schedule(7)[GMM] == pytest.approx(6 / 7)
         assert schedule(7)[STD] == pytest.approx(1 / 7)
 
+    def test_constant_schedule_changes_nothing(self):
+        assert PhasePlanner.constant_schedule(0) == {}
+        assert PhasePlanner.constant_schedule(99) == {}
+
 
 # ---------------------------------------------------------------------------
-# k-means++ helpers
+# GMMPriorInitializer: k-means++ and the estimate
 # ---------------------------------------------------------------------------
 
 
 class TestKMeansPlusPlus:
-    def test_picks_one_center_per_separated_cluster(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
+    def test_picks_one_center_per_separated_cluster(self):
         X = tf.constant(
             [[0.0, 0.0], [0.1, 0.0], [100.0, 100.0], [100.1, 100.0], [-100.0, 50.0]],
             dtype=tf.float32,
         )
-        centers = s._kmeans_plus_plus(X, 3, seed=1).numpy()
+        centers = GMMPriorInitializer.kmeans_plus_plus(X, 3, seed=1).numpy()
         assert centers.shape == (3, 2)
         # every center is a data point, and they are all in distinct clusters
         groups = {
@@ -92,19 +93,17 @@ class TestKMeansPlusPlus:
         }
         assert groups == {0, 1, 2}
 
-    def test_cluster_assignments_are_nearest_center(self, fakes):
-        s, _ = make_scheduler([make_config("A")])
+    def test_cluster_assignments_are_nearest_center(self):
         X = tf.constant([[0.0], [0.9], [2.1], [3.0]], dtype=tf.float32)
         centers = tf.constant([[0.0], [3.0]], dtype=tf.float32)
-        out = s._compute_cluster_assignments(X, centers).numpy()
+        out = GMMPriorInitializer.assign_clusters(X, centers).numpy()
         assert out.tolist() == [0, 0, 1, 1]
         assert out.dtype == np.int32
 
-    def test_fewer_distinct_points_than_clusters(self, fakes):
+    def test_fewer_distinct_points_than_clusters(self):
         # regression: fixed bug, see test_report/UNIT_TEST_REPORT.md
-        s, _ = make_scheduler([make_config("A")])
         X = tf.constant([[0.0, 0.0]] * 5 + [[1.0, 1.0]] * 5, dtype=tf.float32)
-        centers = s._kmeans_plus_plus(X, 3, seed=0)
+        centers = GMMPriorInitializer.kmeans_plus_plus(X, 3, seed=0)
         assert centers.shape == (3, 2)
 
 
@@ -115,16 +114,70 @@ def _two_cluster_data(std, n=400, seed=0):
     return np.concatenate([a, b]).astype(np.float32)
 
 
-class TestInitializeGMMPriorsWithKMeans:
-    def _run(self, std, **kwargs):
+def _initializer(model=None, add_noise=False):
+    return GMMPriorInitializer(
+        model, "MDATA", 17, ["A", "B"], add_noise=add_noise, seed=42
+    )
+
+
+class TestEstimate:
+    def test_means_and_log_proportions(self):
+        z = _two_cluster_data(0.5)
+        estimate = _initializer().estimate(z, 2)
+        means = sorted(float(m) for m in np.asarray(estimate.locs)[:, 0])
+        assert means[0] == pytest.approx(-100.0, abs=3)
+        assert means[1] == pytest.approx(100.0, abs=3)
+        # logits = log of cluster proportions (400 vs 100 points)
+        probs = sorted(np.exp(estimate.logits.ravel()))
+        assert probs == [pytest.approx(0.2), pytest.approx(0.8)]
+        assert estimate.logits.shape == (1, 2)
+        assert estimate.scale_biases.shape == (2, 2)
+
+    def test_noise_moves_the_centers_off_the_data_points(self):
+        z = _two_cluster_data(0.5)
+
+        def distance_to_nearest_point(locs):
+            locs = np.asarray(locs)
+            return np.linalg.norm(z[None, :, :] - locs[:, None, :], axis=2).min(axis=1)
+
+        plain = _initializer(add_noise=False).estimate(z, 2)
+        noisy = _initializer(add_noise=True).estimate(z, 2)
+        # k-means++ picks data points; the noise (std 0.1) moves them a bit
+        np.testing.assert_array_equal(distance_to_nearest_point(plain.locs), 0.0)
+        d = distance_to_nearest_point(noisy.locs)
+        assert np.all(d > 0) and np.all(d < 1.0)
+
+    def test_apply_writes_every_parameter(self, fakes):
+        _, model = make_scheduler([make_config("A")])
+        prior = model.components["A"].z_prior_parameterizer
+        z = _two_cluster_data(0.5)
+        estimate = _initializer().estimate(z, 2)
+        GMMPriorInitializer.apply(prior, estimate)
+        for k in range(2):
+            np.testing.assert_allclose(
+                prior.loc_bias[k].numpy(), np.asarray(estimate.locs)[k : k + 1]
+            )
+            np.testing.assert_allclose(
+                prior.scale_diag_bias[k].numpy(), estimate.scale_biases[k : k + 1]
+            )
+        np.testing.assert_allclose(prior.logits_bias.numpy(), estimate.logits)
+
+
+# ---------------------------------------------------------------------------
+# GMMPriorInitializer.initialize (with the model)
+# ---------------------------------------------------------------------------
+
+
+class TestInitialize:
+    def _run(self, std, target="z"):
         configs = [make_config("A"), make_config("B", z=["A"])]
         s, model = make_scheduler(configs, learn_z_hat=("B",), batch_size=17)
-        s.component_order = ["A", "B"]
         z = _two_cluster_data(std)
         model.predict_outputs = {"B_z": z, "B_z_hat": z + 1000.0}
         # progressive state that must survive the k-means call
         model.components["B"].set_progressive_scaler_iteration(5.0, 30.0)
-        out = s.initialize_gmm_priors_with_kmeans("B", add_noise=False, **kwargs)
+        s.prior_initializer.add_noise = False
+        out = s.prior_initializer.initialize("B", target=target)
         return s, model, z, out
 
     @staticmethod
@@ -144,7 +197,6 @@ class TestInitializeGMMPriorsWithKMeans:
         means = sorted(float(v.numpy()[0, 0]) for v in prior.loc_bias)
         assert means[0] == pytest.approx(-100.0, abs=3)
         assert means[1] == pytest.approx(100.0, abs=3)
-        # logits = log of cluster proportions (400 vs 100 points)
         probs = sorted(np.exp(prior.logits_bias.numpy().ravel()))
         assert probs == [pytest.approx(0.2), pytest.approx(0.8)]
         assert model.predict_args == ("MDATA", 17, 0)
@@ -155,11 +207,7 @@ class TestInitializeGMMPriorsWithKMeans:
         )
 
     def test_z_hat_target(self, fakes):
-        s, model, z, out = self._run(
-            0.5,
-            representation_key="_z_hat",
-            target_parameterizer_attr="z_hat_prior_parameterizer",
-        )
+        s, model, z, out = self._run(0.5, target="z_hat")
         prior = model.components["B"].z_hat_prior_parameterizer
         np.testing.assert_array_equal(out, z + 1000.0)
         means = sorted(float(v.numpy()[0, 0]) for v in prior.loc_bias)
@@ -169,11 +217,46 @@ class TestInitializeGMMPriorsWithKMeans:
             for v in model.components["B"].z_prior_parameterizer.loc_bias
         )
 
-    def test_toggles_model_trainable_and_restores_progressive_state(self, fakes):
+    def test_freezes_for_prediction_and_restores_progressive_state(self, fakes):
         s, model, _, _ = self._run(0.5)
         assert model.trainable_history == [False, True]
         assert model.components["B"].progressive == (5.0, 30.0)
         assert model.components["A"].progressive == (1.0, 1.0)
+
+    def test_restores_every_nested_trainable_flag(self, fakes):
+        configs = [make_config("A"), make_config("B", z=["A"])]
+        s, model = make_scheduler(configs)
+        model.predict_outputs = {"A_z": _two_cluster_data(0.5)}
+        a, b = model.components["A"], model.components["B"]
+        a.trainable = False
+        a.inner.trainable = False  # nested layer, reached through .layers
+        b.encoder.trainable = False
+        before = {
+            (n, layer.name): layer.trainable
+            for n, comp in model.components.items()
+            for layer in comp.all_layers()
+        }
+        s.prior_initializer.initialize("A")
+        after = {
+            (n, layer.name): layer.trainable
+            for n, comp in model.components.items()
+            for layer in comp.all_layers()
+        }
+        assert after == before
+        assert a.trainable is False and b.trainable is True
+
+    def test_restores_state_when_prediction_fails(self, fakes):
+        s, model = make_scheduler([make_config("A")])
+        model.components["A"].set_progressive_scaler_iteration(2.0, 8.0)
+
+        def broken_predict(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        model.predict = broken_predict
+        with pytest.raises(RuntimeError):
+            s.prior_initializer.initialize("A")
+        assert model.trainable_history[-1] is True
+        assert model.components["A"].progressive == (2.0, 8.0)
 
     def test_small_std_is_inverted_exactly(self, fakes):
         s, model, z, _ = self._run(0.5)
@@ -208,7 +291,7 @@ class TestCompileModel:
         model._gmm_kl_weights["B"].scale = FakeVar(0.5)
         model._data_loss_weights["A"]["atac"].scale = FakeVar(3.0)
         del model._standard_kl_weights["B"]
-        s._compile_model(1e-3)
+        s._compile_model()
         kw = model.compile_calls[-1]
         assert kw["standard_kl_weights"] == {"A": 2.0, "B": STANDARD_KL_WEIGHT}
         assert kw["gmm_kl_weights"] == {"A": 1.0, "B": 0.5}
@@ -224,22 +307,24 @@ class TestCompileModel:
     def test_optimizer_reused_only_for_same_trainable_set(self, fakes):
         configs = [make_config("A"), make_config("B", z=["A"])]
         s, model = make_scheduler(configs)
-        s.setup_component_and_loss_weights(["A"])
-        s._compile_model(1e-4)
+        s.state.train_only(["A"])
+        s._compile_model()
         opt1 = model.optimizer
-        s._compile_model(1e-4)
+        s._compile_model()
         assert model.optimizer is opt1  # same variables -> momentum kept
-        s._freeze_encoder_path("A")
-        s._compile_model(1e-4)
+        s.state.freeze_encoder_path("A")
+        s._compile_model()
         opt2 = model.optimizer
         assert opt2 is not opt1
-        s.setup_component_and_loss_weights(["B"])
-        s._compile_model(1e-4)
+        s.state.train_only(["B"])
+        s._compile_model()
         assert model.optimizer is not opt2
 
     def test_optimizer_name_selects_class(self, fakes):
-        s, model = make_scheduler([make_config("A")], optimizer="sgd")
-        s._compile_model(0.5)
+        s, model = make_scheduler(
+            [make_config("A")], optimizer="sgd", learning_rate=0.5
+        )
+        s._compile_model()
         assert isinstance(model.optimizer, tf.keras.optimizers.SGD)
         assert float(model.optimizer.learning_rate) == pytest.approx(0.5)
 
@@ -260,7 +345,7 @@ class TestCompileModel:
                 w.total_iterations.assign(1.0)
 
         model.compile = compile_resets
-        s._compile_model(1e-4)
+        s._compile_model()
         assert (float(std.current_iteration), float(std.total_iterations)) == (
             4.0,
             12.0,
@@ -274,16 +359,16 @@ class TestCompileModel:
         configs = [make_config("A")]
         s, model = make_scheduler(configs, learn_z_hat=("A",))
         model._z_hat_density_weights["A"].assign(0.0)
-        s._compile_model(1e-4)
+        s._compile_model()
         assert float(model._z_hat_density_weights["A"]) == 0.0
 
 
 # ---------------------------------------------------------------------------
-# mlflow helpers
+# mlflow
 # ---------------------------------------------------------------------------
 
 
-class TestMlflowHelpers:
+class TestMlflow:
     def test_experiment_named_after_model(self, fakes):
         s, model = make_scheduler([make_config("A")])
         exp = s._mlflow_experiment()
@@ -291,13 +376,23 @@ class TestMlflowHelpers:
         fakes.mlflow.get_experiment_by_name.assert_called_once_with("fake_model")
         assert exp.experiment_id == "exp-1"
 
-    def test_start_run_enables_autolog(self, fakes):
+    def test_run_enables_autolog_and_ends(self, fakes):
         s, _ = make_scheduler([make_config("A")])
         exp = fakes.mlflow.get_experiment_by_name.return_value
-        s._mlflow_start_run("Training/0/A", exp)
+        with s._mlflow_run("Training/0/A", exp):
+            fakes.mlflow.end_run.assert_not_called()
         fakes.mlflow.start_run.assert_called_once_with(
             experiment_id="exp-1", run_name="Training/0/A"
         )
         fakes.mlflow.tensorflow.autolog.assert_called_once_with(
             log_every_epoch=True, log_models=False, checkpoint=False
         )
+        fakes.mlflow.end_run.assert_called_once_with()
+
+    def test_run_ends_when_the_body_raises(self, fakes):
+        s, _ = make_scheduler([make_config("A")])
+        exp = fakes.mlflow.get_experiment_by_name.return_value
+        with pytest.raises(RuntimeError):
+            with s._mlflow_run("Training/0/A", exp):
+                raise RuntimeError("boom")
+        fakes.mlflow.end_run.assert_called_once_with()

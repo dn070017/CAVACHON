@@ -1,11 +1,12 @@
 import itertools
 import warnings
 from collections import defaultdict
+from contextlib import contextmanager
 from copy import deepcopy
-from typing import Dict, List, Mapping, Optional, Union
+from functools import partial
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
 
 import mlflow
-import numpy as np
 import tensorflow as tf
 
 from cavachon.callbacks import (
@@ -14,18 +15,24 @@ from cavachon.callbacks import (
     VerboseCallback,
 )
 from cavachon.config.training_config import EarlyStoppingConfig
-from cavachon.environment.constants import Constants
-from cavachon.layers.progressive_scaler import ProgressiveScaler
-
-# maximum weight of the standard KL (the ELBO, β = 1)
-STANDARD_KL_WEIGHT = 1.0
+from cavachon.scheduler.component_schedule import ComponentSchedule
+from cavachon.scheduler.gmm_prior_initializer import GMMPriorInitializer
+from cavachon.scheduler.phase_planner import PhasePlanner
+from cavachon.scheduler.training_phase import PhaseProgress, TrainingPhase
+from cavachon.scheduler.training_state_controller import (
+    STANDARD_KL_WEIGHT as STANDARD_KL_WEIGHT,
+)
+from cavachon.scheduler.training_state_controller import TrainingStateController
 
 
 class SequentialTrainingScheduler:
     """SequentialTrainingScheduler
 
-    Training scheduler that sets the loss weight and stop the gradient
-    of trained components sequentially during training process.
+    Training scheduler that trains the components one at a time, in
+    dependency order, each through a sequence of phases (see
+    PhasePlanner): parent annealing, KL annealing, regular training,
+    z_hat annealing and z_hat training. Components that are not being
+    trained are frozen with zero loss weights.
 
     Attributes
     ----------
@@ -45,12 +52,25 @@ class SequentialTrainingScheduler:
 
     training_order: List[List[str]]
         the training order of the components, each element is a list
-        of the components trained in the corresponding order.
+        of the components trained in the corresponding stage (see
+        compute_component_training_order).
+
+    component_order: List[str]
+        the components in training order.
 
     modality_weight: Mapping[str, Mapping[str, float]]
         the weight of the data distribution by component. The keys are
         the component names, the values are the mapping where the keys
         are the modality names and the values are the weight.
+
+    state: TrainingStateController
+        sets loss weights, trainable flags, alpha and samplers.
+
+    prior_initializer: GMMPriorInitializer
+        initializes the GMM priors with k-means.
+
+    planner: PhasePlanner
+        builds the training phases of each component.
 
     z_hat_init_std_ratio: float
         class attribute, initial std of z_hat at the start of the z_hat
@@ -80,6 +100,9 @@ class SequentialTrainingScheduler:
         model: tf.keras.Model
             input model that needs to be trained.
 
+        mdata: muon.MuData
+            the training data, used for the k-means initialization.
+
         optimizer: tf.keras.optimizers.Optimizer, optional
             optimizer used to train the model (only the attributes of
             the optimizer will be used if provided with Optimizer).
@@ -93,6 +116,12 @@ class SequentialTrainingScheduler:
             and the z_hat training phase. True uses the defaults of
             EarlyStoppingConfig, False disables early stopping.
 
+        batch_size: int, optional
+            batch size of the k-means prediction. Defaults to 128.
+
+        outdir, distribution_names, batch_effect_colnames: optional
+            kept for the workflow's call; not used.
+
         """
         self.model = model
         self.mdata = mdata
@@ -103,44 +132,61 @@ class SequentialTrainingScheduler:
             early_stopping = EarlyStoppingConfig()
         self.early_stopping = early_stopping
         self.training_order = self.compute_component_training_order()
+        self.component_order = [stage[0] for stage in self.training_order]
         self.modality_weight = self.compute_modality_weight()
         self.batch_size = batch_size
         self.output_dir = outdir
         self.distribution_names = distribution_names
         self.batch_effect_colnames = batch_effect_colnames
 
+        self.state = TrainingStateController(model, self.modality_weight)
+        self.prior_initializer = GMMPriorInitializer(
+            model, mdata, batch_size, self.component_order
+        )
+        self.planner = PhasePlanner(
+            model,
+            self.state,
+            self.prior_initializer,
+            self._compile_model,
+            self.z_hat_init_std_ratio,
+        )
+
     def compute_component_training_order(self) -> List[List[str]]:
         """Compute the training order of the components based on the
         order of topological sort of the input dependency graph.
+
+        Design note: the order is a list of stages, each holding the
+        components trained together. Components whose parents are
+        already trained could share a stage, and an earlier version
+        did train them jointly. That was dropped for two reasons:
+        summing several components' losses in one stage made the loss
+        normalization across components inconsistent, and joint stages
+        needed noticeably more memory. Each stage now holds exactly one
+        component (``[[a], [b], ...]``). The nested structure is kept
+        so stages can hold several components again if needed.
 
         Returns
         -------
         List[List[str]]
             the training order of the components, each element is a
-            list of the components trained in the corresponding order.
+            list of the components trained in the corresponding stage.
         """
-        training_order: List[List[str]] = list()
+        training_order: List[List[str]] = [[]]
         component_order: Dict[str, int] = dict()
-        self.run_progressive_training = dict()
-        component_configs = self.component_configs
-        training_order.append([])
-        for component_config in component_configs:
+        for component_config in self.component_configs:
             component_name = component_config.name
-            conditioned_on_z = component_config.conditioned_on_z
-            conditioned_on_z_hat = component_config.conditioned_on_z_hat
-            if len(conditioned_on_z) == 0 and len(conditioned_on_z_hat) == 0:
-                self.run_progressive_training[component_name] = False
-            else:
-                self.run_progressive_training[component_name] = True
-
-            conditioned_on = itertools.chain(conditioned_on_z, conditioned_on_z_hat)
+            conditioned_on = itertools.chain(
+                component_config.conditioned_on_z,
+                component_config.conditioned_on_z_hat,
+            )
             order = max([0] + [component_order[x] + 1 for x in conditioned_on])
             if order > len(training_order) - 1:
                 training_order.append([])
             training_order[order].append(component_name)
             component_order.setdefault(component_name, order)
 
-        return [[x] for xs in training_order for x in xs]  # training_order
+        # one component per stage (see the design note above)
+        return [[x] for xs in training_order for x in xs]
 
     def compute_modality_weight(
         self, constant: bool = False
@@ -187,279 +233,33 @@ class SequentialTrainingScheduler:
 
         return modality_weight_by_component
 
-    def _kmeans_plus_plus(
-        self, X: tf.Tensor, n_clusters: int, seed: Optional[int] = None
-    ) -> tf.Tensor:
-        """K-Means++ seeding using TensorFlow ops.
-
-        Selects n_clusters initial centers from data X using the K-means++
-        algorithm, which spreads centers probabilistically to cover all
-        natural clusters.
+    def compute_component_schedules(
+        self, default_epochs: int
+    ) -> List[ComponentSchedule]:
+        """Resolve the training settings of every component, in
+        training order.
 
         Parameters
         ----------
-        X: tf.Tensor
-            Data tensor of shape (n_samples, n_dimensions)
-        n_clusters: int
-            Number of centers to select
-        seed: int, optional
-            Random seed for reproducibility
+        default_epochs: int
+            regular training epochs of components whose config sets
+            none.
 
         Returns
         -------
-        tf.Tensor
-            Centers of shape (n_clusters, n_dimensions)
+        List[ComponentSchedule]
+            the settings of each component.
         """
-        n_samples = tf.shape(X)[0]
-
-        # 1. Choose first center uniformly at random
-        first_idx = tf.random.uniform(
-            [], minval=0, maxval=n_samples, dtype=tf.int32, seed=seed
-        )
-        centers = [tf.gather(X, first_idx)]
-        # 2. Iteratively choose remaining centers
-        for i in range(1, n_clusters):
-            # Stack current centers: (num_current_centers, n_dims)
-            current_centers = tf.stack(centers)
-            # Calculate squared distances to nearest center
-            # Expand for broadcasting: (n_samples, 1, n_dims) - (1, num_centers, n_dims)
-            distances_sq = tf.reduce_sum(
-                tf.square(tf.expand_dims(X, 1) - tf.expand_dims(current_centers, 0)),
-                axis=2,
-            )  # Shape: (n_samples, num_centers)
-            # For each point, find distance to NEAREST center
-            min_distances_sq = tf.reduce_min(
-                distances_sq, axis=1
-            )  # Shape: (n_samples,)
-
-            # 3. Probabilistic selection: P(x) ∝ D(x)²
-            # Points far from existing centers are more likely to be chosen.
-            # If every point coincides with a center (e.g. a collapsed
-            # latent space with fewer distinct points than clusters), all
-            # D(x)² are 0, so fall back to choosing uniformly.
-            weights = tf.cond(
-                tf.reduce_sum(min_distances_sq) > 0,
-                lambda: min_distances_sq,
-                lambda: tf.ones_like(min_distances_sq),
+        configs = {config.name: config for config in self.component_configs}
+        return [
+            ComponentSchedule.from_config(
+                configs[name], order, self.model, default_epochs
             )
-            logits = tf.math.log(tf.expand_dims(weights, 0))  # Shape: (1, n_samples)
-            next_idx = tf.random.categorical(logits, num_samples=1, seed=seed)[0, 0]
-
-            centers.append(tf.gather(X, next_idx))
-        return tf.stack(centers)  # Shape: (n_clusters, n_dimensions)
-
-    def _compute_cluster_assignments(
-        self, X: tf.Tensor, centers: tf.Tensor
-    ) -> tf.Tensor:
-        """Assign each data point to its nearest center.
-
-        Parameters
-        ----------
-        X: tf.Tensor
-            Data tensor of shape (n_samples, n_dimensions)
-        centers: tf.Tensor
-            Cluster centers of shape (n_clusters, n_dimensions)
-
-        Returns
-        -------
-        tf.Tensor
-            Cluster assignments of shape (n_samples,)
-            Each value is an integer in [0, n_clusters-1]
-        """
-        # Calculate squared Euclidean distances
-        # (n_samples, 1, n_dims) - (1, n_clusters, n_dims)
-        distances_sq = tf.reduce_sum(
-            tf.square(tf.expand_dims(X, 1) - tf.expand_dims(centers, 0)), axis=2
-        )  # Shape: (n_samples, n_clusters)
-
-        # Assign to nearest center
-        assignments = tf.argmin(
-            distances_sq, axis=1, output_type=tf.int32
-        )  # Shape: (n_samples,)
-
-        return assignments
-
-    def initialize_gmm_priors_with_kmeans(
-        self,
-        component_name: str,
-        seed: int = 42,
-        add_noise: bool = True,
-        noise_std: float = 0.1,
-        representation_key: str = "_z",
-        target_parameterizer_attr: str = "z_prior_parameterizer",
-    ):
-        """
-        Initialize GMM prior means and logits using K-means++ on a
-        latent representation.
-
-        This should be called after vanilla phase and before transition phase.
-        Uses K-means++ to find cluster centers and initializes:
-        - loc_bias (means): at cluster centers
-        - logits_bias: based on cluster sizes
-
-        Note that this sets ``self.model.trainable`` to True at the end,
-        so callers outside AnnealingCallback need to restore the
-        trainable flags afterwards.
-
-        Parameters
-        ----------
-        component_name: str
-            Name of the component (e.g., "RNA")
-        seed: int
-            Random seed for reproducibility
-        add_noise: bool
-            Whether to add small noise to centers (prevents identical initialization)
-        noise_std: float
-            Standard deviation of noise to add to centers
-        representation_key: str
-            Suffix for the model output key containing the latent representation
-            to cluster.  Default ``"_z"`` for the z prior; use ``"_z_hat"`` for
-            the z_hat prior.
-        target_parameterizer_attr: str
-            Attribute name on the component object that holds the prior
-            parameterizer to initialize.  Default ``"z_prior_parameterizer"``;
-            use ``"z_hat_prior_parameterizer"`` for the z_hat prior.
-
-        Returns
-        -------
-        np.ndarray
-            the clustered latent representation, with shape
-            (n_samples, event_dims).
-        """
-        ci = self.component_order.index(component_name)
-        color = VerboseCallback._COLORS[ci % len(VerboseCallback._COLORS)]
-        label = "z_hat" if representation_key == "_z_hat" else "z"
-        print(
-            f"\033[91mPerform GMM K-means Initialization ({label} prior) for "
-            f"{color}{VerboseCallback._BOLD}[{component_name}]\033[91m."
-            f"{VerboseCallback._RESET}"
-        )
-
-        # toggling trainable pins every progressive scaler to alpha = 1
-        # (Component.__setattr__), so their state is restored at the end
-        saved_progressive = {
-            name: (
-                float(
-                    component.hierarchical_encoder.progressive_scaler.current_iteration
-                ),
-                float(
-                    component.hierarchical_encoder.progressive_scaler.total_iterations
-                ),
-            )
-            for name, component in self.model.components.items()
-        }
-
-        # 1. Extract latent representations from end of previous phase
-        self.model.trainable = False
-        outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
-        z = outputs[
-            f"{component_name}{representation_key}"
-        ]  # Shape: (n_samples, event_dims)
-        z_tensor = tf.constant(z, dtype=tf.float32)
-
-        n_samples = z.shape[0]
-        event_dims = z.shape[1]
-
-        # 2. Get number of GMM components
-        prior_layer = getattr(
-            self.model.components[component_name], target_parameterizer_attr
-        )
-        n_clusters = prior_layer.n_components
-
-        # 3. Run K-means++ to find cluster centers
-        centers = self._kmeans_plus_plus(z_tensor, n_clusters, seed=seed)
-
-        # 4. Compute cluster assignments and sizes
-        assignments = self._compute_cluster_assignments(z_tensor, centers)
-        assignments_np = assignments.numpy()
-
-        cluster_counts = np.zeros(n_clusters, dtype=np.int32)
-        for k in range(n_clusters):
-            cluster_counts[k] = np.sum(assignments_np == k)
-        # for k in range(n_clusters):
-        #     pct = 100.0 * cluster_counts[k] / n_samples
-        #     print(f"    cluster {k}: {cluster_counts[k]} samples ({pct:.1f}%)")
-
-        # 5. Optionally add small noise to centers
-        if add_noise:
-            noise = tf.random.normal(
-                shape=centers.shape,
-                mean=0.0,
-                stddev=noise_std,
-                seed=seed,
-                dtype=tf.float32,
-            )
-            centers = centers + noise
-            # print(f"  Added Gaussian noise (std={noise_std}) to centers")
-
-        # Initialize GMM prior parameters
-        # 6a. Initialize means (loc_bias)
-        for k in range(n_clusters):
-            center = centers[k : k + 1, :]  # Shape: (1, event_dims)
-            prior_layer.loc_bias[k].assign(center)
-
-        # 6b. Initialize logits based on cluster sizes
-        # Convert counts to log-probabilities
-        cluster_proportions = cluster_counts / n_samples
-        # Avoid log(0) for empty clusters (shouldn't happen with k-means++)
-        cluster_proportions = np.maximum(cluster_proportions, 1e-7)
-        logits = np.log(cluster_proportions).astype(np.float32)
-        logits_tensor = tf.constant(logits.reshape(1, n_clusters), dtype=tf.float32)
-        prior_layer.logits_bias.assign(logits_tensor)
-
-        # 6c. Initialize stds based on cluster spreads
-        # Compute std for each cluster
-        cluster_stds = np.zeros((n_clusters, event_dims), dtype=np.float32)
-        for k in range(n_clusters):
-            points_in_cluster = z[assignments_np == k]
-            if len(points_in_cluster) > 1:
-                # Compute std per dimension
-                cluster_stds[k] = np.std(points_in_cluster, axis=0)
-            else:
-                # Fallback for empty/tiny clusters
-                cluster_stds[k] = 0.5
-            # Add minimum threshold to prevent collapse
-            # cluster_stds[k] = np.maximum(cluster_stds[k], 0.02)
-
-        # Convert std to scale_diag_bias value (inverse of softplus)
-        # softplus(x) = log(1 + exp(x))
-        # Inverse: x = log(exp(std) - 1)
-        # But simpler approximation for std > 0.5: x ≈ std
-        for k in range(n_clusters):
-            std_value = cluster_stds[k]
-            # Inverse softplus (approximate)
-            # For std > 1: bias ≈ std
-            # For std < 1: bias ≈ log(exp(std) - 1)
-            bias_value = np.where(
-                std_value > 1.0,
-                std_value - 0.5,  # Approximation
-                np.log(np.exp(std_value) - 1 + 1e-7),  # Exact inverse
-            )
-            bias_tensor = tf.constant(
-                bias_value.reshape(1, event_dims), dtype=tf.float32
-            )
-            prior_layer.scale_diag_bias[k].assign(bias_tensor)
-
-        self.model.trainable = True
-        for name, (current, total) in saved_progressive.items():
-            self.model.components[name].set_progressive_scaler_iteration(
-                current_iteration=current, total_iterations=total
-            )
-
-        return z
-
-    def _get_parent_component(self, child_name: str) -> List[str]:
-        """Get the parent component names (conditioned on z or z_hat)
-        of the child."""
-        for component_config in self.component_configs:
-            if component_config.name == child_name:
-                return list(component_config.conditioned_on_z) + list(
-                    component_config.conditioned_on_z_hat
-                )
-        return []
+            for order, name in enumerate(self.component_order)
+        ]
 
     # ==================================================================
-    # Public API
+    # Training
     # ==================================================================
 
     def fit(
@@ -469,12 +269,10 @@ class SequentialTrainingScheduler:
     ) -> List[tf.keras.callbacks.History]:
         """Fit model with multi-phase hierarchical training.
 
-        Compiles the model once and uses Variable-backed loss weights
-        so callbacks can adjust weights at runtime without recompilation.
-
-        Per-component ``n_kl_annealing_epochs``, ``enable_kmeans_init``,
-        and ``kl_annealing_ratio`` are read from
-        ``self.component_configs``.
+        Each component is trained through the phases built by
+        PhasePlanner; each phase is one ``model.fit`` call with its own
+        loss weights, trainable modules and callbacks. Loss weights are
+        Variables, so callbacks can adjust them without recompiling.
 
         Parameters
         ----------
@@ -482,981 +280,129 @@ class SequentialTrainingScheduler:
             input dataset created by DataLoader.
 
         **kwargs: Mapping[str, Any]
-            additional arguments passed to self.model.fit.
+            additional arguments passed to self.model.fit. ``epochs``
+            is the regular training length of components that set no
+            ``max_regular_training_epochs``.
 
         Returns
         -------
         List[tf.keras.callbacks.History]
-            history of model.fit in each step.
+            history of model.fit in each phase.
         """
         n_batches = len(x)
-        history: List[tf.keras.callbacks.History] = []
-        self._fit_epochs = kwargs.get("epochs", 100)
         # z is sampled during the whole training; z_hat only from the
-        # z_hat annealing phase of its component on (see
-        # _run_z_hat_annealing_phase). The flags are stored in the
-        # weights, so they are reset here in case of resumed training.
-        self._set_samplers_stochastic(z=True, z_hat=False)
-        for name, component in self.model.components.items():
-            if (
-                getattr(component, "learn_z_hat_priors", False)
-                and getattr(component, "z_hat_prior_parameterizer", None) is not None
-                and not self._z_hat_annealing_enabled(name)
-            ):
-                warnings.warn(
-                    f"Component '{name}' has learn_z_hat_priors enabled but no "
-                    "z_hat annealing epochs: its z_hat prior is only initialized "
-                    "with k-means and is never trained. Set "
-                    "n_z_hat_annealing_epochs > 0 to learn it."
-                )
-
-        self._compile_model(self.learning_rate)
+        # z_hat annealing phase of its component on. The flags are
+        # stored in the weights, so they are reset here in case of
+        # resumed training.
+        self.state.set_samplers_stochastic(z=True, z_hat=False)
+        # compile first: the z_hat losses checked by the schedules only
+        # exist once the model is compiled
+        self._compile_model()
+        schedules = self.compute_component_schedules(kwargs.get("epochs", 100))
+        self._warn_untrained_z_hat_priors(schedules)
         experiment = self._mlflow_experiment()
-        is_single_component = len(self.training_order) == 1
 
-        # Pre-compute total cumulative epochs across all phases
-        cumulative_total = 0
-        for tc in self.training_order:
-            cn = tc[0]
-            comp_max_epochs = self._get_max_regular_training_epochs(cn)
-            is_child = self.run_progressive_training.get(cn)
-            has_parents = is_child and bool(self._get_parent_component(cn))
-            if has_parents:
-                cumulative_total += self._get_parent_annealing_epochs(cn)
-                kl_ep = self._get_kl_annealing_epochs(cn)
-                if kl_ep > 0:
-                    cumulative_total += kl_ep
-            elif (kl_ep := self._get_kl_annealing_epochs(cn)) > 0:
-                cumulative_total += kl_ep
-            cumulative_total += comp_max_epochs
-            if self._z_hat_annealing_enabled(cn):
-                cumulative_total += self._get_z_hat_annealing_epochs(cn)
-                cumulative_total += self._get_z_hat_training_epochs(cn)
-
-        cumulative_offset = 0
-        phase_number = 1
-        self.component_order = [c[0] for c in self.training_order]
-
-        for component_order, train_components in enumerate(self.training_order):
-            component_name = train_components[0]
-            self.setup_component_and_loss_weights(train_components)
-            self._compile_model(
-                self.learning_rate
-            )  # retrace with current trainable_variables
-
-            # --- Parent annealing ---
-            if self.run_progressive_training.get(component_name):
-                parent_names = self._get_parent_component(component_name)
-                if parent_names:
-                    n_prog_epochs = self._get_parent_annealing_epochs(component_name)
-                    if n_prog_epochs > 0:
-                        # parents are frozen and their loss weights zeroed by
-                        # setup_component_and_loss_weights
-                        before = len(history)
-                        self._run_parent_annealing_phase(
-                            component_name=component_name,
-                            component_order=component_order,
-                            parent_names=parent_names,
-                            n_prog_epochs=n_prog_epochs,
-                            n_batches=n_batches,
-                            x=x.take(n_batches * n_prog_epochs),
-                            history=history,
-                            experiment=experiment,
-                            cumulative_offset=cumulative_offset,
-                            cumulative_total=cumulative_total,
-                            phase_number=phase_number,
-                            kwargs=kwargs,
-                        )
-                        actual = (
-                            len(history[-1].epoch)
-                            if len(history) > before
-                            else n_prog_epochs
-                        )
-                        cumulative_total -= n_prog_epochs - actual
-                        cumulative_offset += actual
-                        phase_number += 1
-
-            # --- KL annealing (when enabled for this component) ---
-            comp_kl_epochs = self._get_kl_annealing_epochs(component_name)
-            if comp_kl_epochs > 0:
-                comp_enable_kmeans_init = self._get_enable_kmeans_init(component_name)
-                comp_kl_annealing_ratio = self._get_kl_annealing_ratios(component_name)
-                self.setup_component_and_loss_weights(train_components)
-                self._compile_model(self.learning_rate)
-                before = len(history)
-                self._run_kl_annealing_phase(
-                    component_name=component_name,
-                    component_order=component_order,
-                    x=x.take(n_batches * comp_kl_epochs),
-                    history=history,
-                    experiment=experiment,
-                    n_epochs=comp_kl_epochs,
-                    kl_annealing_ratios=comp_kl_annealing_ratio,
-                    enable_kmeans_init=comp_enable_kmeans_init,
-                    cumulative_offset=cumulative_offset,
-                    cumulative_total=cumulative_total,
-                    phase_number=phase_number,
-                    kwargs=kwargs,
-                )
-                actual = (
-                    len(history[-1].epoch) if len(history) > before else comp_kl_epochs
-                )
-                cumulative_total -= comp_kl_epochs - actual
-                cumulative_offset += actual
-                phase_number += 1
-
-            # --- Regular GMM training ---
-            self.setup_component_and_loss_weights(train_components)
-            self._compile_model(self.learning_rate)
-            before = len(history)
-            kmeans_initialized_in_kl_phase = comp_kl_epochs > 0
-            if self._get_enable_kmeans_init(component_name) and comp_kl_epochs == 0:
-                warnings.warn(
-                    f"Kmeans initialization is enabled but KL annealing is "
-                    f"disabled for component '{component_name}'. The latent "
-                    f"space may not be structured by standard KL "
-                    f"regularization before kmeans fires, which could result "
-                    f"in poor cluster priors. Consider enabling KL annealing "
-                    f"for better initialization quality."
-                )
-            comp_max_epochs = self._get_max_regular_training_epochs(component_name)
-            self._run_gmm_training_phase(
-                component_name=component_name,
-                component_order=component_order,
-                x=x.take(n_batches * comp_max_epochs),
-                history=history,
-                experiment=experiment,
-                n_epochs=comp_max_epochs,
-                is_single_component=is_single_component,
-                enable_kmeans_init=self._get_enable_kmeans_init(component_name)
-                and not kmeans_initialized_in_kl_phase,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
-                kwargs=kwargs,
-            )
-            actual = (
-                len(history[-1].epoch) if len(history) > before else comp_max_epochs
-            )
-            cumulative_total -= comp_max_epochs - actual
-            cumulative_offset += actual
-            phase_number += 1
-
-            # --- z_hat annealing (encoder frozen, stochastic z_hat) ---
-            if self._z_hat_annealing_enabled(component_name):
-                n_z_hat_annealing_epochs = self._get_z_hat_annealing_epochs(
-                    component_name
-                )
-                self._run_z_hat_annealing_phase(
-                    component_name=component_name,
-                    component_order=component_order,
-                    train_components=train_components,
-                    x=x.take(n_batches * n_z_hat_annealing_epochs),
-                    history=history,
-                    experiment=experiment,
-                    cumulative_offset=cumulative_offset,
-                    cumulative_total=cumulative_total,
-                    phase_number=phase_number,
-                    kwargs=kwargs,
-                )
-                cumulative_offset += n_z_hat_annealing_epochs
-                phase_number += 1
-
-                # --- z_hat training (fixed KL weight, early stopping) ---
-                n_z_hat_training_epochs = self._get_z_hat_training_epochs(
-                    component_name
-                )
-                if n_z_hat_training_epochs > 0:
-                    before = len(history)
-                    self._run_z_hat_training_phase(
-                        component_name=component_name,
-                        component_order=component_order,
-                        x=x.take(n_batches * n_z_hat_training_epochs),
-                        history=history,
-                        experiment=experiment,
-                        n_epochs=n_z_hat_training_epochs,
-                        is_single_component=is_single_component,
-                        cumulative_offset=cumulative_offset,
-                        cumulative_total=cumulative_total,
-                        phase_number=phase_number,
-                        kwargs=kwargs,
-                    )
-                    actual = (
-                        len(history[-1].epoch)
-                        if len(history) > before
-                        else n_z_hat_training_epochs
-                    )
-                    cumulative_total -= n_z_hat_training_epochs - actual
-                    cumulative_offset += actual
-                    phase_number += 1
+        phases = [
+            phase
+            for schedule in schedules
+            for phase in self.planner.plan(schedule, n_batches)
+        ]
+        progress = PhaseProgress(total=sum(phase.epochs for phase in phases))
+        history = [
+            self._run_phase(phase, x, n_batches, progress, experiment, kwargs)
+            for phase in phases
+        ]
 
         # training is completed: z and z_hat are the posterior means.
-        self._set_samplers_stochastic(z=False, z_hat=False)
-
+        self.state.set_samplers_stochastic(z=False, z_hat=False)
         return history
 
-    # ==================================================================
-    # Phase runners
-    # ==================================================================
-
-    def _run_parent_annealing_phase(
+    def _run_phase(
         self,
-        component_name,
-        component_order,
-        parent_names,
-        n_prog_epochs,
-        n_batches,
-        x,
-        history,
-        experiment,
-        cumulative_offset,
-        cumulative_total,
-        phase_number,
-        kwargs,
-    ):
-        """Run the parent→child annealing phase (progressive epochs).
+        phase: TrainingPhase,
+        x: tf.data.Dataset,
+        n_batches: int,
+        progress: PhaseProgress,
+        experiment: Any,
+        kwargs: Mapping[str, Any],
+    ) -> tf.keras.callbacks.History:
+        """Run one phase as a ``model.fit`` call and advance the epoch
+        book-keeping by the epochs it actually ran."""
+        with self._mlflow_run(phase.run_name, experiment):
+            if phase.reset_before:
+                self.state.train_only([phase.component_name])
+                self._compile_model()
+            phase.setup()
 
-        The child z enters z_hat through the progressive scaler, whose
-        alpha grows from 0 to 1 over the phase (per batch); the parents
-        enter at full strength. The child loss is the plain VAE loss
-        (data weight 1, standard KL) except that the standard KL weight
-        follows the same alpha: the reconstruction gradient reaching the
-        child encoder scales with alpha, so a constant KL would dominate
-        while alpha is small and collapse the child z. Parents are
-        frozen with zero loss weights. No k-means initialization here:
-        the GMM priors are initialized in the KL annealing phase (or the
-        regular training phase without KL annealing).
-        """
-        run_name = (
-            f"Training/{component_order}/ParentAnnealing/"
-            f"{'-'.join(parent_names)}_to_{component_name}"
-        )
-        self._mlflow_start_run(run_name, experiment)
-
-        n_iterations = n_batches * n_prog_epochs
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=0.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-            z_hat_gmm_kl=0.0,
-        )
-        self._set_component_progressive(
-            component_name,
-            active=True,
-            n_batches=n_batches,
-            n_epochs=n_prog_epochs,
-        )
-        # standard KL weight = scale (STANDARD_KL_WEIGHT) × alpha, advanced
-        # per batch together with alpha by AnnealingCallback.on_batch_end
-        self.model._standard_kl_weights[component_name].activate(n_iterations)
-
-        kwargs_prog = deepcopy(kwargs)
-        kwargs_prog.pop("epochs", None)
-        # callbacks are merged into callbacks_prog and verbose is set
-        # explicitly, so they must not be passed twice to fit.
-        kwargs_prog.pop("callbacks", None)
-        kwargs_prog.pop("verbose", None)
-        callbacks_prog = deepcopy(kwargs.get("callbacks", []))
-
-        callbacks_prog.append(
-            VerboseCallback(
-                labels=[(pn, 0) for pn in parent_names] + [(component_name, 1)],
-                phase="Parent Annealing",
-                loss_prefixes={
-                    **{pn: 0 for pn in parent_names},
-                    component_name: 1,
-                },
-                phase_epochs=n_prog_epochs,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
-                component_order=self.component_order,
-            )
-        )
-
-        callbacks_prog.append(
-            AnnealingCallback(
-                schedule=lambda epoch: {},
-                scheduler=self,
-                component_name=component_name,
-            )
-        )
-
-        history.append(
-            self.model.fit(
-                x,
-                epochs=n_prog_epochs,
-                callbacks=callbacks_prog,
+            fit_kwargs = deepcopy(dict(kwargs))
+            # callbacks are merged into the phase callbacks and verbose
+            # is set explicitly, so they must not be passed twice.
+            for key in ("epochs", "callbacks", "verbose"):
+                fit_kwargs.pop(key, None)
+            history = self.model.fit(
+                x.take(n_batches * phase.epochs),
+                epochs=phase.epochs,
+                callbacks=self._phase_callbacks(phase, progress, kwargs),
                 verbose=0,
-                **kwargs_prog,
+                **fit_kwargs,
             )
-        )
+        phase.teardown()
+        progress.advance(phase.epochs, len(history.epoch))
+        return history
 
-        mlflow.end_run()
-
-        self._set_component_progressive(component_name, active=False)
-        self.model._standard_kl_weights[component_name].pin_to(STANDARD_KL_WEIGHT)
-
-        # Zero parent loss weights (parents were already frozen)
-        self._zero_component_variables(parent_names)
-
-    def _run_kl_annealing_phase(
+    def _phase_callbacks(
         self,
-        component_name,
-        component_order,
-        x,
-        history,
-        experiment,
-        n_epochs,
-        kl_annealing_ratios,
-        enable_kmeans_init,
-        cumulative_offset,
-        cumulative_total,
-        phase_number,
-        kwargs,
-    ):
-        """Run KL annealing (standard_kl → GMM) for a root component."""
-        run_name = f"Training/{component_order}/KLAnnealing/{component_name}"
-        self._mlflow_start_run(run_name, experiment)
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=1.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-        )
-
-        schedule = self._make_final_kl_schedule(
-            component_name, n_epochs, kl_annealing_ratios
-        )
-        # Kmeans fires at the end of ratio[0] (standard KL-only phase),
-        # so priors are initialized when GMM KL weight is still 0.0.
-        # The crossfade in ratio[1] then smoothly introduces GMM KL.
-        kmeans_epoch = int(n_epochs * kl_annealing_ratios[0])
-        if enable_kmeans_init and kmeans_epoch == 0:
-            warnings.warn(
-                f"Kmeans initialization epoch is 0 for component "
-                f"'{component_name}': ratio[0] ({kl_annealing_ratios[0]}) × "
-                f"n_kl_annealing_epochs ({n_epochs}) = 0. "
-                f"Kmeans will fire at epoch 0, which may effectively "
-                f"disable initialization if ratio[0] is too small."
-            )
-
-        callbacks = deepcopy(kwargs.get("callbacks", []))
+        phase: TrainingPhase,
+        progress: PhaseProgress,
+        kwargs: Mapping[str, Any],
+    ) -> List[tf.keras.callbacks.Callback]:
+        """Callbacks of a phase: copies of the user callbacks, progress
+        display, annealing (and k-means), and early stopping."""
+        name = phase.component_name
+        callbacks = deepcopy(list(kwargs.get("callbacks", [])))
         callbacks.append(
             VerboseCallback(
-                labels=[(component_name, component_order)],
-                phase="KL Annealing",
-                loss_prefixes={component_name: component_order},
-                phase_epochs=n_epochs,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
+                labels=phase.labels,
+                phase=phase.name,
+                loss_prefixes=phase.loss_prefixes,
+                phase_epochs=phase.epochs,
+                cumulative_offset=progress.offset,
+                cumulative_total=progress.total,
+                phase_number=progress.phase_number,
                 component_order=self.component_order,
             )
         )
-        callbacks.append(
-            AnnealingCallback(
-                schedule=schedule,
-                kmeans_epoch=kmeans_epoch if enable_kmeans_init else None,
-                scheduler=self,
-                component_name=component_name,
-            )
-        )
-        component = self.model.components.get(component_name)
-        z_hat_enabled = bool(
-            getattr(component, "learn_z_hat_priors", False)
-            and getattr(component, "z_hat_prior_parameterizer", None) is not None
-            and component_name in getattr(self.model, "_z_hat_density_weights", {})
-        )
-        # The z_hat prior is initialized once: at the start of the z_hat
-        # annealing phase (on the z_hat learned so far) if it runs,
-        # otherwise here.
-        if (
-            z_hat_enabled
-            and enable_kmeans_init
-            and not self._z_hat_annealing_enabled(component_name)
-        ):
+        if phase.schedule is not None:
             callbacks.append(
                 AnnealingCallback(
-                    schedule=lambda epoch: {},
-                    kmeans_epoch=kmeans_epoch,
-                    scheduler=self,
-                    component_name=component_name,
-                    kmeans_kwargs={
-                        "representation_key": "_z_hat",
-                        "target_parameterizer_attr": "z_hat_prior_parameterizer",
-                    },
+                    schedule=phase.schedule,
+                    kmeans_epoch=phase.kmeans_epoch,
+                    kmeans_init=(
+                        partial(self.prior_initializer.initialize, name, target="z")
+                        if phase.kmeans_epoch is not None
+                        else None
+                    ),
+                    component_name=name,
+                    component_names=self.component_order,
                 )
             )
-
-        kwargs_copy = deepcopy(kwargs)
-        kwargs_copy.pop("epochs", None)
-        # callbacks are merged into callbacks above and verbose is set
-        # explicitly, so they must not be passed twice to fit.
-        kwargs_copy.pop("callbacks", None)
-        kwargs_copy.pop("verbose", None)
-        history.append(
-            self.model.fit(
-                x,
-                epochs=n_epochs,
-                callbacks=callbacks,
-                verbose=0,
-                **kwargs_copy,
-            )
-        )
-
-        mlflow.end_run()
-
-    def _run_gmm_training_phase(
-        self,
-        component_name,
-        component_order,
-        x,
-        history,
-        experiment,
-        n_epochs,
-        is_single_component,
-        enable_kmeans_init,
-        cumulative_offset,
-        cumulative_total,
-        phase_number,
-        kwargs,
-    ):
-        """Run regular GMM training for a single component."""
-        run_name = f"Training/{component_order}/{component_name}"
-        self._mlflow_start_run(run_name, experiment)
-        component = self.model.components.get(component_name)
-        z_hat_enabled = bool(
-            getattr(component, "learn_z_hat_priors", False)
-            and getattr(component, "z_hat_prior_parameterizer", None) is not None
-            and component_name in getattr(self.model, "_z_hat_density_weights", {})
-        )
-        # GMMDensityLoss is kept but disabled: z_hat is regularized by
-        # the z_hat GMM KL in the z_hat annealing phase instead.
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=1.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-            z_hat_gmm_kl=0.0,
-        )
-
-        callbacks = deepcopy(kwargs.get("callbacks", []))
-        callbacks.append(
-            VerboseCallback(
-                labels=[(component_name, component_order)],
-                phase="Regular Training",
-                loss_prefixes={component_name: component_order},
-                phase_epochs=n_epochs,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
-                component_order=self.component_order,
-            )
-        )
-        callbacks.append(
-            AnnealingCallback(
-                schedule=lambda epoch: {},
-                kmeans_epoch=0 if enable_kmeans_init else None,
-                scheduler=self,
-                component_name=component_name,
-            )
-        )
-        # The z_hat prior is initialized once: at the start of the z_hat
-        # annealing phase (on the z_hat learned so far) if it runs,
-        # otherwise here.
-        if (
-            z_hat_enabled
-            and enable_kmeans_init
-            and not self._z_hat_annealing_enabled(component_name)
-        ):
+        if phase.z_hat_kmeans_epoch is not None:
             callbacks.append(
                 AnnealingCallback(
-                    schedule=lambda epoch: {},
-                    kmeans_epoch=0,
-                    scheduler=self,
-                    component_name=component_name,
-                    kmeans_kwargs={
-                        "representation_key": "_z_hat",
-                        "target_parameterizer_attr": "z_hat_prior_parameterizer",
-                    },
+                    schedule=PhasePlanner.constant_schedule,
+                    kmeans_epoch=phase.z_hat_kmeans_epoch,
+                    kmeans_init=partial(
+                        self.prior_initializer.initialize, name, target="z_hat"
+                    ),
+                    component_name=name,
+                    component_names=self.component_order,
                 )
             )
-        callbacks.extend(self._common_callbacks(cumulative_offset=cumulative_offset))
-
-        kwargs_copy = deepcopy(kwargs)
-        kwargs_copy.pop("epochs", None)
-        # callbacks are merged into callbacks above and verbose is set
-        # explicitly, so they must not be passed twice to fit.
-        kwargs_copy.pop("callbacks", None)
-        kwargs_copy.pop("verbose", None)
-        history.append(
-            self.model.fit(
-                x,
-                epochs=n_epochs,
-                callbacks=callbacks,
-                verbose=0,
-                **kwargs_copy,
-            )
-        )
-
-        mlflow.end_run()
-
-    def _run_z_hat_annealing_phase(
-        self,
-        component_name,
-        component_order,
-        train_components,
-        x,
-        history,
-        experiment,
-        cumulative_offset,
-        cumulative_total,
-        phase_number,
-        kwargs,
-    ):
-        """Run the z_hat annealing phase for a single component.
-
-        The encoder path (preprocessor, encoder and z prior) is frozen
-        so z keeps what it learned in the previous phases. z_hat is
-        sampled from its Gaussian, and the hierarchical encoder, the
-        decoders and the z_hat prior are trained while the z_hat GMM
-        KL weight is ramped from 0 to ``z_hat_kl_weight`` over
-        ``n_z_hat_annealing_epochs``. No early stopping is used since
-        the loss rises with the KL weight by design. The frozen encoder
-        path and the stochastic z_hat are kept for
-        ``_run_z_hat_training_phase``.
-        """
-        run_name = f"Z_hat Annealing/{component_order}/{component_name}"
-        self._mlflow_start_run(run_name, experiment)
-        component = self.model.components.get(component_name)
-        n_annealing_epochs = self._get_z_hat_annealing_epochs(component_name)
-        target_weight = float(self.model._z_hat_gmm_kl_weights[component_name].scale)
-
-        # 1. Initialize the z_hat prior on the deterministic z_hat (loc)
-        #    learned so far. k-means toggles model.trainable, so the
-        #    trainable flags of this stage are restored afterwards.
-        z_hat = self.initialize_gmm_priors_with_kmeans(
-            component_name=component_name,
-            seed=42,
-            add_noise=True,
-            noise_std=0.1,
-            representation_key="_z_hat",
-            target_parameterizer_attr="z_hat_prior_parameterizer",
-        )
-        self.setup_component_and_loss_weights(train_components)
-
-        # 2. Start z_hat with a small constant std relative to its spread.
-        component.hierarchical_encoder.initialize_scale_diag(
-            self.z_hat_init_std_ratio * np.std(z_hat, axis=0)
-        )
-
-        # 3. Freeze the encoder path and sample z_hat.
-        self._freeze_encoder_path(component_name)
-        component.z_hat_sampler.stochastic.assign(1.0)
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=1.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-            z_hat_gmm_kl=0.0,
-        )
-        self._compile_model(self.learning_rate)
-
-        z_hat_kl_name = f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX}"
-
-        # epoch is 0-based, so (epoch + 1) / n makes the last annealing
-        # epoch use the full target weight (e.g. 0.25, 0.5, 0.75, 1.0).
-        def schedule(epoch):
-            progress = min(1.0, (epoch + 1) / n_annealing_epochs)
-            return {z_hat_kl_name: target_weight * progress}
-
-        callbacks = deepcopy(kwargs.get("callbacks", []))
-        callbacks.append(
-            VerboseCallback(
-                labels=[(component_name, component_order)],
-                phase="Z_hat Annealing",
-                loss_prefixes={component_name: component_order},
-                phase_epochs=n_annealing_epochs,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
-                component_order=self.component_order,
-            )
-        )
-        callbacks.append(
-            AnnealingCallback(
-                schedule=schedule,
-                scheduler=self,
-                component_name=component_name,
-            )
-        )
-        # No early stopping: the loss rises with the KL weight by design.
-
-        kwargs_copy = deepcopy(kwargs)
-        kwargs_copy.pop("epochs", None)
-        # callbacks are merged into callbacks above and verbose is set
-        # explicitly, so they must not be passed twice to fit.
-        kwargs_copy.pop("callbacks", None)
-        kwargs_copy.pop("verbose", None)
-        history.append(
-            self.model.fit(
-                x,
-                epochs=n_annealing_epochs,
-                callbacks=callbacks,
-                verbose=0,
-                **kwargs_copy,
-            )
-        )
-
-        mlflow.end_run()
-
-    def _run_z_hat_training_phase(
-        self,
-        component_name,
-        component_order,
-        x,
-        history,
-        experiment,
-        n_epochs,
-        is_single_component,
-        cumulative_offset,
-        cumulative_total,
-        phase_number,
-        kwargs,
-    ):
-        """Run the z_hat training phase for a single component.
-
-        Continues from ``_run_z_hat_annealing_phase`` (encoder path
-        frozen, stochastic z_hat) with the z_hat GMM KL weight fixed at
-        ``z_hat_kl_weight``, using early stopping as in the regular
-        training phase.
-        """
-        run_name = f"Z_hat Training/{component_order}/{component_name}"
-        self._mlflow_start_run(run_name, experiment)
-        target_weight = float(self.model._z_hat_gmm_kl_weights[component_name].scale)
-        self._set_component_weights(
-            component_name,
-            data_scale=1.0,
-            gmm_kl=1.0,
-            standard_kl=0.0,
-            z_hat_density=0.0,
-            z_hat_gmm_kl=target_weight,
-        )
-
-        callbacks = deepcopy(kwargs.get("callbacks", []))
-        callbacks.append(
-            VerboseCallback(
-                labels=[(component_name, component_order)],
-                phase="Z_hat Training",
-                loss_prefixes={component_name: component_order},
-                phase_epochs=n_epochs,
-                cumulative_offset=cumulative_offset,
-                cumulative_total=cumulative_total,
-                phase_number=phase_number,
-                component_order=self.component_order,
-            )
-        )
-        callbacks.extend(self._common_callbacks(cumulative_offset=cumulative_offset))
-
-        kwargs_copy = deepcopy(kwargs)
-        kwargs_copy.pop("epochs", None)
-        # callbacks are merged into callbacks above and verbose is set
-        # explicitly, so they must not be passed twice to fit.
-        kwargs_copy.pop("callbacks", None)
-        kwargs_copy.pop("verbose", None)
-        history.append(
-            self.model.fit(
-                x,
-                epochs=n_epochs,
-                callbacks=callbacks,
-                verbose=0,
-                **kwargs_copy,
-            )
-        )
-
-        mlflow.end_run()
-
-    # ==================================================================
-    # Schedule builders
-    # ==================================================================
-
-    def _make_final_kl_schedule(
-        self, component_name, total_epochs, kl_annealing_ratios
-    ):
-        """Return a schedule_fn for the final-phase KL annealing."""
-        standard_kl_end = int(total_epochs * kl_annealing_ratios[0])
-        gmm_kl_start = int(
-            total_epochs * (kl_annealing_ratios[0] + kl_annealing_ratios[1])
-        )
-
-        def schedule(epoch):
-            if epoch < standard_kl_end:
-                return {
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": STANDARD_KL_WEIGHT,
-                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 0.0,
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
-                }
-            elif epoch < gmm_kl_start:
-                t = (epoch - standard_kl_end) / (gmm_kl_start - standard_kl_end)
-                return {
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": STANDARD_KL_WEIGHT
-                    * (1.0 - t),
-                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0 * t,
-                    # GMMDensityLoss disabled (replaced by z_hat GMM KL)
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
-                }
-            else:
-                return {
-                    f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}": 0.0,
-                    f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}": 1.0,
-                    f"{component_name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}": 0.0,
-                }
-
-        return schedule
-
-    # ==================================================================
-    # Utilities
-    # ==================================================================
-
-    def _compile_model(self, learning_rate):
-        """Compile the model.  Creates a new optimizer when the trainable
-        variable set has changed, otherwise reuses the existing one so
-        momentum is preserved within a component's phases.
-
-        ProgressiveScaler state (current_iteration, total_iterations) is
-        saved before recompile and restored afterwards so that pinned
-        weights (e.g. zeroed parents) survive recompilation.
-        """
-        all_components = [c.name for c in self.component_configs]
-        current_tv = (
-            {id(v) for v in self.model.trainable_variables}
-            if hasattr(self.model, "trainable_variables")
-            else set()
-        )
-        if (
-            getattr(self.model, "optimizer", None) is not None
-            and getattr(self, "_last_trainable", None) == current_tv
-        ):
-            optimizer = self.model.optimizer
-        else:
-            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
-                learning_rate=learning_rate
-            )
-        self._last_trainable = current_tv
-
-        # Save ProgressiveScaler state before recompile
-        saved_std = {}
-        saved_gmm = {}
-        saved_data = {}
-        saved_z_hat = {}
-        d = getattr(self.model, "_standard_kl_weights", {})
-        for cn in all_components:
-            if cn in d and isinstance(d[cn], ProgressiveScaler):
-                saved_std[cn] = (
-                    float(d[cn].current_iteration),
-                    float(d[cn].total_iterations),
-                )
-        d = getattr(self.model, "_gmm_kl_weights", {})
-        for cn in all_components:
-            if cn in d and isinstance(d[cn], ProgressiveScaler):
-                saved_gmm[cn] = (
-                    float(d[cn].current_iteration),
-                    float(d[cn].total_iterations),
-                )
-        d = getattr(self.model, "_data_loss_weights", {})
-        for cn, mods in d.items():
-            for mod, w in mods.items():
-                if isinstance(w, ProgressiveScaler):
-                    saved_data.setdefault(cn, {})[mod] = (
-                        float(w.current_iteration),
-                        float(w.total_iterations),
-                    )
-        d = getattr(self.model, "_z_hat_density_weights", {})
-        for cn in all_components:
-            if cn in d and isinstance(d[cn], ProgressiveScaler):
-                saved_z_hat[cn] = (
-                    float(d[cn].current_iteration),
-                    float(d[cn].total_iterations),
-                )
-
-        # Read scales (and data weight scales) from existing ProgressiveScalers
-        std_w = {}
-        gmm_w = {}
-        data_w = {}
-        z_hat_w = {}
-        for cn in all_components:
-            d = getattr(self.model, "_standard_kl_weights", {})
-            std_w[cn] = float(d[cn].scale) if cn in d else STANDARD_KL_WEIGHT
-            d = getattr(self.model, "_gmm_kl_weights", {})
-            gmm_w[cn] = float(d[cn].scale) if cn in d else 1.0
-            d = getattr(self.model, "_data_loss_weights", {})
-            for mod, w in d.get(cn, {}).items():
-                if isinstance(w, ProgressiveScaler):
-                    data_w[f"{cn}_{mod}_{Constants.MODEL_LOSS_DATA_POSTFIX}"] = float(
-                        w.scale
-                    )
-            d = getattr(self.model, "_z_hat_density_weights", {})
-            if cn in d:
-                w = d[cn]
-                z_hat_w[cn] = (
-                    float(w.scale)
-                    if isinstance(w, ProgressiveScaler)
-                    else float(w.numpy())
-                )
-
-        compile_kwargs = dict(
-            standard_kl_weights=std_w,
-            gmm_kl_weights=gmm_w,
-            optimizer=optimizer,
-        )
-        for cn, weight in z_hat_w.items():
-            if cn in getattr(self.model, "_z_hat_density_weights", {}):
-                self.model._z_hat_density_weights[cn].assign(weight)
-        if data_w:
-            compile_kwargs["loss_weights"] = data_w
-        self.model.compile(**compile_kwargs)
-
-        # Restore ProgressiveScaler state after recompile
-        for cn, (ci, ti) in saved_std.items():
-            w = getattr(self.model, "_standard_kl_weights", {}).get(cn)
-            if w is not None and isinstance(w, ProgressiveScaler):
-                w.current_iteration.assign(ci)
-                w.total_iterations.assign(ti)
-        for cn, (ci, ti) in saved_gmm.items():
-            w = getattr(self.model, "_gmm_kl_weights", {}).get(cn)
-            if w is not None and isinstance(w, ProgressiveScaler):
-                w.current_iteration.assign(ci)
-                w.total_iterations.assign(ti)
-        for cn, mods in saved_data.items():
-            for mod, (ci, ti) in mods.items():
-                w = getattr(self.model, "_data_loss_weights", {}).get(cn, {}).get(mod)
-                if w is not None and isinstance(w, ProgressiveScaler):
-                    w.current_iteration.assign(ci)
-                    w.total_iterations.assign(ti)
-        for cn, (ci, ti) in saved_z_hat.items():
-            w = getattr(self.model, "_z_hat_density_weights", {}).get(cn)
-            if w is not None and isinstance(w, ProgressiveScaler):
-                w.current_iteration.assign(ci)
-                w.total_iterations.assign(ti)
-
-    def _mlflow_experiment(self):
-        """Set up MLflow experiment and return the experiment object."""
-        experiment_name = self.model.name
-        mlflow.set_experiment(experiment_name)
-        return mlflow.get_experiment_by_name(experiment_name)
-
-    def _mlflow_start_run(self, run_name, experiment):
-        """Start an MLflow run with TensorFlow autologging."""
-        mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
-        mlflow.tensorflow.autolog(
-            log_every_epoch=True,
-            log_models=False,
-            checkpoint=False,
-        )
-
-    def _get_parent_annealing_epochs(self, component_name):
-        """Get parent annealing epochs from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return c.n_parent_annealing_epochs
-        return 0
-
-    def _get_kl_annealing_epochs(self, component_name):
-        """Get KL annealing epochs from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return c.n_kl_annealing_epochs
-        return 0
-
-    def _get_enable_kmeans_init(self, component_name):
-        """Get enable_kmeans_init flag from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return c.enable_kmeans_init
-        return True
-
-    def _get_max_regular_training_epochs(self, component_name: str) -> int:
-        """Get max regular training epochs from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return c.max_regular_training_epochs or getattr(
-                    self, "_fit_epochs", 100
-                )
-        return getattr(self, "_fit_epochs", 100)
-
-    def _get_kl_annealing_ratios(self, component_name):
-        """Get KL annealing ratios from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return c.kl_annealing_ratio or (0.5, 0.2, 0.3)
-        return (0.5, 0.2, 0.3)
-
-    def _get_z_hat_annealing_epochs(self, component_name):
-        """Get z_hat annealing (KL ramp) epochs from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return getattr(c, "n_z_hat_annealing_epochs", None) or 0
-        return 0
-
-    def _get_z_hat_training_epochs(self, component_name):
-        """Get z_hat training epochs (constant KL weight after the
-        ramp) from component config."""
-        for c in self.component_configs:
-            if c.name == component_name:
-                return getattr(c, "n_z_hat_training_epochs", None) or 0
-        return 0
-
-    def _z_hat_annealing_enabled(self, component_name):
-        """Whether the z_hat annealing phase runs for the component."""
-        component = self.model.components.get(component_name)
-        return bool(
-            self._get_z_hat_annealing_epochs(component_name) > 0
-            and getattr(component, "learn_z_hat_priors", False)
-            and getattr(component, "z_hat_prior_parameterizer", None) is not None
-            and component_name in getattr(self.model, "_z_hat_gmm_kl_weights", {})
-        )
-
-    def _set_samplers_stochastic(self, z: bool, z_hat: bool) -> None:
-        """Set the stochastic flag of the z and z_hat samplers of every
-        component. Samplers sample in training mode regardless of
-        whether their component is frozen, so a frozen parent passes
-        sampled z (and z_hat once it is stochastic) to its children."""
-        for component in self.model.components.values():
-            for attr, value in (("z_sampler", z), ("z_hat_sampler", z_hat)):
-                sampler = getattr(component, attr, None)
-                stochastic = getattr(sampler, "stochastic", None)
-                if stochastic is not None:
-                    stochastic.assign(1.0 if value else 0.0)
-
-    def _freeze_encoder_path(self, component_name):
-        """Freeze the preprocessor, encoder and z prior of a component.
-
-        The hierarchical encoder, decoders and z_hat prior stay
-        trainable. The samplers are not affected: whether they sample
-        is controlled by their stochastic flag.
-        """
-        component = self.model.components.get(component_name)
-        for module in (
-            component.preprocessor,
-            component.encoder,
-            component.z_prior_parameterizer,
-        ):
-            module.trainable = False
-
-    def _common_callbacks(self, cumulative_offset=0):
-        """Return common callbacks: EarlyStopping (if configured)."""
-        callbacks = []
-        if self.early_stopping:
+        if phase.early_stopping and self.early_stopping:
             early_stopping = self.early_stopping
             callbacks.append(
                 EarlyStoppingCallback(
-                    cumulative_offset=cumulative_offset,
+                    cumulative_offset=progress.offset,
                     monitor=early_stopping.monitor,
                     mode=early_stopping.mode,
                     min_delta=early_stopping.min_delta,
@@ -1467,153 +413,67 @@ class SequentialTrainingScheduler:
             )
         return callbacks
 
-    def _set_component_weights(
-        self,
-        comp_name: str,
-        data_scale: float = 1.0,
-        gmm_kl: float = 1.0,
-        standard_kl: float = 0.0,
-        z_hat_density: Optional[float] = None,
-        z_hat_gmm_kl: Optional[float] = None,
-    ) -> None:
-        """Assign all loss-weight Variables for one component.
+    def _warn_untrained_z_hat_priors(self, schedules: List[ComponentSchedule]) -> None:
+        """Warn about learned z_hat priors that no phase trains."""
+        for schedule in schedules:
+            if schedule.has_z_hat_prior and not schedule.z_hat_annealing_enabled:
+                warnings.warn(
+                    f"Component '{schedule.name}' has learn_z_hat_priors enabled "
+                    "but no z_hat annealing epochs: its z_hat prior is only "
+                    "initialized with k-means and is never trained. Set "
+                    "n_z_hat_annealing_epochs > 0 to learn it."
+                )
 
-        Parameters
-        ----------
-        comp_name : str
-            Component name.
-        data_scale : float
-            Scale factor applied to data-loss modality weights.
-            Use 0.0 to zero data losses.
-        gmm_kl : float
-            Value assigned to the GMM KL divergence weight Variable.
-        standard_kl : float
-            Value assigned to the standard KL divergence weight Variable.
-        z_hat_density : float, optional
-            If not None, value assigned to the z_hat GMM density weight
-            Variable (only used when ``learn_z_hat_priors`` is enabled).
-        z_hat_gmm_kl : float, optional
-            If not None, value assigned to the z_hat GMM KL divergence
-            weight (only used when ``learn_z_hat_priors`` is enabled).
+    # ==================================================================
+    # Compilation and logging
+    # ==================================================================
+
+    def _compile_model(self) -> None:
+        """Compile the model. Creates a new optimizer when the trainable
+        variable set has changed, otherwise reuses the existing one so
+        momentum is preserved within a component's phases.
+
+        The progressive loss-weight scalers are saved before and
+        restored after compiling, so pinned or ramping weights (e.g.
+        zeroed parents) survive recompilation.
         """
-        model = self.model
-        if comp_name in getattr(model, "_gmm_kl_weights", {}):
-            w = model._gmm_kl_weights[comp_name]
-            if isinstance(w, ProgressiveScaler):
-                w.pin_to(float(gmm_kl))
-            else:
-                w.assign(float(gmm_kl))
-        if comp_name in getattr(model, "_standard_kl_weights", {}):
-            w = model._standard_kl_weights[comp_name]
-            if isinstance(w, ProgressiveScaler):
-                w.pin_to(float(standard_kl))
-            else:
-                w.assign(float(standard_kl))
-        if z_hat_density is not None and comp_name in getattr(
-            model, "_z_hat_density_weights", {}
+        current_variables = (
+            {id(v) for v in self.model.trainable_variables}
+            if hasattr(self.model, "trainable_variables")
+            else set()
+        )
+        if (
+            getattr(self.model, "optimizer", None) is not None
+            and getattr(self, "_last_trainable", None) == current_variables
         ):
-            w = model._z_hat_density_weights[comp_name]
-            if isinstance(w, ProgressiveScaler):
-                w.pin_to(float(z_hat_density))
-            else:
-                w.assign(float(z_hat_density))
-        if z_hat_gmm_kl is not None and comp_name in getattr(
-            model, "_z_hat_gmm_kl_weights", {}
-        ):
-            model._z_hat_gmm_kl_weights[comp_name].pin_to(float(z_hat_gmm_kl))
-        for mod_name, var in model._data_loss_weights.get(comp_name, {}).items():
-            mod_w = self.modality_weight.get(comp_name, {}).get(mod_name, 1.0)
-            if isinstance(var, ProgressiveScaler):
-                var.pin_to(mod_w * float(data_scale))
-            else:
-                var.assign(mod_w * float(data_scale))
-
-    def _set_component_progressive(
-        self,
-        comp_name: str,
-        active: bool,
-        n_batches: int = 1,
-        n_epochs: int = 0,
-    ) -> None:
-        """Activate or deactivate the progressive scaler for one component.
-
-        Parameters
-        ----------
-        comp_name : str
-            Component name.
-        active : bool
-            If True, resets the scaler to start from iteration 0.0
-            with total = n_batches * n_epochs.  If False, pins the
-            scaler at alpha = 1.0.
-        n_batches : int
-            Batches per epoch (only used when active=True).
-        n_epochs : int
-            Number of progressive epochs (only used when active=True).
-        """
-        component = self.model.components[comp_name]
-        if active:
-            total = float(n_batches) * float(n_epochs)
-            component.set_progressive_scaler_iteration(0.0, total)
+            optimizer = self.model.optimizer
         else:
-            component.set_progressive_scaler_iteration(1.0, 1.0)
-
-    def _zero_component_variables(self, component_names: List[str]) -> None:
-        """Set all loss-weight Variables for the given components to 0."""
-        for comp_name in component_names:
-            self._set_component_weights(
-                comp_name,
-                data_scale=0.0,
-                gmm_kl=0.0,
-                standard_kl=0.0,
-                z_hat_density=0.0,
-                z_hat_gmm_kl=0.0,
+            optimizer = tf.keras.optimizers.get(self.optimizer).__class__(
+                learning_rate=self.learning_rate
             )
+        self._last_trainable = current_variables
 
-    def setup_component_and_loss_weights(
-        self,
-        train_components: List[str],
-    ) -> None:
-        """Set trainable flags, recursive sublayer freeze, and initial
-        loss weights for the given components.
+        snapshot = self.state.snapshot_scalers()
+        self.model.compile(optimizer=optimizer, **self.state.compile_loss_weights())
+        self.state.restore_scalers(snapshot)
 
-        Progressive scaler is left at alpha = 1.0; explicit activation
-        is done by ``_set_component_progressive(active=True)`` in the
-        parent-annealing phase runner.
+    def _mlflow_experiment(self) -> Any:
+        """Set up MLflow experiment and return the experiment object."""
+        experiment_name = self.model.name
+        mlflow.set_experiment(experiment_name)
+        return mlflow.get_experiment_by_name(experiment_name)
 
-        Parameters
-        ----------
-        train_components : List[str]
-            component names to enable for training.  All others are
-            frozen and their loss weights zeroed.
-        """
-        for component_config in self.component_configs:
-            comp_name = component_config.name
-            component = self.model.components.get(comp_name)
-
-            should_train = comp_name in train_components
-            component.trainable = should_train
-            self._set_component_progressive(comp_name, active=False)
-
-            visited = set()
-
-            def _set_trainable(layer):
-                if id(layer) in visited:
-                    return
-                visited.add(id(layer))
-                if hasattr(layer, "trainable"):
-                    layer.trainable = should_train
-                for sub in getattr(layer, "submodules", []):
-                    _set_trainable(sub)
-                for sub in getattr(layer, "layers", []):
-                    _set_trainable(sub)
-
-            _set_trainable(component)
-
-            self._set_component_weights(
-                comp_name,
-                data_scale=1.0 if should_train else 0.0,
-                gmm_kl=1.0 if should_train else 0.0,
-                standard_kl=0.0,
-                z_hat_density=0.0,  # GMMDensityLoss is disabled
-                z_hat_gmm_kl=0.0,  # enabled only in _run_z_hat_annealing_phase
-            )
+    @contextmanager
+    def _mlflow_run(self, run_name: str, experiment: Any) -> Iterator[None]:
+        """MLflow run with TensorFlow autologging, ended even if the
+        phase raises."""
+        mlflow.start_run(experiment_id=experiment.experiment_id, run_name=run_name)
+        mlflow.tensorflow.autolog(
+            log_every_epoch=True,
+            log_models=False,
+            checkpoint=False,
+        )
+        try:
+            yield
+        finally:
+            mlflow.end_run()

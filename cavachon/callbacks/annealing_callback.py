@@ -16,23 +16,43 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
     its postfix, so component-wide patterns (e.g. ``child1``) never
     switch it on outside the z_hat annealing phase.
 
-    K-means initialization can be triggered at a specific epoch.
+    K-means initialization can be triggered at a specific epoch through
+    ``kmeans_init`` (e.g. ``GMMPriorInitializer.initialize`` bound to a
+    component and target), which restores the trainable flags itself.
+
+    Parameters
+    ----------
+    schedule: Callable[[int], Mapping[str, float]]
+        loss-name pattern -> weight for each epoch.
+
+    kmeans_epoch: int, optional
+        epoch at which ``kmeans_init`` is called (once).
+
+    kmeans_init: Callable[[], Any], optional
+        initializes the GMM prior.
+
+    component_name: str, optional
+        component whose alpha is advanced per batch.
+
+    component_names: Sequence[str], optional
+        components whose progressive loss weights are advanced per
+        batch.
     """
 
     def __init__(
         self,
         schedule,
         kmeans_epoch=None,
-        scheduler=None,
+        kmeans_init=None,
         component_name=None,
-        kmeans_kwargs=None,
+        component_names=(),
     ):
         super().__init__()
         self.schedule = schedule
         self.kmeans_epoch = kmeans_epoch
-        self.scheduler = scheduler
+        self.kmeans_init = kmeans_init
         self.component_name = component_name
-        self.kmeans_kwargs = kmeans_kwargs or {}
+        self.component_names = list(component_names)
         self._kmeans_done = False
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -60,19 +80,8 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
             and epoch == self.kmeans_epoch
             and not self._kmeans_done
         ):
-            saved_trainable = {
-                name: comp.trainable for name, comp in self.model.components.items()
-            }
-            self.model.trainable = False
-            self.scheduler.initialize_gmm_priors_with_kmeans(
-                component_name=self.component_name,
-                seed=42,
-                add_noise=True,
-                noise_std=0.1,
-                **self.kmeans_kwargs,
-            )
-            for name, was_trainable in saved_trainable.items():
-                self.model.components[name].trainable = was_trainable
+            if self.kmeans_init is not None:
+                self.kmeans_init()
             self._kmeans_done = True
 
     def on_batch_end(self, batch, logs=None):
@@ -85,7 +94,7 @@ class AnnealingCallback(tf.keras.callbacks.Callback):
         except Exception:
             pass
         try:
-            for cn in self.scheduler.component_order:
+            for cn in self.component_names:
                 for wdict in (
                     "_standard_kl_weights",
                     "_gmm_kl_weights",
