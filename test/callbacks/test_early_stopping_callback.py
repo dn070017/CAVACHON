@@ -8,7 +8,6 @@ class is third-party and stays real.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
 
 from cavachon.callbacks.early_stopping_callback import EarlyStoppingCallback
 
@@ -109,12 +108,9 @@ def test_state_reset_between_fits(capsys):
     assert capsys.readouterr().out == ""
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: restored epoch printed 0-based (offset+best_epoch); "
-    "VerboseCallback/Keras label epochs 1-based",
-)
 def test_restored_epoch_number_is_one_based(capsys):
+    # regression: the epoch was printed 0-based (offset + best_epoch), one
+    # lower than the "Total Epoch" VerboseCallback shows
     cb = EarlyStoppingCallback(
         cumulative_offset=10, monitor="loss", patience=2, restore_best_weights=True
     )
@@ -126,12 +122,9 @@ def test_restored_epoch_number_is_one_based(capsys):
     assert "Restoring Model Weights from Epoch 12" in out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: cumulative_offset placed before *args swallows the "
-    "positional `monitor` argument of EarlyStopping",
-)
 def test_positional_monitor_is_respected():
+    # regression: cumulative_offset came before *args and swallowed the
+    # positional `monitor` argument of EarlyStopping
     cb = EarlyStoppingCallback("loss")
     assert cb.monitor == "loss"
     assert cb._cumulative_offset == 0
