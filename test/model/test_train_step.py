@@ -190,13 +190,10 @@ class TestWeightedMetrics:
         assert out["loss"] == pytest.approx(0.25 * 3 * S + 2 * S + 120)
         assert out[f"a_{GMM}"] == pytest.approx(3 * S)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: scaler-weighted metric divides by the weight without a zero guard (NaN)",
-    )
     def test_zero_scaler_weight_metric_is_finite(self, single):
+        # regression: the scaler-weighted metric divided by the weight
+        # without a zero guard (NaN)
         m, batch, x, S = single
-        # weight 0 is accepted by compile (loss is created with scale 0)
         m.compile(
             standard_kl_weights={"a": 0.0},
             gmm_kl_weights={"a": 1.0},

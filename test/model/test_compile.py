@@ -91,15 +91,26 @@ class TestKLLosses:
         assert m.loss[f"a_{GMM}"].weight.pins == [0.25]
         assert m.loss[f"b_atac_{NLL}"].weight.pins == [0.5]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: docstring says weight 0 -> loss not created, but it is created",
-    )
-    def test_zero_weight_creates_no_loss(self, two_component_model):
+    def test_zero_weight_creates_the_loss_switched_off(self, two_component_model):
+        # regression: a weight of 0 created the loss with scale 0, so it
+        # could never be switched on and its reported value was 0 / 0.
+        # It is now created with scale 1 and pinned to 0 (frozen parents
+        # are still logged without affecting training).
         m = two_component_model
         m.compile(standard_kl_weights={"a": 0.0}, gmm_kl_weights={"a": 1.0, "b": 0.0})
-        assert f"a_{STD}" not in m.loss
-        assert f"b_{GMM}" not in m.loss
+        for key in (f"a_{STD}", f"b_{GMM}"):
+            assert m.loss[key].init_weight == 1.0
+            assert m.loss[key].weight.pins == [0.0]
+        assert m.loss[f"a_{GMM}"].init_weight == 1.0
+        assert m.loss[f"a_{GMM}"].weight.pins == []
+
+    def test_nonzero_weight_is_the_scale(self, two_component_model):
+        m = two_component_model
+        m.compile(standard_kl_weights={"a": 2.5}, loss_weights={f"b_atac_{NLL}": 0.0})
+        assert m.loss[f"a_{STD}"].init_weight == 2.5
+        assert m.loss[f"a_{STD}"].weight.pins == []
+        nll = m.loss[f"b_atac_{NLL}"]
+        assert nll.init_weight == 1.0 and nll.weight.pins == [0.0]
 
 
 class TestDataLosses:
@@ -139,14 +150,17 @@ class TestDataLosses:
         assert "loss_weights" not in seen
         assert seen["loss"] is not None
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: compile() pops entries from the caller's loss_weights dict",
-    )
     def test_loss_weights_dict_of_caller_not_mutated(self, two_component_model):
+        # regression: compile() popped entries from the caller's dict
         lw = {f"b_atac_{NLL}": 3.0}
         two_component_model.compile(loss_weights=lw)
         assert lw == {f"b_atac_{NLL}": 3.0}
+        assert two_component_model.loss[f"b_atac_{NLL}"].init_weight == 3.0
+
+    def test_unknown_loss_weights_warn(self, two_component_model):
+        typo = f"b_atak_{NLL}"
+        with pytest.warns(RuntimeWarning, match=typo):
+            two_component_model.compile(loss_weights={typo: 3.0})
 
 
 class TestZHatLosses:
@@ -214,12 +228,11 @@ class TestRecompile:
         assert m._z_hat_density_weights["a"] is var
         # z_hat KL is not re-pinned to 0 on recompile
         assert zkl_weight.pins == [0.0, 0.7]
-        # existing GMM loss keeps its original scale (setdefault)
+        # existing GMM loss keeps its original scale
         assert m.loss[f"a_{GMM}"].init_weight == 1.0
-        # setdefault() evaluates its default eagerly: a throw-away GMM KL
-        # (and NLL) object is constructed on every recompile and discarded.
-        assert len(FakeGMMKL.instances) == 3  # a_gmm x2 + a_z_hat_kl x1
-        assert len(FakeNLL.instances) == 2
+        # existing losses are not rebuilt (and discarded) on recompile
+        assert len(FakeGMMKL.instances) == 2  # a_gmm + a_z_hat_kl
+        assert len(FakeNLL.instances) == 1
 
     def test_recompile_adds_new_loss_types(self, make_model):
         m = make_model(FakeConfig("a"))

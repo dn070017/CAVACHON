@@ -457,19 +457,29 @@ class Model(tf.keras.Model):
         ----------
         standard_kl_weights: Mapping[str, float], optional
             per-component weights for standard N(0,1) KL divergence.
-            Components with weight > 0 get a standard KL loss. A weight
-            of 0 means the loss is not created for that component.
-            Defaults to None (no standard KL for any component).
+            Components listed here get a standard KL loss. A weight of
+            0 creates the loss switched off: its scale is 1 and its
+            weight is pinned to 0, so it does not affect training (or
+            the total loss used by early stopping) but its value is
+            still reported, and it can be switched on later with
+            ``pin_to``. Defaults to None (no standard KL for any
+            component).
 
         gmm_kl_weights: Mapping[str, float], optional
-            per-component weights for GMM KL divergence. Components
-            with weight > 0 get a GMM KL loss. A weight of 0 means the
-            loss is not created for that component. When both
+            per-component weights for GMM KL divergence, with the same
+            meaning of 0 as ``standard_kl_weights``. When both
             standard_kl_weights and gmm_kl_weights are absent for a
             component, defaults to GMM KL with weight 1.0.
 
         kwargs: Mapping[str, Any]
             additional parameters used to compile the model.
+            ``loss_weights`` maps data-loss names
+            (``{component}_{modality}_negative_log_data_likelihood``)
+            to weights, with the same meaning of 0; the mapping is not
+            modified, and unknown names emit a warning.
+
+        Losses that already exist (on recompilation) are reused, so
+        weights passed for them are ignored.
 
         """
         standard_kl_weights = standard_kl_weights or {}
@@ -488,8 +498,8 @@ class Model(tf.keras.Model):
         if not hasattr(self, "_z_hat_gmm_kl_weights"):
             self._z_hat_gmm_kl_weights = {}
 
-        loss_weights = kwargs.get("loss_weights", dict())
-        kwargs.pop("loss_weights", None)
+        # a copy: entries are consumed below, the caller's mapping is kept
+        loss_weights: Dict[str, float] = dict(kwargs.pop("loss_weights", None) or {})
 
         if "loss" not in kwargs:
             loss = getattr(self, "loss", None)
@@ -510,32 +520,26 @@ class Model(tf.keras.Model):
                     gmm_w = 1.0
 
                 if has_standard:
-                    loss.setdefault(
-                        f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
-                        StandardKLDivergence(
-                            weight=standard_w,
-                            name=f"{component_name}_"
-                            f"{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}",
-                        ),
-                    )
-                    # scheduler index
-                    self._standard_kl_weights[component_name] = loss[
+                    name = (
                         f"{component_name}_{Constants.MODEL_LOSS_STANDARD_KL_POSTFIX}"
-                    ].weight
+                    )
+                    if name not in loss:
+                        loss[name] = StandardKLDivergence(
+                            weight=self._initial_scale(standard_w), name=name
+                        )
+                        self._switch_off_if_zero(loss[name], standard_w)
+                    # scheduler index
+                    self._standard_kl_weights[component_name] = loss[name].weight
 
                 if has_gmm:
-                    loss.setdefault(
-                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
-                        GMMKLDivergence(
-                            weight=gmm_w,
-                            name=f"{component_name}_"
-                            f"{Constants.MODEL_LOSS_GMM_KL_POSTFIX}",
-                        ),
-                    )
+                    name = f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
+                    if name not in loss:
+                        loss[name] = GMMKLDivergence(
+                            weight=self._initial_scale(gmm_w), name=name
+                        )
+                        self._switch_off_if_zero(loss[name], gmm_w)
                     # scheduler index
-                    self._gmm_kl_weights[component_name] = loss[
-                        f"{component_name}_{Constants.MODEL_LOSS_GMM_KL_POSTFIX}"
-                    ].weight
+                    self._gmm_kl_weights[component_name] = loss[name].weight
 
                 # scheduler index (per-component, per-modality ProgressiveScaler)
                 if not hasattr(self, "_data_loss_weights"):
@@ -549,14 +553,13 @@ class Model(tf.keras.Model):
                         f"{Constants.MODEL_LOSS_DATA_POSTFIX}"
                     )
                     weight = loss_weights.pop(nldl_name, 1.0)
-                    loss.setdefault(
-                        nldl_name,
-                        NegativeLogDataLikelihood(
+                    if nldl_name not in loss:
+                        loss[nldl_name] = NegativeLogDataLikelihood(
                             cast(str, distribution_names.get(modality_name)),
-                            weight,
+                            self._initial_scale(weight),
                             name=nldl_name,
-                        ),
-                    )
+                        )
+                        self._switch_off_if_zero(loss[nldl_name], weight)
                     # scheduler index
                     self._data_loss_weights[component_name][modality_name] = loss[
                         nldl_name
@@ -606,6 +609,12 @@ class Model(tf.keras.Model):
                         self._z_hat_gmm_kl_weights[component_name] = loss[
                             z_hat_kl_name
                         ].weight
+            if loss_weights:
+                warnings.warn(
+                    "loss_weights has no data loss named "
+                    f"{sorted(loss_weights)}; these weights are ignored.",
+                    RuntimeWarning,
+                )
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -627,6 +636,22 @@ class Model(tf.keras.Model):
             kwargs.pop("metrics")
 
         super().compile(**kwargs)
+
+    @staticmethod
+    def _initial_scale(weight: float) -> float:
+        """Scale a loss is created with: the weight, or 1 for a weight
+        of 0 (the loss is then switched off by ``_switch_off_if_zero``,
+        and can be switched on later)."""
+        return 1.0 if weight == 0 else float(weight)
+
+    @staticmethod
+    def _switch_off_if_zero(loss_fn: Any, weight: float) -> None:
+        """Pin a new loss's weight to 0 when it was requested with
+        weight 0. Its effective weight is then scale * 1e-16, so it
+        does not affect training but train_step still reports its
+        unweighted value."""
+        if weight == 0:
+            loss_fn.weight.pin_to(0.0)
 
     def select_inputs(self, data: Any) -> Any:
         """Keep only the entries of a batch that are inputs of the model.
@@ -786,7 +811,11 @@ class Model(tf.keras.Model):
                     ):
                         weighted_loss = loss_fn(y_true[key], y_pred[key])
                         weight_scalar = loss_fn.weight(tf.ones(()))
-                        loss_metrics[key] = weighted_loss / weight_scalar
+                        # a weight pinned to 0 is scale * 1e-16, so this
+                        # recovers the unweighted loss; a true 0 reports 0
+                        loss_metrics[key] = tf.math.divide_no_nan(
+                            weighted_loss, weight_scalar
+                        )
                     elif hasattr(loss_fn, "weight") and isinstance(
                         loss_fn.weight, tf.Variable
                     ):
