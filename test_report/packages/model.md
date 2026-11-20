@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, no production impact | [`test/model`](../../test/model) | 91 | 6 | 100% | Very high: depends on 7 packages, used by 2 |
+| 🟡 Open bugs, no production impact | [`test/model`](../../test/model) | 97 | 5 | 100% | Very high: depends on 7 packages, used by 2 |
 
 - **Depends on:** config, dataloader, environment, layers, losses, modules, utils
 - **Used by:** tools, workflow
@@ -24,7 +24,6 @@
 | # | Location | Issue | Impact |
 |---|---|---|---|
 | MD1 | `model.py:645-654` | A component compiled with only the standard KL never trains it: y_true/y_pred are stored under the GMM key. | No (the scheduler always passes both) |
-| MD4 | `model.py:940-952`, `1090-1107` | `hierarchical_encode(strict=False)` still concatenates `None` for a missing parent. | No (analysis API only) |
 | MD5 | `model.py:362-366` | `predict_x` isn't reset per modality, so x_parameters are computed for `save_x=False` modalities, depending on modality order. | Wasted memory only |
 | MD6 | `model.py:471-497` | A weight of 0 still creates the loss. | No |
 | MD7 | `model.py:734-736` | The scaler-weighted metric divides by the weight without a zero guard (NaN). | No |
@@ -32,6 +31,9 @@
 
 ## Fixed
 
+- ✅ (2026-11-21) **MD4: `hierarchical_encode(strict=False)`** dropped a missing parent from its parent dicts, but `prepare_component_inputs` takes the parent list from the config and concatenated `None` in its place, so it crashed. Skipping a single parent cannot work anyway: the hierarchical encoder has a fixed input width. A component with a missing parent is now skipped (no `z_hat` output), and so are the components conditioned on its `z_hat`, which matches `decode(strict=False)`.
+- ✅ (2026-11-21) **Parent widths are checked** in `hierarchical_encode` (strict or not): each parent `z` / `z_hat` must have its parent's latent width, otherwise a ValueError names the parent, the child, and both widths. Before, only Keras checked the total width, so swapped or wrongly sized parents that happened to add up were accepted silently.
+- ✅ (2026-11-21) **The model keeps a private copy of its configs.** `Model.make` deep-copies the configs before building (it used to write `z_conditional_dims` / `z_hat_conditional_dims` into the caller's objects), the model stores them as `_component_configs`, and `component_configs` is a read-only property returning a tuple of copies. The forward pass never read the configs (the wiring is fixed in the functional graph), but `compile`, `train_step`, `predict`, `encode`, `hierarchical_encode` and `decode` do, so changing a config after `Model.make` used to change what they did without changing the graph.
 - ✅ **MD2** (`model.py:414`): `super.__predict__(...)` should have been `super().predict`, so `predict` on non-MuData input always raised.
 - ✅ **MD3** (`model.py:389` + `train_step`): batch keys weren't filtered to the model's inputs; Keras matches dict inputs by position, so a MuData with an unused modality fed e.g. `atac_matrix` in as `rna_matrix`. `Model.select_inputs` now restricts each batch in `predict` and `train_step`.
 - ✅ Typing: `components` is a `Mapping[str, Component]`; component configs are ordered with `GeneralUtils.order_components` and set `z_conditional_dims` / `z_hat_conditional_dims` on declared fields.
