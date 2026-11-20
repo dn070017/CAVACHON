@@ -26,5 +26,6 @@
 
 ## Worth a look
 
+- `GMMDensityLoss` is legacy: replaced by the z_hat GMM KL, always created with weight 0. Its removal is deferred (see [model](model.md#reviewed-deferred)).
 - `GMMDensityLoss` returns a batch mean under `Reduction.NONE`, so `sample_weight` cannot weight individual samples.
 - `NegativeLogDataLikelihood` copies its weight with `float(...)`, so later assignments to a weight Variable have no effect (see C4 in [modules](modules.md)).

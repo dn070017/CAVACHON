@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, no production impact | [`test/model`](../../test/model) | 102 | 2 | 100% | Very high: depends on 7 packages, used by 2 |
+| ⏸️ Reviewed, deferred | [`test/model`](../../test/model) | 106 | 0 | 100% | Very high: depends on 7 packages, used by 2 |
 
 - **Depends on:** config, dataloader, environment, layers, losses, modules, utils
 - **Used by:** tools, workflow
@@ -19,15 +19,19 @@
 - **Gradients:** the output of `remove_nan_gradients` is what the optimizer applies, and frozen components are excluded.
 - **`predict`:** rows stay in order, and each output is written to the correct modality's `.obsm`.
 
-## Open bugs (strict xfails)
+## Reviewed, deferred
 
-| # | Location | Issue | Impact |
+> **Reviewed 2026-11-21 — deferred.** No open bugs; one legacy cleanup is deferred.
+
+| Location | Item | Impact | Decision |
 |---|---|---|---|
-| MD1 | `model.py:645-654` | A component compiled with only the standard KL never trains it: y_true/y_pred are stored under the GMM key. | No (the scheduler always passes both) |
-| MD5 | `model.py:362-366` | `predict_x` isn't reset per modality, so x_parameters are computed for `save_x=False` modalities, depending on modality order. | Wasted memory only |
+| `Model.compile`, `Component.compile`, `losses/gmm_density_loss.py`, `ComponentSchedule.has_z_hat_density_loss` | **Legacy z_hat GMM density loss.** Replaced by the z_hat GMM KL, it is still created for components that learn a z_hat prior, switched off (weight 0), so it never affects training. It is kept only because the scheduler uses its presence (`has_z_hat_density_loss`) to decide whether the z_hat prior's k-means runs together with the z prior's. Removing it means switching that check to `has_z_hat_prior`, which can move the z_hat k-means for configs where the two differ, so it needs its own check. Documented in the code (GMMDensityLoss docstring, `Model.compile` docstring, `ComponentSchedule`). | None (always weight 0) | ⏸️ Deferred |
 
 ## Fixed
 
+- ✅ (2026-11-21) **The legacy z_hat density loss is off by default.** It was replaced by the z_hat GMM KL, and the scheduler always set its weight to 0, but `Model.compile` created it with weight 1.0, so direct `Model` users trained with it. Its weight Variable now starts at 0. The loss object is kept (switched off) because the scheduler checks for it when deciding where the z_hat prior's k-means runs; training through the scheduler is unchanged (identical e2e run).
+- ✅ (2026-11-21) **MD1: a component compiled with only the standard KL now trains it.** `train_step` fed the KL inputs under the standard *and* GMM names only when both losses existed; otherwise it always used the GMM name, a leftover of the old "one KL per phase" design. With only the standard KL compiled, its inputs went to a key no loss used, so the component trained as an autoencoder without KL, silently. Every compiled KL loss is now fed. (The scheduler always compiles both, so its training was not affected; checked on a real model that the standard KL is reported and is part of the total.)
+- ✅ (2026-11-21) **MD5: `predict` collects `x_parameters` only for modalities with `save_x`.** The flag was set per component and never reset, so once one modality had `save_x`, the following ones in `n_vars` order were collected too (memory only; what was written to `.obsm` was already right).
 - ✅ (2026-11-21) **MD6: a weight of 0 in `compile` creates the loss switched off.** The design intent is to keep the losses of frozen parents: their values are logged, but they must not affect the child's training or the total loss used by early stopping. Today the scheduler does this by building every loss with its normal scale and pinning frozen weights to 0 (`ProgressiveScaler` floors progress at 1e-8, so the weight is `scale × 1e-16` and `train_step` can still recover the unweighted value). A weight of 0 passed to `compile` instead built the loss with **scale 0**, which could never be switched on and reported 0 / 0. Now weight 0 builds the loss with scale 1 and pins it to 0, for the KL losses and for the data losses in `loss_weights`. Checked on a real model: the loss reports its real value, the total loss is identical to not having it, and `pin_to(1)` switches it on. The docstring said "weight 0 means the loss is not created"; it now describes this behaviour.
 - ✅ (2026-11-21) **MD7: the scaler-weighted metric no longer divides by 0** (`tf.math.divide_no_nan`), like the Variable branch. With MD6 fixed, a true 0 can no longer come from `compile`; this is a safeguard.
 - ✅ (2026-11-21) **MD8: `compile` no longer modifies the caller's `loss_weights`.** It consumed the entries with `pop`, so recompiling with the same dict silently fell back to weight 1. It now works on a copy and warns about names that match no data loss (e.g. a typo), which were silently ignored. Existing losses are no longer rebuilt and discarded on every recompile.

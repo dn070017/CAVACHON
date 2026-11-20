@@ -2,7 +2,7 @@
 
 Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
 
-**Whole suite: 1712 passed, 41 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1717 passed, 38 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -23,17 +23,17 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
 | [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 46 | 4 | 89% |
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
-| [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 180 | 13 | 100% |
-| [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 102 | 2 | 100% |
+| [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 181 | 12 | 100% |
+| [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 106 | 0 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
 | [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 86 | 3 | 100% |
-| **Total** | | | | | **1712** | **41** | |
+| **Total** | | | | | **1717** | **38** | |
 
 **Status**
 - ✅ No open bugs.
 - 🟡 Open bugs, but none changes results on a normal run: edge cases, latent code paths, or features that are silently inactive.
 - 🔴 At least one open bug gives **silently wrong results** on a normal configuration.
-- ⏸️ Reviewed and deferred: every open bug has been checked and accepted for now. The tests stay as strict xfails, so a later fix is still flagged.
+- ⏸️ Reviewed and deferred: every open bug (or pending cleanup) has been checked and accepted for now. Open bugs stay as strict xfails, so a later fix is still flagged.
 
 **Coverage** is line coverage of each package from the whole suite. Because other packages are mocked, it is essentially each package's own tests.
 

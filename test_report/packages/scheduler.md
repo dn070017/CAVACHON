@@ -61,6 +61,7 @@ history = [self._run_phase(p, x, n_batches, progress, ...) for p in phases]
 
 ## Worth a look
 
+- `ComponentSchedule.has_z_hat_density_loss` checks for the legacy z_hat density loss (always weight 0) to decide where the z_hat prior's k-means runs. Replacing it with `has_z_hat_prior` is deferred together with the loss's removal (see [model](model.md#reviewed-deferred)).
 - Recompiling a model reuses the existing losses; the scheduler relies on this (see [model](model.md)).
 - The constructor arguments `outdir`, `distribution_names` and `batch_effect_colnames` are stored but no longer used. They are kept so the workflow call stays unchanged.
 - The "z_hat prior is never trained" warning now sees the z_hat losses (the model is compiled before the phases are planned). Before the refactor the check ran before the first compile, so it could warn even when the z_hat phases did run.
