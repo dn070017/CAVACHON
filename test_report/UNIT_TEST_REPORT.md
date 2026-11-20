@@ -2,7 +2,7 @@
 
 Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
 
-**Whole suite: 1654 passed, 54 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1659 passed, 51 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -18,16 +18,16 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [io](packages/io.md) | ✅ | 🟢 Low | 1 | 1 | 33 | 0 | 100% |
 | [app](packages/app.md) | ✅ | 🟢 Low | 1 | 0 | 11 | 0 | 87% |
 | [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 202 | 0 | 99% |
-| [layers](packages/layers.md) | 🟡 | 🟡 Moderate | 2 | 7 | 149 | 2 | 99% |
-| [losses](packages/losses.md) | 🟡 | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
+| [layers](packages/layers.md) | ⏸️ | 🟡 Moderate | 2 | 7 | 153 | 1 | 99% |
+| [losses](packages/losses.md) | ⏸️ | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
-| [callbacks](packages/callbacks.md) | 🟡 | 🟠 High | 4 | 1 | 43 | 6 | 90% |
-| [scheduler](packages/scheduler.md) | 🟡 | 🟠 High | 4 | 1 | 81 | 6 | 98% |
+| [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 45 | 4 | 90% |
+| [scheduler](packages/scheduler.md) | 🟡 | 🟠 High | 4 | 1 | 80 | 6 | 98% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 180 | 13 | 100% |
 | [model](packages/model.md) | 🟡 | 🔴 Very high | 7 | 2 | 91 | 6 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
 | [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 86 | 3 | 100% |
-| **Total** | | | | | **1654** | **54** | |
+| **Total** | | | | | **1659** | **51** | |
 
 **Status**
 - ✅ No open bugs.
@@ -89,8 +89,6 @@ Open bugs that silently change results on a normal run:
 | [T9](packages/tools/visualization_enrichment.md#t9) | tools | `attribution_score` overwrites its own figures when there are 2+ `with_respect_to`. |
 | [T12](packages/tools/visualization_enrichment.md#t12) | tools | `EnrichmentAnalysis.run()` filters the gene ranking with the gene-set threshold. Needs the author's call. |
 | [W1](packages/workflow.md#open-bugs-strict-xfails) | workflow | Differential attribution uses every DEG/HDEG table in the folder, including other components'. |
-
-Features that are silently inactive: [M3 and M4](packages/callbacks.md#open-bugs-strict-xfails) (`OptimizerStateCallback`, `PeriodicTSNECallback`).
 
 ## Layout
 

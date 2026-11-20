@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, no wrong results | [`test/callbacks`](../../test/callbacks) | 43 | 6 | 90% | High: depends on 4 packages, used by 1 |
+| ⏸️ Reviewed, deferred | [`test/callbacks`](../../test/callbacks) | 45 | 4 | 90% | High: depends on 4 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers
 - **Used by:** scheduler
@@ -12,13 +12,18 @@
 
 ## Open bugs (strict xfails)
 
-| # | Location | Issue | Impact |
-|---|---|---|---|
-| M3 | `optimizer_state_callback.py:13,21` | **`OptimizerStateCallback` does nothing.** Keras 3 optimizers have no `get_weights`, and a bare `except` hides the error. The restore step also looks up `model._callbacks`, which doesn't exist. The scheduler adds this callback to every phase. (2 xfails) | Feature silently inactive |
-| M4 | `periodic_tsne_callback.py:43` | **`PeriodicTSNECallback` never saves.** `save_epochs = set()` is hard-coded, but the scheduler adds the callback whenever `output_dir` is set. | Feature silently inactive |
-| — | `periodic_tsne_callback.py` | `batch_size=int` uses the builtin type as the default value instead of an annotation. | Edge case |
-| — | `early_stopping_callback.py` | The restored epoch is printed 0-based, one lower than Keras/VerboseCallback labels. | Cosmetic |
-| — | `early_stopping_callback.py` | `cumulative_offset` comes before `*args`, so a positional `monitor` argument is swallowed. | Edge case |
+> **Reviewed 2026-11-20 — deferred.** `OptimizerStateCallback` and `PeriodicTSNECallback` are debug tools. They are no longer used anywhere in cavachon (the scheduler stopped adding them to the training phases), so these bugs affect nothing today. The classes, their exports in `cavachon/callbacks/__init__.py` and their strict xfails stay in place.
+
+| # | Location | Issue | Impact | Decision |
+|---|---|---|---|---|
+| M3 | `optimizer_state_callback.py:13,21` | **`OptimizerStateCallback` does nothing.** Keras 3 optimizers have no `get_weights`, and a bare `except` hides the error. The restore step also looks up `model._callbacks`, which doesn't exist. (2 xfails) | None: unused | ⏸️ Deferred |
+| M4 | `periodic_tsne_callback.py:43` | **`PeriodicTSNECallback` never saves.** `save_epochs = set()` is hard-coded. | None: unused | ⏸️ Deferred |
+| — | `periodic_tsne_callback.py` | `batch_size=int` uses the builtin type as the default value instead of an annotation. | None: unused | ⏸️ Deferred |
+
+## Fixed
+
+- ✅ `early_stopping_callback.py` (2026-11-20): the restored epoch was printed 0-based (`offset + best_epoch`), one lower than the "Total Epoch" VerboseCallback shows. It now prints `offset + best_epoch + 1`.
+- ✅ `early_stopping_callback.py` (2026-11-20): `cumulative_offset` came before `*args`, so `EarlyStoppingCallback("loss")` set the offset to `"loss"` instead of `monitor`. It is now keyword-only; the scheduler already passes it by keyword.
 
 ## Worth a look
 

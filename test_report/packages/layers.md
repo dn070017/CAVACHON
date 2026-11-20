@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 2 low bugs open | [`test/layers`](../../test/layers) | 149 | 2 | 99% | Moderate: depends on 2 packages, used by 7 |
+| ⏸️ Reviewed, deferred | [`test/layers`](../../test/layers) | 153 | 1 | 99% | Moderate: depends on 2 packages, used by 7 |
 
 - **Depends on:** environment, utils
 - **Used by:** callbacks, dataloader, losses, model, modules, scheduler, tools
@@ -12,13 +12,15 @@
 
 ## Open bugs (strict xfails)
 
-| Location | Issue | Impact |
-|---|---|---|
-| `modifiers/to_sparse.py:51-53` | `ToSparse` only converts KerasTensor/SparseTensor; a dense eager `tf.Tensor` is returned unchanged, and the SparseTensor branch is dead code. | Latent (unused) |
-| `progressive_scaler.py` | `activate(0)` clamps `current_iteration` to 0 forever, so the weight stays at 1e-16·scale instead of being fully on. | Possibly intended |
+> **Reviewed 2026-11-20 — deferred.** Confirmed and accepted for now; no fix is planned. The strict xfail stays in place, so a fix would still be flagged as XPASS.
+
+| Location | Issue | Impact | Decision |
+|---|---|---|---|
+| `progressive_scaler.py` | `activate(0)` clamps `current_iteration` to 0 forever, so the weight stays at 1e-16·scale instead of being fully on. Not reachable today: the scheduler skips the annealing phase when it has 0 epochs, and only the standard KL weight and α (via `set_progressive_scaler_iteration(0, total)`) are ever started from 0. | Possibly intended | ⏸️ Deferred |
 
 ## Fixed
 
+- ✅ `modifiers/to_sparse.py` (2026-11-20): `ToSparse` only converted KerasTensor/SparseTensor inputs, so a dense eager `tf.Tensor` came back unchanged. Like `ToDense`, it now converts anything that isn't already sparse: eager tensors, tensors inside `tf.function`, and dense `tf.keras.Input`s in a functional model. The class docstring said "ToDense"; fixed.
 - ✅ `binarize.py:42`: the typo `__name___` made an out-of-range threshold raise `AttributeError` instead of warning.
 - ✅ `from_config` failed on 8 layers (all parameterizers, both samplers, `ProgressiveScaler`): they took no `**kwargs`, so Keras 3's `trainable`/`dtype` caused a TypeError, breaking `clone_model` and `.keras` save/load.
 - ✅ `normalize_library_size.py:61`: an all-zero row produced NaN (0/0).

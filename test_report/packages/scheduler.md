@@ -4,11 +4,11 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, mostly edge cases | [`test/scheduler`](../../test/scheduler) | 81 | 6 | 98% | High: depends on 4 packages, used by 1 |
+| 🟡 Open bugs, mostly edge cases | [`test/scheduler`](../../test/scheduler) | 80 | 6 | 98% | High: depends on 4 packages, used by 1 |
 
 - **Depends on:** callbacks, config, environment, layers
 - **Used by:** workflow
-- **Mocked in tests:** the callbacks, `ProgressiveScaler`; mlflow. The scheduler drives a `FakeModel`/`FakeComponent` that records `compile`/`fit`, trainable flags and annealing state for each phase.
+- **Mocked in tests:** the callbacks (Annealing, EarlyStopping, Verbose), `ProgressiveScaler`; mlflow. The scheduler drives a `FakeModel`/`FakeComponent` that records `compile`/`fit`, trainable flags and annealing state for each phase.
 
 **Commit 73eecd0 checked:** passing tests confirm "parent annealing ramps only alpha with the KL tied to it". During parent annealing the parents are frozen with weights 0. The child's alpha and standard KL ramp together, and its z_hat KL is 0. Afterwards alpha is pinned to (1, 1) and the standard KL to 1.
 
@@ -33,8 +33,9 @@
   - **Samplers:** z is stochastic for the whole training. z_hat is deterministic until its component's z_hat annealing, stochastic from then on. Both flags are set to 0 when `fit` finishes and reset at its start (they are stored in the weights). Before, a frozen parent always passed its *mean* z and z_hat to children.
   - **k-means:** the z_hat prior is k-means-initialised exactly once: at the start of z_hat annealing if it runs, otherwise in the KL or regular phase with a warning. It used to run twice, discarding the first result.
 - ✅ Typing: `training_order` is `List[List[str]]`, modality weights are floats.
+- ✅ (2026-11-20) The debug-only `OptimizerStateCallback` and `PeriodicTSNECallback` are no longer added to the training phases (both were inactive on Keras 3; see [callbacks](callbacks.md)). `_common_callbacks` now only builds the early-stopping callback.
 
 ## Worth a look
 
-- The scheduler adds `OptimizerStateCallback` and `PeriodicTSNECallback` to phases, but both are inactive (M3, M4 in [callbacks](callbacks.md)).
 - Recompiling a model reuses the existing losses; the scheduler relies on this (see [model](model.md)).
+- With the debug callbacks gone, the constructor arguments `outdir`, `distribution_names` and `batch_effect_colnames` are stored but no longer used. They are kept so the workflow call stays unchanged.
