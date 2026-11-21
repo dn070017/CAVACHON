@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 91 passed, 4 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 95 passed, 3 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -43,13 +43,7 @@ Checked with real DEG/HDEG tables written to disk and read back: `Significant` p
 
 ## Open bugs (strict xfails)
 
-Found by the 2026-11-21 review of the differential and attribution tools. T13 is fixed (see below); T15 still needs a decision on the batch effect to decode with.
-
-### T14
-
-`hierarchical_differential_analysis.py:166` and `differential_analysis.py:620` — **the HDEG pairing is only half paired.** The substituted (A) and original (B) decodes use the same recipient cell, but each draws its own random batch effect. P(A>B|Z) mixes the substitution effect with batch-effect noise, which lowers power; the `between_groups` docstring calls the comparison paired.
-- Failing input: a donor component the decoder doesn't use, `obs["batch"]` varying → P(A>B|Z) > 0 for every feature (expected 0, a tie in every pair).
-- **Impact: yes**, with batch-effect columns.
+Found by the 2026-11-21 review of the differential and attribution tools. T13 and T14 are fixed (see below); T15 still needs a decision on the batch effect to decode with.
 
 ### T15
 
@@ -69,6 +63,10 @@ Found by the 2026-11-21 review of the differential and attribution tools. T13 is
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t14"></a>**T14** (HDEG pairing): the substituted (A) and original (B) decodes of a recipient cell each drew their own random batch effect, so P(A>B|Z) mixed the substitution effect with batch-effect noise (a substitution with no effect gave P > 0 instead of ties). Now one random batch effect per compared pair, drawn from all cells, is used by both arms (option chosen over the recipient's own batch, so DEG and HDEG share one reference: all cells' batches and median library size):
+  - `DifferentialAnalysis.sample_batch_index(batch_effect, n_obs)` draws the pool indices; `compute_x_means` and `_compute_substituted_x_means` take `batch_index` (default `None`: drawn per batch, as before) and `between_groups` passes one draw per round to both.
+  - **DEG too:** `between_two_groups` passes one draw per round to both groups, so the i-th sampled cells of A and B (the compared pair) share a batch effect. The batches are still marginalized over all cells; only the noise between the arms is gone (same latent + pure batch effect → every pair ties).
+  - Seeded runs draw in a different order, so their numbers change.
 - ✅ (2026-11-21) <a id="t13"></a>**T13** (`compute_x_means`): DEG decoded each sampled cell with its own matrix, so for decoders with `libsize_scaling` (ZINB, the RNA default) the mean was scaled by that cell's library size: groups that differed only in sequencing depth looked differential (identical latents, group B 5× deeper → every feature `Significant`). The batch effect was marginalized, the library size was not.
   - DEG and HDEG now decode every cell at **one library size, the median over all cells** (`DifferentialAnalysis.compute_decoding_reference`, which also builds the batch-effect pool in the same pass and replaces HDEG's `_build_batch_effect`; `compute_x_means` / `_compute_substituted_x_means` take `libsize` and pass it to `Model.decode(libsize=...)`). The library size is computed as in training (`Model.compute_libsize`, for the decoded component).
   - The ZINB library size is Σ log1p(counts) and it scales the predicted **log** mean (μ = exp(soft_cap(m·L)) − 1, see [modules](../modules.md)), a design choice kept as is (the network compares log values). With one L for every cell, P/K/`Significant` depend only on m_A vs m_B, so they are the same for any constant L except near the ceiling of the log mean (soft cap at 15, see [modules](../modules.md); it was a hard clip at 7, where pairs above it tied); the median keeps m·L in the range the decoder was trained on. `Mean(A)`/`Mean(B)` are the expected expression at that depth.

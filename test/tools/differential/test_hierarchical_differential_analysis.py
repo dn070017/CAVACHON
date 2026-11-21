@@ -448,12 +448,9 @@ def test_across_clusters_pairwise_end_to_end():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T14 the substituted and original decodes of a recipient cell "
-    "draw independent random batch effects, so the pair is not paired and a "
-    "substitution without effect still gives P(A>B|Z) > 0",
-)
+# regression: T14 the substituted and original decodes of a recipient cell drew
+# independent random batch effects, so the pair was not paired and a
+# substitution without effect still gave P(A>B|Z) > 0
 def test_between_groups_pairs_share_the_batch_effect():
     # component b has no decoder weight: substituting it changes nothing
     X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2

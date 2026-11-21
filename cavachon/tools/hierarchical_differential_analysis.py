@@ -113,6 +113,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         training: bool = False,
         batch_size: int = 128,
         libsize: Mapping[str, float] | None = None,
+        batch_index: np.ndarray | None = None,
     ) -> np.ndarray:
         modality_names = self.mdata.mod.keys()
         dist_x_z_name = self.model.components.get(component).distribution_names.get(
@@ -123,6 +124,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         )
 
         x_means = []
+        n_done = 0
         for batch in dataset.batch(batch_size):
             encode_outputs = self.model.encode(batch, training=training)
             z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
@@ -146,9 +148,13 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             )
             z_hat_substituted = hier_outputs_substituted[Constants.MODEL_OUTPUTS_Z_HAT]
 
-            random_batch_index = np.random.choice(
-                np.arange(self.mdata.n_obs), n_obs_batch
-            )
+            # the same draw as the original decode of these cells (see
+            # DifferentialAnalysis.compute_x_means), so the pair is paired
+            if batch_index is None:
+                random_batch_index = self.sample_batch_index(batch_effect, n_obs_batch)
+            else:
+                random_batch_index = batch_index[n_done : n_done + n_obs_batch]
+            n_done += n_obs_batch
             for modality_name in modality_names:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 batch[batch_effect_key] = tf.gather(
@@ -245,17 +251,19 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             ``z_sampling_size`` rounds, ``x_sampling_size`` recipient cells
             are drawn; every drawn cell is decoded twice: **A** with the
             ``z`` of ``donor_components`` replaced by the ``z`` of a random
-            donor cell, and **B** unchanged (each decode with a batch
-            effect drawn at random from all cells, and at the median
-            library size of all cells, see
-            ``DifferentialAnalysis.compute_decoding_reference``). Over these
+            donor cell, and **B** unchanged. Both decodes of a cell use
+            one batch effect, drawn at random from all cells, and the
+            median library size of all cells (see
+            ``DifferentialAnalysis.compute_decoding_reference``), so A and
+            B differ only in the substituted latent. Over these
             (round, cell) pairs:
 
             - ``Mean(A)`` / ``Mean(B)``: mean of the decoded means of A /
               B, i.e. the expected expression of the recipient group with
               / without the donor's latent;
             - ``P(A>B|Z)``: fraction of pairs in which A > B (the same
-              cell, so the comparison is paired); ``P(B>A|Z)`` likewise.
+              cell and batch effect, so the comparison is paired);
+              ``P(B>A|Z)`` likewise.
               Ties count for neither, so they may sum to less than 1;
             - ``K(A>B|Z)``: log Bayes factor
               ``log(P(A>B|Z) + 1e-7) - log(1 - P(A>B|Z) + 1e-7)``, natural
@@ -327,6 +335,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             recipient_dataloader = self._make_dataloader(recipient_mdata, batch_size)
 
             recipient_dataset = self._require_dataset(recipient_dataloader)
+            # both decodes of a recipient cell use one batch effect
+            batch_index = self.sample_batch_index(batch_effect, x_sampling_size)
 
             x_means_substituted_list.append(
                 self._compute_substituted_x_means(
@@ -337,6 +347,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     batch_effect=batch_effect,
                     batch_size=batch_size,
                     libsize=libsize,
+                    batch_index=batch_index,
                 )
             )
             x_means_original_list.append(
@@ -347,6 +358,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     batch_effect=batch_effect,
                     batch_size=batch_size,
                     libsize=libsize,
+                    batch_index=batch_index,
                 )
             )
 

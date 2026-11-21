@@ -354,7 +354,11 @@ class DifferentialAnalysis:
             Every sampled cell is decoded with the batch effect of a
             random cell and at the median library size of all cells
             (see ``compute_decoding_reference``), so the groups are
-            compared at one sequencing depth.
+            compared at one sequencing depth. ``P(A>B|Z)`` compares the
+            i-th sampled cell of A with the i-th of B, and both are
+            decoded with the same random batch effect, so the pair
+            differs only in its latent (the batches are still
+            marginalized over all cells).
 
         """
         if seed is not None:
@@ -389,6 +393,8 @@ class DifferentialAnalysis:
             batch_size = min(
                 dataloader_group_a.batch_size, dataloader_group_b.batch_size
             )
+            # A_i and B_i are compared: decode both with one batch effect
+            batch_index = self.sample_batch_index(batch_effect, x_sampling_size)
             x_means_a_list.append(
                 self.compute_x_means(
                     dataset=dataloader_group_a.dataset,
@@ -397,6 +403,7 @@ class DifferentialAnalysis:
                     batch_effect=batch_effect,
                     batch_size=batch_size,
                     libsize=libsize,
+                    batch_index=batch_index,
                 )
             )
             x_means_b_list.append(
@@ -407,6 +414,7 @@ class DifferentialAnalysis:
                     batch_effect=batch_effect,
                     batch_size=batch_size,
                     libsize=libsize,
+                    batch_index=batch_index,
                 )
             )
 
@@ -496,6 +504,18 @@ class DifferentialAnalysis:
             for modality_name, values in libsizes.items()
         }
         return batch_effect, libsize
+
+    @staticmethod
+    def sample_batch_index(
+        batch_effect: Mapping[str, tf.Tensor], n_obs: int
+    ) -> np.ndarray:
+        """Random cells (with replacement) whose batch effects
+        ``n_obs`` decoded cells take, as indices into the batch-effect
+        pool of ``compute_decoding_reference``. Passing the same indices
+        to both arms of a comparison (``batch_index`` of
+        ``compute_x_means``) decodes each pair with one batch effect."""
+        n_pool = next(iter(batch_effect.values())).shape[0]
+        return np.random.choice(n_pool, n_obs)
 
     @staticmethod
     def constant_libsize(
@@ -629,6 +649,7 @@ class DifferentialAnalysis:
         training: bool = False,
         batch_size: int = 128,
         libsize: Optional[Mapping[str, float]] = None,
+        batch_index: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Compute the means of generative data.
 
@@ -663,6 +684,12 @@ class DifferentialAnalysis:
             (see ``compute_decoding_reference``). Defaults to None: each
             cell's own.
 
+        batch_index: np.ndarray, optional
+            for every cell of ``dataset``, in order, the index of the
+            cell of ``batch_effect`` whose batch effect it is decoded
+            with (see ``sample_batch_index``). Defaults to None: drawn
+            at random for each batch.
+
         Returns
         -------
         np.ndarray
@@ -680,6 +707,7 @@ class DifferentialAnalysis:
         )
 
         x_means = []
+        n_done = 0
         for batch in dataset.batch(batch_size):
             encode_outputs = self.model.encode(batch, training=training)
             z = encode_outputs[Constants.MODEL_OUTPUTS_Z]
@@ -691,9 +719,11 @@ class DifferentialAnalysis:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 n_obs_batch = batch[batch_effect_key].shape[0]
 
-            random_batch_index = np.random.choice(
-                np.arange(self.mdata.n_obs), n_obs_batch
-            )
+            if batch_index is None:
+                random_batch_index = self.sample_batch_index(batch_effect, n_obs_batch)
+            else:
+                random_batch_index = batch_index[n_done : n_done + n_obs_batch]
+            n_done += n_obs_batch
             for modality_name in modality_names:
                 batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
                 batch[batch_effect_key] = tf.gather(

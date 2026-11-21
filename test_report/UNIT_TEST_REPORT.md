@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1818 passed, 14 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1822 passed, 13 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | ✅ | 🟠 High | 4 | 2 | 204 | 0 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 274 | 5 | 100% |
+| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 278 | 4 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1818** | **14** | |
+| **Total** | | | | | **1822** | **13** | |
 
 **Status**
 - ✅ No open bugs.
@@ -82,7 +82,6 @@ Open bugs that silently change results on a normal run:
 
 | # | Package | Issue |
 |---|---|---|
-| [T14](packages/tools/differential.md#t14) | tools | HDEG's substituted and original decodes draw independent batch effects, so the "paired" comparison mixes in batch noise. |
 | [T15](packages/tools/differential.md#t15) | tools | Differential attribution decodes with the batch effect and library size of the first cell in the dataset. |
 
 ## Layout

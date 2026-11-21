@@ -700,6 +700,46 @@ def test_compute_x_means_decodes_at_the_given_libsize():
     ]
 
 
+def test_compute_x_means_uses_the_given_batch_index_across_batches():
+    da = make_analysis(make_mdata(np.zeros((3, 2))))
+    x = np.array([[1, 2], [3, 4], [5, 6]], np.float32)
+    dataset = tf.data.Dataset.from_tensor_slices(
+        {f"RNA_{X_KEY}": x, f"RNA_{BATCH_KEY}": np.zeros((3, 1), np.float32)}
+    )
+    pool = {"RNA": tf.constant([[0.0], [10.0], [20.0], [30.0]])}
+    out = da.compute_x_means(
+        dataset, "comp", "RNA", pool, batch_size=2, batch_index=np.array([3, 0, 2])
+    )
+    # identity model: x + the batch effect of pool cells 3, 0, 2
+    np.testing.assert_allclose(out, x + [[30], [0], [20]])
+
+
+def test_sample_batch_index_draws_from_the_pool():
+    pool = {"RNA": tf.zeros((4, 1)), "ATAC": tf.zeros((4, 1))}
+    np.random.seed(1)
+    index = DifferentialAnalysis.sample_batch_index(pool, 6)
+    np.random.seed(1)
+    np.testing.assert_array_equal(index, np.random.choice(4, 6))
+
+
+def test_between_two_groups_decodes_each_pair_with_one_batch_effect():
+    # same latent in both groups and a pure batch effect: every pair ties
+    # (with independent draws the batch noise alone gave P(A>B|Z) > 0)
+    X = [[1.0, 2.0]] * 6
+    mdata = make_mdata(X, batch=[0, 5, 10, 0, 5, 10])
+    result = make_analysis(mdata).between_two_groups(
+        ["cell0", "cell1", "cell2"],
+        ["cell3", "cell4", "cell5"],
+        "comp",
+        "RNA",
+        z_sampling_size=2,
+        x_sampling_size=10,
+        seed=0,
+    )
+    np.testing.assert_allclose(result["P(A>B|Z)"], 0)
+    np.testing.assert_allclose(result["P(B>A|Z)"], 0)
+
+
 def test_between_two_groups_without_libsize_scaling_has_no_column():
     da = make_analysis(make_mdata(np.ones((4, 2))))
     result = da.between_two_groups(
