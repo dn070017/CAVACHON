@@ -151,6 +151,7 @@ def test_deg_single_pair_mode(deps, to_csv_calls):
         sort_output=True,
         group_a_label="a",
         group_b_label="c",
+        use_cluster="cluster_comp",
     )
     deps.DifferentialAnalysis.return_value.across_clusters_pairwise.assert_not_called()
     # keyed by (modality, component, use_cluster) like the pairwise mode

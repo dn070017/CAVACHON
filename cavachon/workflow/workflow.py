@@ -126,6 +126,42 @@ class Workflow:
         self.mdata = MultiModality(adata_dict)
         self.update_config_nvars()
 
+    # columns recording which analysis produced a DEG/HDEG table
+    ANALYSIS_PROVENANCE_COLUMNS: Tuple[str, ...] = (
+        Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN,
+    )
+
+    @classmethod
+    def has_analysis_provenance(cls, deg_table: pd.DataFrame) -> bool:
+        """Whether a DEG/HDEG table records the analysis that produced
+        it (tables written by older versions don't)."""
+        return all(c in deg_table.columns for c in cls.ANALYSIS_PROVENANCE_COLUMNS)
+
+    @classmethod
+    def is_table_from_analysis(
+        cls,
+        deg_table: pd.DataFrame,
+        component: str,
+        modality: str,
+        use_cluster: str,
+    ) -> bool:
+        """Whether a DEG/HDEG table was produced for ``component``,
+        ``modality`` and ``use_cluster``.
+
+        The values are compared as strings, since a table read back from
+        disk may parse e.g. a numeric component name as a number. Tables
+        without the provenance columns never match.
+        """
+        if not cls.has_analysis_provenance(deg_table) or deg_table.empty:
+            return False
+        expected = (component, modality, use_cluster)
+        return all(
+            str(deg_table[column].iloc[0]) == str(value)
+            for column, value in zip(cls.ANALYSIS_PROVENANCE_COLUMNS, expected)
+        )
+
     @staticmethod
     def read_modalities(
         config: ApplicationConfig,
@@ -475,6 +511,7 @@ class Workflow:
                     sort_output=analysis_config.sort_output,
                     group_a_label=analysis_config.group_a,
                     group_b_label=analysis_config.group_b,
+                    use_cluster=use_cluster,
                 )
                 if analysis_config.keep_only_significant:
                     result = result.loc[
@@ -634,6 +671,37 @@ class Workflow:
                     f"No DEG/HDEG tables found in {source_path}; skipping differential attribution analysis."
                 )
                 continue
+
+            # the folder holds the tables of every DEG/HDEG entry; keep the
+            # ones produced for this component, modality and use_cluster
+            matching = [
+                (filename, deg_table)
+                for filename, deg_table in deg_files
+                if self.is_table_from_analysis(
+                    deg_table, component, modality_name, use_cluster
+                )
+            ]
+            n_without_provenance = sum(
+                not self.has_analysis_provenance(deg_table)
+                for _, deg_table in deg_files
+            )
+            if n_without_provenance:
+                warnings.warn(
+                    f"Skipped {n_without_provenance} DEG/HDEG table(s) in "
+                    f"{source_path} without the "
+                    f"{', '.join(self.ANALYSIS_PROVENANCE_COLUMNS)} columns "
+                    "(written by an older version). Rerun the differential "
+                    "analysis to attribute them.",
+                    RuntimeWarning,
+                )
+            if not matching:
+                print(
+                    f"No DEG/HDEG tables in {source_path} for component "
+                    f"{component}, modality {modality_name} and use_cluster "
+                    f"{use_cluster}; skipping differential attribution analysis."
+                )
+                continue
+            deg_files = matching
 
             for filename, deg_table in tqdm(
                 deg_files,

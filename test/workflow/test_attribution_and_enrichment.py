@@ -17,12 +17,16 @@ import pandas as pd
 import pytest
 
 from cavachon.environment.constants import Constants
+from cavachon.workflow.workflow import Workflow
 from test.workflow.conftest import make_config, make_mdata, make_workflow
 
 GROUP_A = Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN
 GROUP_B = Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN
 DONOR = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN
 RECIPIENT = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
+COMPONENT = Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN
+MODALITY = Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN
+USE_CLUSTER = Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN
 
 ATTR_ROOT = "/out/differential_attribution_analysis/safe-comp/safe-rna"
 
@@ -46,10 +50,22 @@ def attr_cfg(**overrides):
     return SimpleNamespace(**cfg)
 
 
-def labelled_table(col_a, col_b, a, b):
-    return pd.DataFrame(
+def labelled_table(
+    col_a, col_b, a, b, component="comp", modality="RNA", use_cluster="cluster_comp"
+):
+    # a DEG/HDEG table as written by the tools: group labels plus the
+    # provenance of the run (None leaves a provenance column out)
+    table = pd.DataFrame(
         {"K(A>B|Z)": [5.0, 4.0], col_a: [a, a], col_b: [b, b]}, index=["g1", "g2"]
     )
+    for column, value in (
+        (COMPONENT, component),
+        (MODALITY, modality),
+        (USE_CLUSTER, use_cluster),
+    ):
+        if value is not None:
+            table[column] = value
+    return table
 
 
 def attr_workflow(configs, cluster=("x", "x", "y", "y", "z", "z")):
@@ -234,26 +250,22 @@ def test_attribution_empty_result_writes_nothing(
     deps.InteractiveVisualization.differential_attribution_radviz.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: attribution runs on DEG tables of every component/modality in the directory",
-)
 def test_attribution_only_uses_tables_of_configured_component(deps, tables, attributed):
-    # The DEG directory holds tables for every differential_analysis entry
-    # (prefix '<modality>_<component>_<use_cluster>_'). An attribution entry
-    # for component 'comp_b' also attributes comp_a's table, through
-    # comp_b's generative path and comp_b's cluster column, writing a
-    # wrong result into the comp_b output directory.
+    # regression: W1 - the DEG directory holds tables for every
+    # differential_analysis entry. An attribution entry for component
+    # 'comp_b' also attributed comp_a's table, through comp_b's generative
+    # path and cluster column. Tables are now matched on their recorded
+    # Component / Modality / UseCluster.
     root = Path("/out/differential_analysis")
     tables(
         [
             (
-                root / "rna_comp_a_cluster_comp_a_x_y.tsv",
-                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+                root / "rna_comp_a_cluster_comp_x_y.tsv",
+                labelled_table(GROUP_A, GROUP_B, "x", "y", component="comp_a"),
             ),
             (
-                root / "rna_comp_b_cluster_comp_b_x_y.tsv",
-                labelled_table(GROUP_A, GROUP_B, "x", "y"),
+                root / "rna_comp_b_cluster_comp_x_y.tsv",
+                labelled_table(GROUP_A, GROUP_B, "x", "y", component="comp_b"),
             ),
         ]
     )
@@ -264,8 +276,120 @@ def test_attribution_only_uses_tables_of_configured_component(deps, tables, attr
         deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_args_list
     )
     assert [Path(c.kwargs["deg_file"]).name for c in calls] == [
-        "rna_comp_b_cluster_comp_b_x_y.tsv"
+        "rna_comp_b_cluster_comp_x_y.tsv"
     ]
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        dict(modality="ATAC"),
+        dict(use_cluster="cluster_other"),
+    ],
+    ids=["other-modality", "other-use-cluster"],
+)
+def test_attribution_skips_tables_of_other_analyses(
+    deps, tables, attributed, capsys, provenance
+):
+    # same component, but another modality or another cluster annotation:
+    # the group labels would select the wrong cells
+    tables(
+        [
+            (
+                Path("/out/differential_analysis/t.tsv"),
+                labelled_table(GROUP_A, GROUP_B, "x", "y", **provenance),
+            )
+        ]
+    )
+    wf = attr_workflow([attr_cfg()])
+    wf.perform_differential_attribution_analysis()
+
+    deps.DifferentialAttributionAnalysis.return_value.from_deg_file.assert_not_called()
+    out = capsys.readouterr().out
+    assert (
+        "No DEG/HDEG tables in /out/differential_analysis for component comp, "
+        "modality RNA and use_cluster cluster_comp" in out
+    )
+
+
+def test_attribution_hdeg_tables_matched_on_provenance(deps, tables, attributed):
+    root = Path("/out/hierarchical_differential_analysis")
+    tables(
+        [
+            (root / "a.tsv", labelled_table(DONOR, RECIPIENT, "y", "x")),
+            (
+                root / "b.tsv",
+                labelled_table(DONOR, RECIPIENT, "y", "x", component="parent"),
+            ),
+        ]
+    )
+    wf = attr_workflow([attr_cfg(analysis_type="hdeg")])
+    wf.perform_differential_attribution_analysis()
+
+    calls = (
+        deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_args_list
+    )
+    assert [Path(c.kwargs["deg_file"]).name for c in calls] == ["a.tsv"]
+
+
+def test_attribution_legacy_tables_are_skipped_with_warning(deps, tables, attributed):
+    # tables written before the provenance columns existed can't be matched
+    # to an analysis, so they are skipped rather than guessed
+    root = Path("/out/differential_analysis")
+    tables(
+        [
+            (
+                root / "old.tsv",
+                labelled_table(
+                    GROUP_A, GROUP_B, "x", "y", None, None, use_cluster=None
+                ),
+            ),
+            (root / "new.tsv", labelled_table(GROUP_A, GROUP_B, "x", "y")),
+        ]
+    )
+    wf = attr_workflow([attr_cfg()])
+    with pytest.warns(RuntimeWarning, match="Skipped 1 DEG/HDEG table"):
+        wf.perform_differential_attribution_analysis()
+
+    calls = (
+        deps.DifferentialAttributionAnalysis.return_value.from_deg_file.call_args_list
+    )
+    assert [Path(c.kwargs["deg_file"]).name for c in calls] == ["new.tsv"]
+
+
+def test_attribution_provenance_compared_as_strings(deps, tables, attributed):
+    # read back from TSV, a numeric component name or annotation parses as
+    # a number
+    tables(
+        [
+            (
+                Path("/out/differential_analysis/t.tsv"),
+                labelled_table(GROUP_A, GROUP_B, "x", "z", component=1, use_cluster=2),
+            )
+        ]
+    )
+    wf = attr_workflow([attr_cfg(component="1", use_cluster="2")])
+    wf.mdata.mod["RNA"].obs["2"] = wf.mdata.mod["RNA"].obs["cluster_comp"]
+    wf.perform_differential_attribution_analysis()
+
+    deps.DifferentialAttributionAnalysis.return_value.from_deg_file.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "table, expected",
+    [
+        (labelled_table(GROUP_A, GROUP_B, "x", "y"), True),
+        (labelled_table(GROUP_A, GROUP_B, "x", "y", component="other"), False),
+        (labelled_table(GROUP_A, GROUP_B, "x", "y", use_cluster=None), False),
+        (labelled_table(GROUP_A, GROUP_B, "x", "y").iloc[:0], False),
+    ],
+    ids=["match", "other-component", "no-provenance", "empty"],
+)
+def test_is_table_from_analysis(table, expected):
+    assert (
+        Workflow.is_table_from_analysis(table, "comp", "RNA", "cluster_comp")
+        is expected
+    )
 
 
 def test_attribution_non_string_cluster_labels(deps, tables, attributed):

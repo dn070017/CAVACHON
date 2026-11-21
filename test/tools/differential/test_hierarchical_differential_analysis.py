@@ -220,6 +220,13 @@ def test_between_clusters_substitution_statistics():
     assert (result["SamplingStrategy"] == "donor_pool").all()
     assert (result["RandomSeed"] == 3).all()
     assert (result["DonorComponents"] == "a").all()
+    # the run's parameters are recorded on every row
+    assert (result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] == "a").all()
+    assert (result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] == "RNA").all()
+    assert (
+        result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] == "cluster"
+    ).all()
+    assert (result["NSamples"] == 2).all()
 
 
 def test_between_clusters_substituting_non_decoded_component_is_noop():

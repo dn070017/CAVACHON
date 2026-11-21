@@ -28,7 +28,11 @@ K_MAX = np.log(1.0 + EPS) - np.log(EPS)  # K when P == 1
 K_MIN = np.log(EPS) - np.log(1.0 + EPS)  # K when P == 0
 GROUP_A = Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN
 GROUP_B = Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN
+COMPONENT = Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN
+MODALITY = Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN
+USE_CLUSTER = Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN
 COLUMNS = ["Mean(A)", "Mean(B)", "P(A>B|Z)", "P(B>A|Z)", "K(A>B|Z)", "K(B>A|Z)"]
+RUN_COLUMNS = [COMPONENT, MODALITY, "ZSamplingSize", "XSamplingSize"]
 
 
 def make_analysis(mdata, model=None, **kwargs):
@@ -229,8 +233,13 @@ def test_between_two_groups_end_to_end_statistics():
         batch_size=4,
         sort_output=False,
     )
-    assert list(result.columns) == COLUMNS
+    assert list(result.columns) == COLUMNS + RUN_COLUMNS
     assert list(result.index) == ["g0", "g1", "g2"]
+    # the run's parameters are recorded on every row
+    assert (result[COMPONENT] == "comp").all()
+    assert (result[MODALITY] == "RNA").all()
+    assert (result["ZSamplingSize"] == 2).all()
+    assert (result["XSamplingSize"] == 5).all()
     np.testing.assert_allclose(result["Mean(A)"], [5, 0, 1])
     np.testing.assert_allclose(result["Mean(B)"], [0, 5, 1])
     np.testing.assert_allclose(result["P(A>B|Z)"], [1, 0, 0])
@@ -330,13 +339,17 @@ def test_between_two_groups_group_labels(monkeypatch):
         x_sampling_size=1,
         group_a_label="A1",
         group_b_label="B1",
+        use_cluster="cluster",
     )
     assert (labelled[GROUP_A] == "A1").all()
     assert (labelled[GROUP_B] == "B1").all()
+    assert (labelled[USE_CLUSTER] == "cluster").all()
     plain = da.between_two_groups(
         ["cell0"], ["cell3"], "comp", "RNA", z_sampling_size=1, x_sampling_size=1
     )
     assert GROUP_A not in plain.columns and GROUP_B not in plain.columns
+    assert USE_CLUSTER not in plain.columns
+    assert list(plain.columns) == COLUMNS + RUN_COLUMNS
 
 
 def test_between_two_groups_zero_z_samples_raises():
@@ -398,6 +411,7 @@ def test_across_clusters_pairwise_calls_every_pair(monkeypatch):
     assert first["z_sampling_size"] == 2 and first["x_sampling_size"] == 9
     assert first["batch_size"] == 8 and first["sort_output"] is False
     assert first["component"] == "comp" and first["modality"] == "RNA"
+    assert first["use_cluster"] == "cluster"
     last = spy.call_args_list[2].kwargs
     assert list(last["group_b_index"]) == ["cell3", "cell4", "cell5"]
 
@@ -446,6 +460,7 @@ def test_across_clusters_one_vs_rest(monkeypatch):
     ]
     assert all(c["group_b_label"] == "others" for c in calls)
     assert [c["group_a_label"] for c in calls] == ["a", "b", "c"]
+    assert all(c["use_cluster"] == "cluster" for c in calls)
     assert calls[0]["batch_size"] == 16
 
 

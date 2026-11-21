@@ -246,7 +246,11 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             Bayesian-factor table with columns: ``InterventionType``,
             ``DonorCluster``, ``RecipientCluster``, ``SamplingStrategy``,
             ``RandomSeed``, ``MeanDelta(Substituted-Original)``,
-            ``DonorComponents`` (comma-separated sorted component names).
+            ``DonorComponents`` (comma-separated sorted component names),
+            and the parameters of the run: ``Component``, ``Modality``,
+            ``UseCluster`` and ``NSamples``. The parameters let a table
+            read back from disk be matched to the analysis that produced
+            it.
 
         Raises
         ------
@@ -338,6 +342,10 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             result["Mean(A)"] - result["Mean(B)"]
         )
         result["DonorComponents"] = ",".join(sorted(normalized_donor_components))
+        result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
+        result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
+        result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] = use_cluster
+        result["NSamples"] = n_samples
 
         if sort_output:
             sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)

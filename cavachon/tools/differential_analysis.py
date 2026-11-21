@@ -136,6 +136,7 @@ class DifferentialAnalysis:
                 sort_output=sort_output,
                 group_a_label=str(cluster_a),
                 group_b_label=str(cluster_b),
+                use_cluster=use_cluster,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -218,6 +219,7 @@ class DifferentialAnalysis:
                 sort_output=sort_output,
                 group_a_label=str(cluster),
                 group_b_label="others",
+                use_cluster=use_cluster,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -241,6 +243,7 @@ class DifferentialAnalysis:
         sort_output: bool = True,
         group_a_label: Optional[str] = None,
         group_b_label: Optional[str] = None,
+        use_cluster: Optional[str] = None,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -286,12 +289,19 @@ class DifferentialAnalysis:
             Human-readable label for group B. If provided, a ``GroupB``
             column is added to the result.
 
+        use_cluster: Optional[str], optional
+            the obs column the group labels come from. If provided, a
+            ``UseCluster`` column is added to the result.
+
         Returns
         -------
         pd.DataFrame
             analysis result for differential analysis. The DataFrame
-            contains the original 6 columns plus ``GroupA`` and ``GroupB``
-            when labels are provided.
+            contains the original 6 columns, then the parameters of the
+            run: ``Component``, ``Modality``, ``ZSamplingSize`` and
+            ``XSamplingSize``, plus ``GroupA``, ``GroupB`` and
+            ``UseCluster`` when provided. The parameters let a table read
+            back from disk be matched to the analysis that produced it.
 
         """
         x_means_a_list: List[np.ndarray] = []
@@ -371,10 +381,16 @@ class DifferentialAnalysis:
             sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
             result = result.loc[sort_key.sort_values(ascending=False).index]
 
+        result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
+        result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
+        result["ZSamplingSize"] = z_sampling_size
+        result["XSamplingSize"] = x_sampling_size
         if group_a_label is not None:
             result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a_label
         if group_b_label is not None:
             result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = group_b_label
+        if use_cluster is not None:
+            result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] = use_cluster
 
         return result
 
