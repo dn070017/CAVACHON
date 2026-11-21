@@ -24,9 +24,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         return DataLoader(
             mdata,
             batch_size,
-            self.batch_effect_colnames or {},
-            self.distribution_names or {},
-            self.batch_effect_encoders or {},
+            self.batch_effect_colnames,
+            self.distribution_names,
+            self.batch_effect_encoders,
         )
 
     def _require_dataset(self, dataloader: DataLoader) -> tf.data.Dataset:

@@ -43,7 +43,7 @@ class AttributionAnalysis:
         model: tf.keras.Model,
         batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
         distribution_names: Optional[Dict[str, str]] = None,
-        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]] = dict(),
+        batch_effect_encoders: Optional[Dict[str, Dict[str, LabelEncoder]]] = None,
     ):
         """Constructor for ContributionAnalysis.
 
@@ -56,11 +56,18 @@ class AttributionAnalysis:
             the trained generative model.
 
         batch_effect_colnames: Dict[str, List[str]], optional
-            the batch effect columns for each modality. Defaults to
-            None.
+            the batch effect columns for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
 
         distribution_names: Dict[str, str], optional
-            the distribution names for each modality. Defaults to None.
+            the distribution names for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
+
+        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]], optional
+            the fitted batch effect encoders of each modality. Defaults
+            to None (fitted from the data).
 
         """
         self.mdata = mdata
@@ -68,10 +75,9 @@ class AttributionAnalysis:
         self.dataloader = DataLoader(
             self.mdata,
             1,
-            # BUG: DataLoader expects Mappings and calls .get() on them,
-            # so the default None crashes there.
-            batch_effect_colnames,  # type: ignore[arg-type]
-            distribution_names,  # type: ignore[arg-type]
+            # DataLoader takes mappings (empty: everything from adata.uns)
+            batch_effect_colnames or {},
+            distribution_names or {},
             batch_effect_encoders,
         )
 

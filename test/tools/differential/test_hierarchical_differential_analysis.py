@@ -65,10 +65,10 @@ def test_is_a_differential_analysis():
 # --------------------------------------------------------------------------
 
 
-def test_make_dataloader_replaces_none_options_with_empty_dicts():
+def test_make_dataloader_default_options_are_empty_mappings():
+    # the None defaults are normalized once, in DifferentialAnalysis.__init__
     mdata = donor_recipient_mdata()
     hda = make_hda(mdata)
-    hda.batch_effect_encoders = None
     loader = hda._make_dataloader(mdata, 7)
     assert loader.mdata is mdata
     assert loader.batch_size == 7

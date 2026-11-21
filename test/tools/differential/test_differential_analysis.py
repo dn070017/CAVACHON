@@ -66,6 +66,18 @@ def test_init_stores_arguments():
     assert da.batch_effect_encoders is encoders
 
 
+def test_init_none_options_become_empty_mappings():
+    # one place turns the None defaults into the mappings DataLoader takes,
+    # so the subclasses and every DataLoader call can pass them as they are
+    da = DifferentialAnalysis(two_group_mdata(), MagicMock())
+    assert da.batch_effect_colnames == {}
+    assert da.distribution_names == {}
+    assert da.batch_effect_encoders == {}
+    # a fresh dict per instance, not a shared default
+    other = DifferentialAnalysis(two_group_mdata(), MagicMock())
+    assert other.batch_effect_encoders is not da.batch_effect_encoders
+
+
 # --------------------------------------------------------------------------
 # compute_bayesian_factor
 # --------------------------------------------------------------------------
@@ -383,12 +395,9 @@ def test_between_two_groups_zero_z_samples_raises():
         da.between_two_groups(["cell0"], ["cell3"], "comp", "RNA", z_sampling_size=0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: default batch_effect_colnames/distribution_names=None are passed "
-    "to DataLoader unchanged; the real DataLoader calls .get() on them",
-)
 def test_between_two_groups_default_none_options_reach_dataloader_as_mappings():
+    # regression: T5 - the None defaults reached DataLoader, which calls
+    # .get() on them. Empty mappings make DataLoader read adata.uns.
     mdata = two_group_mdata()
     da = DifferentialAnalysis(mdata, identity_model(3))  # all defaults
     da.between_two_groups(

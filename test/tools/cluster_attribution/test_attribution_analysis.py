@@ -50,16 +50,13 @@ def test_constructor_builds_single_sample_dataloader(attr_fakes):
     assert analysis.mdata is mdata
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: default None batch_effect_colnames/distribution_names are passed "
-    "to DataLoader, which requires Mappings (calls .get on them)",
-)
 def test_constructor_defaults_give_dataloader_mappings(attr_fakes):
+    # regression: T5 - the None defaults reached DataLoader, which calls
+    # .get() on them. Empty mappings make DataLoader read adata.uns.
     AttributionAnalysis(make_mdata(), MagicMock())
     args = attr_fakes.DataLoader.call_args.args
-    assert isinstance(args[2], Mapping)
-    assert isinstance(args[3], Mapping)
+    assert isinstance(args[2], Mapping) and args[2] == {}
+    assert isinstance(args[3], Mapping) and args[3] == {}
 
 
 # ---------------------------------------------------------------------------

@@ -74,12 +74,14 @@ class ClusterAnalysis:
             clustering.
 
         batch_effect_colnames: Dict[str, List[str]], optional
-            the batch effect columns for each modality. Defaults to
-            None.
+            the batch effect columns for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
 
         distribution_names: Dict[str, str], optional
-            the distribution names for each modality. Defaults to
-            None.
+            the distribution names for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
 
         batch_size : int, optional
             batch size used for the forward pass. Defaults to 128
@@ -100,10 +102,9 @@ class ClusterAnalysis:
         dataloader = DataLoader(
             self.mdata,
             batch_size,
-            # BUG: DataLoader expects Mappings and calls .get() on them,
-            # so the default None crashes there.
-            batch_effect_colnames,  # type: ignore[arg-type]
-            distribution_names,  # type: ignore[arg-type]
+            # DataLoader takes mappings (empty: everything from adata.uns)
+            batch_effect_colnames or {},
+            distribution_names or {},
         )
         for batch_data in tqdm(dataloader):
             outputs = self.model(batch_data, training=False)
@@ -153,10 +154,9 @@ class ClusterAnalysis:
         dataloader = DataLoader(
             self.mdata,
             batch_size,
-            # BUG: DataLoader expects Mappings and calls .get() on them,
-            # so the default None crashes there.
-            batch_effect_colnames,  # type: ignore[arg-type]
-            distribution_names,  # type: ignore[arg-type]
+            # DataLoader takes mappings (empty: everything from adata.uns)
+            batch_effect_colnames or {},
+            distribution_names or {},
         )
         for batch_data in tqdm(dataloader):
             outputs = self.model(batch_data, training=False)

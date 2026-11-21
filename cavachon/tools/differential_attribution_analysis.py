@@ -63,8 +63,8 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         dataloader = DataLoader(
             mdata_group,
             batch_size,
-            self.batch_effect_colnames or {},
-            self.distribution_names or {},
+            self.batch_effect_colnames,
+            self.distribution_names,
             self.batch_effect_encoders,
         )
 
@@ -248,8 +248,8 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         representative_dataloader = DataLoader(
             mdata_subset,
             batch_size=1,
-            batch_effect_colnames=self.batch_effect_colnames or {},
-            distribution_names=self.distribution_names or {},
+            batch_effect_colnames=self.batch_effect_colnames,
+            distribution_names=self.distribution_names,
             batch_effect_encoders=self.batch_effect_encoders,
         )
         representative_batch = None

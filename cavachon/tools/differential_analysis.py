@@ -38,7 +38,7 @@ class DifferentialAnalysis:
         model: tf.keras.Model,
         batch_effect_colnames: Optional[Dict[str, List[str]]] = None,
         distribution_names: Optional[Dict[str, str]] = None,
-        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]] = dict(),
+        batch_effect_encoders: Optional[Dict[str, Dict[str, LabelEncoder]]] = None,
     ) -> None:
         """Constructor for DifferentialAnalysis.
 
@@ -51,19 +51,30 @@ class DifferentialAnalysis:
             the trained generative model.
 
         batch_effect_colnames: Dict[str, List[str]], optional
-            the batch effect columns for each modality. Defaults to
-            None.
+            the batch effect columns for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
 
         distribution_names: Dict[str, str], optional
-            the distribution names for each modality. Defaults to
-            None.
+            the distribution names for each modality. Modalities not
+            listed (or None) use adata.uns['cavachon'], as in
+            DataLoader. Defaults to None.
+
+        batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]], optional
+            the fitted batch effect encoders of each modality. Defaults
+            to None (fitted from the data).
 
         """
         self.mdata = mdata
         self.model = model
-        self.batch_effect_colnames = batch_effect_colnames
-        self.distribution_names = distribution_names
-        self.batch_effect_encoders = batch_effect_encoders
+        # DataLoader takes mappings (empty: everything from adata.uns)
+        self.batch_effect_colnames: Mapping[str, List[str]] = (
+            batch_effect_colnames or {}
+        )
+        self.distribution_names: Mapping[str, str] = distribution_names or {}
+        self.batch_effect_encoders: Dict[str, Dict[str, LabelEncoder]] = (
+            batch_effect_encoders or {}
+        )
 
     def across_clusters_pairwise(
         self,
@@ -335,8 +346,8 @@ class DifferentialAnalysis:
         dataloader = DataLoader(
             self.mdata,
             batch_size,
-            self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
-            self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+            self.batch_effect_colnames,
+            self.distribution_names,
             self.batch_effect_encoders,
         )
 
@@ -360,15 +371,15 @@ class DifferentialAnalysis:
             dataloader_group_a = DataLoader(
                 mdata_group_a,
                 batch_size,
-                self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
-                self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+                self.batch_effect_colnames,
+                self.distribution_names,
                 self.batch_effect_encoders,
             )
             dataloader_group_b = DataLoader(
                 mdata_group_b,
                 batch_size,
-                self.batch_effect_colnames,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
-                self.distribution_names,  # type: ignore[arg-type]  # BUG: None default crashes in DataLoader
+                self.batch_effect_colnames,
+                self.distribution_names,
                 self.batch_effect_encoders,
             )
             batch_size = min(

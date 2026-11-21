@@ -304,14 +304,11 @@ def test_compute_cluster_log_probability(cluster_fakes):
     np.testing.assert_allclose(mdata.mod["rna"].obsm["logpy_z_c"], out)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: default None batch_effect_colnames/distribution_names are passed "
-    "to DataLoader, which requires Mappings (calls .get on them)",
-)
 def test_compute_cluster_log_probability_defaults_give_dataloader_mappings(
     cluster_fakes,
 ):
+    # regression: T5 - the None defaults reached DataLoader, which calls
+    # .get() on them. Empty mappings make DataLoader read adata.uns.
     mdata = make_mdata(n_obs=6)
     comp = SimpleNamespace(z_prior_parameterizer=make_prior(**PRIOR_1D))
     model = FakeLatentModel({"c": comp}, keys=["c_z"])
@@ -320,8 +317,8 @@ def test_compute_cluster_log_probability_defaults_give_dataloader_mappings(
         "rna", "c", min_n_obs=1
     )
     args = cluster_fakes.DataLoader.call_args.args
-    assert isinstance(args[2], Mapping)
-    assert isinstance(args[3], Mapping)
+    assert isinstance(args[2], Mapping) and args[2] == {}
+    assert isinstance(args[3], Mapping) and args[3] == {}
 
 
 def test_compute_cluster_log_probability_z_hat_uses_z_hat_prior(cluster_fakes):
