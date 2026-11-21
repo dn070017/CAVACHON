@@ -174,7 +174,8 @@ class InteractiveVisualization:
             be used if provided with None. Defaults to None.
 
         title: Optional[str], optional
-            title for the figure. Defaults to 'Z(name of AnnData)'
+            title for the figure. Defaults to `use_rep` (the obsm key),
+            or 'Z' when `use_rep` is an array.
 
         color_discrete_sequence: Optional[Sequence[str]], optional
             the discrete color set individually for each sample. This
@@ -199,9 +200,8 @@ class InteractiveVisualization:
 
         """
 
-        adata_name = adata.uns.get("cavachon", "").get("name", "")
         if title is None:
-            title = f"Z({adata_name})"
+            title = use_rep if isinstance(use_rep, str) else "Z"
 
         if method not in ["pca", "tsne", "umap"]:
             message = "".join(

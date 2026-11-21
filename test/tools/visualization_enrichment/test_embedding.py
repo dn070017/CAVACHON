@@ -46,7 +46,8 @@ class TestMethods:
         np.testing.assert_allclose(fig.data[0].y, expected[:, 1], rtol=1e-5)
         assert fig.layout.xaxis.title.text == "PCA 1"
         assert fig.layout.yaxis.title.text == "PCA 2"
-        assert fig.layout.title.text == "Z(rna)"
+        # default title: the obsm key
+        assert fig.layout.title.text == "z"
         assert len(figure_io.show.calls) == 1
 
     def test_tsne_uses_reducer_with_random_state(self, adata, reducers):
@@ -153,15 +154,20 @@ class TestTitleAndSaving:
         fig = InteractiveVisualization.embedding(adata, method="pca", width=321)
         assert fig.layout.width == 321
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: embedding crashes (AttributeError on str.get) when "
-        "adata.uns has no 'cavachon' entry",
-    )
-    def test_missing_cavachon_uns_uses_empty_name(self, adata):
+    def test_anndata_without_cavachon_uns(self, adata):
+        # regression: T8 - an AnnData not produced by cavachon (no
+        # uns['cavachon']) raised AttributeError while building the default
+        # title; uns is no longer read
         del adata.uns["cavachon"]
-        fig = InteractiveVisualization.embedding(adata, method="pca")
-        assert fig.layout.title.text == "Z()"
+        adata.obsm["latent"] = adata.obsm["z"]
+        fig = InteractiveVisualization.embedding(adata, method="pca", use_rep="latent")
+        assert fig.layout.title.text == "latent"
+
+    def test_array_use_rep_default_title(self, adata):
+        fig = InteractiveVisualization.embedding(
+            adata, method="pca", use_rep=np.asarray(adata.obsm["z"])
+        )
+        assert fig.layout.title.text == "Z"
 
     def test_no_filename_no_write(self, adata, figure_io):
         InteractiveVisualization.embedding(adata, method="pca")
