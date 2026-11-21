@@ -124,8 +124,8 @@ differential_analysis:
 | `group_a` / `group_b` | Cluster labels for single-pair mode. Leave empty for pairwise. |
 | `z_sampling_size` / `x_sampling_size` | Sampling rounds (default `5`) / cells drawn from each group per round (default `1000`). |
 | `seed` | Random seed. |
-| `keep_only_significant` | Filter to rows where `|K| >= 3.2` (default `false`). |
-| `sort_output` | Sort by `max(|K(A>B|Z)|, |K(B>A|Z)|)` descending (default `true`). |
+| `keep_only_significant` | Keep rows where `K(A>B|Z) >= 3.2` or `K(B>A|Z) >= 3.2` (default `false`). |
+| `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
 
 ### HDEG: hierarchical differential analysis between clusters
 
@@ -168,7 +168,7 @@ hierarchical_differential_analysis:
 | `z_sampling_size` | Number of sampling rounds (default `10`; `n_samples` is the deprecated name). |
 | `x_sampling_size` | Recipient cells drawn per round (default: the recipient group's size). |
 | `seed` | Random seed. |
-| `sort_output` | Sort by `max(|K(A>B|Z)|, |K(B>A|Z)|)` descending (default `true`). |
+| `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
 
 ### Output files
 

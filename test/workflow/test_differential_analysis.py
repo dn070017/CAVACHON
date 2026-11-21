@@ -21,7 +21,7 @@ GROUP_A = Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN
 GROUP_B = Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN
 
 
-def deg_table(k_ab=(5.0, 0.1, -4.0), k_ba=(0.0, 0.2, 0.0)):
+def deg_table(k_ab=(5.0, 0.1, -4.0), k_ba=(0.0, 0.2, 4.0)):
     return pd.DataFrame(
         {"K(A>B|Z)": list(k_ab), "K(B>A|Z)": list(k_ba)},
         index=[f"gene{i}" for i in range(len(k_ab))],
@@ -192,6 +192,18 @@ def test_deg_single_pair_keep_only_significant(deps, to_csv_calls, keep, expecte
 
     written, _, _ = to_csv_calls[0]
     assert list(written.index) == expected
+
+
+def test_deg_single_pair_keep_only_significant_drops_ties(deps, to_csv_calls):
+    # regression: T4 - equal means give both K ~ -16; |K| kept them
+    deps.DifferentialAnalysis.return_value.between_two_groups.return_value = deg_table(
+        k_ab=(5.0, -16.1), k_ba=(-5.0, -16.1)
+    )
+    wf = deg_workflow([deg_cfg(group_a="a", group_b="b", keep_only_significant=True)])
+    wf.perform_differential_analysis()
+
+    written, _, _ = to_csv_calls[0]
+    assert list(written.index) == ["gene0"]
 
 
 def test_deg_results_accumulate_and_all_are_written(deps, to_csv_calls):

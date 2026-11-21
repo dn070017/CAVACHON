@@ -515,9 +515,11 @@ class Workflow:
                     seed=analysis_config.seed,
                 )
                 if analysis_config.keep_only_significant:
+                    # signed K, as in DifferentialAnalysis.keep_significant:
+                    # equal means give both K ~ -16 (evidence of no
+                    # difference), which |K| would keep
                     result = result.loc[
-                        (result["K(A>B|Z)"].abs() >= 3.2)
-                        | (result["K(B>A|Z)"].abs() >= 3.2)
+                        (result["K(A>B|Z)"] >= 3.2) | (result["K(B>A|Z)"] >= 3.2)
                     ]
                 # keyed like the pairwise mode, so comparisons on different
                 # annotations (use_cluster) do not overwrite each other.

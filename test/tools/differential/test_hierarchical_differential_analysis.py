@@ -254,11 +254,13 @@ def test_between_groups_donor_components_column_is_sorted():
     assert (result["DonorComponents"] == "a,b").all()
 
 
-def test_between_groups_sorts_by_max_abs_bayes_factor():
+def test_between_groups_sorts_by_larger_bayes_factor():
     hda = make_hda(donor_recipient_mdata())
     result = hda.between_groups("d", "r", "a", "RNA", "cluster", z_sampling_size=1)
-    k = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1).to_numpy()
+    k = result[["K(A>B|Z)", "K(B>A|Z)"]].max(axis=1).to_numpy()
     assert (np.diff(k) <= 0).all()
+    # g2 is unchanged by the substitution (both K ~ -16): last, not first
+    assert list(result.index)[-1] == "g2"
 
 
 def test_between_groups_seed_is_reproducible(monkeypatch):

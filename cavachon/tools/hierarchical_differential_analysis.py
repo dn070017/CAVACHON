@@ -242,8 +242,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             DEG decode target (``component`` / ``modality``).
 
         sort_output : bool, optional
-            Sort the result by the maximum of the absolute Bayesian factors
-            ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order. Default ``True``.
+            Sort the result by the larger of the Bayesian factors
+            ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order (see
+            ``DifferentialAnalysis.bayes_factor_strength``). Default ``True``.
 
         Returns
         -------
@@ -379,8 +380,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         )
 
         if sort_output:
-            sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
-            result = result.loc[sort_key.sort_values(ascending=False).index]
+            result = self.sort_by_bayes_factor(result)
 
         return result
 
@@ -427,7 +427,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             Batch size for encoding/decoding. Default ``128``.
 
         sort_output : bool, optional
-            Sort each result by the maximum of the absolute Bayesian factors
+            Sort each result by the larger of the Bayesian factors
             ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order. Default ``True``.
 
         Returns

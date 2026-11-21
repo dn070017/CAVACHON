@@ -29,6 +29,9 @@ class DifferentialAnalysis:
 
     """
 
+    # |K| above which a difference counts as significant
+    SIGNIFICANCE_THRESHOLD = 3.2
+
     def __init__(
         self,
         mdata: mu.MuData,
@@ -145,9 +148,7 @@ class DifferentialAnalysis:
                 seed=seed,
             )
             if keep_only_significant:
-                deg = deg.loc[
-                    (deg["K(A>B|Z)"].abs() >= 3.2) | (deg["K(B>A|Z)"].abs() >= 3.2)
-                ]
+                deg = self.keep_significant(deg)
 
             results.setdefault(f"{cluster_a}/{cluster_b}", deg)
 
@@ -234,9 +235,7 @@ class DifferentialAnalysis:
                 seed=seed,
             )
             if keep_only_significant:
-                deg = deg.loc[
-                    (deg["K(A>B|Z)"].abs() >= 3.2) | (deg["K(B>A|Z)"].abs() >= 3.2)
-                ]
+                deg = self.keep_significant(deg)
 
             results.setdefault(cluster, deg)
 
@@ -291,8 +290,9 @@ class DifferentialAnalysis:
             description for the progress bar.
 
         sort_output: bool, optional
-            Sort the result by the maximum of the absolute Bayesian factors
-            K(A>B|Z) and K(B>A|Z) in descending order. Default to True.
+            Sort the result by the larger of the Bayesian factors
+            K(A>B|Z) and K(B>A|Z) in descending order (see
+            ``bayes_factor_strength``). Default to True.
 
         group_a_label: Optional[str], optional
             Human-readable label for group A. If provided, a ``GroupA``
@@ -399,8 +399,7 @@ class DifferentialAnalysis:
 
         result = self.compute_bayesian_factor(x_means_a, x_means_b, index)
         if sort_output:
-            sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
-            result = result.loc[sort_key.sort_values(ascending=False).index]
+            result = self.sort_by_bayes_factor(result)
 
         if group_a_label is not None:
             result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a_label
@@ -417,6 +416,34 @@ class DifferentialAnalysis:
         )
 
         return result
+
+    @staticmethod
+    def bayes_factor_strength(result: pd.DataFrame) -> pd.Series:
+        """Evidence of a difference in either direction:
+        ``max(K(A>B|Z), K(B>A|Z))``.
+
+        The Bayes factors are taken with their sign. Without ties
+        ``K(B>A|Z) = -K(A>B|Z)``, so this equals the largest ``|K|``;
+        but a feature whose decoded means are equal in every comparison
+        has ``P(A>B|Z) = P(B>A|Z) = 0`` and both K about -16, which is
+        strong evidence of *no* difference, not of a difference.
+        """
+        return result[["K(A>B|Z)", "K(B>A|Z)"]].max(axis=1)
+
+    @classmethod
+    def keep_significant(
+        cls, result: pd.DataFrame, threshold: float = SIGNIFICANCE_THRESHOLD
+    ) -> pd.DataFrame:
+        """Keep the features with ``K(A>B|Z) >= threshold`` or
+        ``K(B>A|Z) >= threshold`` (see ``bayes_factor_strength``)."""
+        return result.loc[cls.bayes_factor_strength(result) >= threshold]
+
+    @classmethod
+    def sort_by_bayes_factor(cls, result: pd.DataFrame) -> pd.DataFrame:
+        """Sort the features by ``bayes_factor_strength``, strongest
+        difference first (ties between the groups sort last)."""
+        sort_key = cls.bayes_factor_strength(result)
+        return result.loc[sort_key.sort_values(ascending=False).index]
 
     @staticmethod
     def record_run_parameters(

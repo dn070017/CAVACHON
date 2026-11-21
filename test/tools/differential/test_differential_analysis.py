@@ -304,7 +304,7 @@ def test_between_two_groups_stacks_all_z_samples(monkeypatch):
     np.testing.assert_allclose(result["Mean(B)"], [0, 0, 0])
 
 
-def test_between_two_groups_sorts_by_max_abs_bayes_factor(monkeypatch):
+def test_between_two_groups_sorts_by_larger_bayes_factor(monkeypatch):
     da = make_analysis(two_group_mdata())
     # P(A>B): g0 = 0.5 (|K| ~ 0), g1 = 1.0, g2 = 0.75
     a = np.array([[1, 1, 1], [0, 1, 1], [1, 1, 1], [0, 1, 0]], dtype=float)
@@ -402,6 +402,47 @@ def test_between_two_groups_default_none_options_reach_dataloader_as_mappings():
 # --------------------------------------------------------------------------
 # across_clusters_pairwise / across_clusters
 # --------------------------------------------------------------------------
+
+
+def test_bayes_factor_strength_is_signed():
+    # g0: A>B, g1: B>A, g2: equal everywhere (both K ~ -16), g3: mostly
+    # equal (both P = 0.02), g4: weak
+    k_min = K_MIN
+    k_weak = np.log(0.02) - np.log(0.98)
+    table = k_table(
+        [K_MAX, K_MIN, k_min, k_weak, 1.0], [K_MIN, K_MAX, k_min, k_weak, -1.0]
+    )
+    strength = DifferentialAnalysis.bayes_factor_strength(table)
+    np.testing.assert_allclose(strength, [K_MAX, K_MAX, k_min, k_weak, 1.0])
+    assert list(DifferentialAnalysis.keep_significant(table).index) == ["g0", "g1"]
+    # ties sort last, not first as with |K|
+    assert list(DifferentialAnalysis.sort_by_bayes_factor(table).index) == [
+        "g0",
+        "g1",
+        "g4",
+        "g3",
+        "g2",
+    ]
+
+
+def test_keep_significant_threshold_is_inclusive():
+    table = k_table([3.2, 3.19, -5.0], [0.0, 0.0, 3.2])
+    assert list(DifferentialAnalysis.keep_significant(table).index) == ["g0", "g2"]
+    assert list(DifferentialAnalysis.keep_significant(table, threshold=5).index) == []
+
+
+def test_between_two_groups_identical_groups_sort_last(monkeypatch):
+    # regression: T4 - sort_output ranked features with equal means first
+    # (|K| ~ 16)
+    da = make_analysis(two_group_mdata())
+    a = np.array([[1.0, 2.0, 3.0]] * 4)
+    b = np.array([[0.0, 2.0, 5.0]] * 4)  # g1 equal, g0 A>B, g2 B>A
+    draws = iter([a, b])
+    monkeypatch.setattr(da, "compute_x_means", lambda **kw: next(draws))
+    result = da.between_two_groups(
+        ["cell0"], ["cell3"], "comp", "RNA", z_sampling_size=1, x_sampling_size=4
+    )
+    assert list(result.index)[-1] == "g1"
 
 
 def k_table(k_ab, k_ba):
@@ -505,14 +546,10 @@ def test_across_clusters_single_cluster_has_empty_rest_group():
         da.across_clusters("comp", "RNA", "cluster", z_sampling_size=1)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: keep_only_significant uses |K(A>B)|/|K(B>A)| >= 3.2, so features "
-    "whose decoded means are identical in both groups (P(A>B)=P(B>A)=0, K=-16) "
-    "are kept as significant",
-)
 def test_keep_only_significant_drops_features_identical_in_both_groups():
-    # every cell identical: no feature can be differentially expressed
+    # regression: T4 - keep_only_significant used |K| >= 3.2. Identical
+    # decoded means give P(A>B) = P(B>A) = 0, so both K ~ -16 (evidence of
+    # no difference) and every feature was kept as significant.
     mdata = make_mdata(np.ones((4, 2)), clusters=["a", "a", "b", "b"])
     da = make_analysis(mdata)
     results = da.across_clusters_pairwise(

@@ -271,12 +271,12 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
   * required: `False`.
   * defaults: `False`
   * type: `bool`
-  * description: whether to filter the output to significant results only.
+  * description: keep only features with `K(A>B|Z) >= 3.2` or `K(B>A|Z) >= 3.2`.
 * `sort_output`:
   * required: `False`.
   * defaults: `True`
   * type: `bool`
-  * description: sort results by the maximum of the absolute Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order.
+  * description: sort results by the larger of the Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order (features with no difference sort last).
 
 [back to top](#config-hierarchy)
 &nbsp;
@@ -342,7 +342,7 @@ The sampling parameters are the same as in [Differential Analysis](#differential
   * required: `False`.
   * defaults: `True`
   * type: `bool`
-  * description: sort results by the maximum of the absolute Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order.
+  * description: sort results by the larger of the Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order (features with no difference sort last).
 
 [back to top](#config-hierarchy)
 &nbsp;
