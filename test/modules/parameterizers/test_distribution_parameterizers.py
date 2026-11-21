@@ -90,14 +90,38 @@ class TestZINB:
         logits, m, disp = np.split(out, 3, axis=-1)
         np.testing.assert_allclose(logits, self.LOGITS)
         np.testing.assert_allclose(disp, self.DISP)
-        # libsize scaling first, then clip at 7, exp(.)-1, then floor at 1e-7
-        scaled = np.minimum(mean * libsize, 7.0)
+        # libsize scaling first, then soft cap at 15, exp(.)-1, floor at 1e-7
+        scaled = 15.0 - np.logaddexp(0.0, 15.0 - mean * libsize)
         expected = np.exp(scaled) - 1
         expected = np.where(expected <= 0, 1e-7, expected)
         np.testing.assert_allclose(m, expected, rtol=1e-5)
         assert np.all(m > 0)
-        np.testing.assert_allclose(m[0, 1], np.exp(7.0) - 1, rtol=1e-5)  # clipped
+        # log mean 20 (10 x libsize 2) stays below the cap of 15
+        assert np.log1p(m[0, 1]) < 15.0
+        np.testing.assert_allclose(np.log1p(m[0, 1]), 15.0, atol=1e-2)
         assert m[1, 0] == pytest.approx(1e-7) and m[1, 1] == pytest.approx(1e-7)
+
+    def test_soft_cap_is_identity_below_and_bounded_above(self):
+        x = tf.constant([-5.0, 0.0, 7.0, 10.0, 15.0, 30.0, 1000.0])
+        capped = ZINB.soft_cap(x).numpy()
+        # below the cap the shift is log(1 + exp(x - 15)) ~ exp(x - 15)
+        np.testing.assert_allclose(
+            capped, 15.0 - np.logaddexp(0.0, 15.0 - x.numpy()), rtol=1e-6
+        )
+        np.testing.assert_allclose(capped[:3], [-5.0, 0.0, 7.0], atol=4e-4)
+        assert np.all(capped < 15.0 + 1e-6) and np.all(np.diff(capped) > -1e-6)
+        assert np.all(np.isfinite(np.exp(capped)))
+        assert ZINB.MAX_LOG_MEAN == 15.0
+
+    def test_soft_cap_gradient_never_vanishes_above_the_cap(self):
+        # a hard clip at the cap has zero gradient there; sigmoid(cap - x)
+        x = tf.constant([7.0, 15.0, 20.0])
+        with tf.GradientTape() as tape:
+            tape.watch(x)
+            y = ZINB.soft_cap(x)
+        grad = tape.gradient(y, x).numpy()
+        np.testing.assert_allclose(grad, 1 / (1 + np.exp(x.numpy() - 15.0)), rtol=1e-5)
+        assert np.all(grad > 0)
 
     def test_no_libsize_no_exp_only_floors_mean(self, fake_layer):
         model = ZINB.make(

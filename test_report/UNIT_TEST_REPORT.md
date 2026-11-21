@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1816 passed, 14 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1818 passed, 14 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -23,11 +23,11 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
 | [callbacks](packages/callbacks.md) | ⏸️ | 🟠 High | 4 | 1 | 46 | 4 | 89% |
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
-| [modules](packages/modules.md) | ✅ | 🟠 High | 4 | 2 | 202 | 0 | 100% |
+| [modules](packages/modules.md) | ✅ | 🟠 High | 4 | 2 | 204 | 0 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 274 | 5 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1816** | **14** | |
+| **Total** | | | | | **1818** | **14** | |
 
 **Status**
 - ✅ No open bugs.

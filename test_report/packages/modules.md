@@ -4,13 +4,13 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ✅ Clean | [`test/modules`](../../test/modules) | 202 | 0 | 100% | High: depends on 4 packages, used by 2 |
+| ✅ Clean | [`test/modules`](../../test/modules) | 204 | 0 | 100% | High: depends on 4 packages, used by 2 |
 
 | Subpackage | Tests | Passed | Open bugs |
 |---|---|---|---|
 | base | [`test/modules/base`](../../test/modules/base) | 40 | 0 |
 | components | [`test/modules/components`](../../test/modules/components) | 115 | 0 |
-| parameterizers | [`test/modules/parameterizers`](../../test/modules/parameterizers) | 30 | 0 |
+| parameterizers | [`test/modules/parameterizers`](../../test/modules/parameterizers) | 32 | 0 |
 | preprocessors | [`test/modules/preprocessors`](../../test/modules/preprocessors) | 17 | 0 |
 
 - **Depends on:** environment, layers, losses, utils
@@ -32,6 +32,11 @@ None.
 
 ## Fixed
 
+- ✅ (2026-11-21) **ZINB log-mean ceiling: soft cap at 15 instead of a hard clip at 7** (`IndependentZeroInflatedNegativeBinomialParameterizer`, both `modify_outputs` and `compute_attribution_target`). The log mean m·L was clipped with `tf.where(x > 7, 7, x)` before `exp(x) − 1`:
+  - 7 caps real data: e⁷ − 1 ≈ 1096 counts, and in the repo's PBMC 10x Multiome RNA 17 counts in 11 cells exceed it (up to 5585), all immunoglobulin genes (IGKC, IGHA1, IGLC1–3) in plasma cells;
+  - the hard clip has zero gradient above 7, so an overshooting output could not be pulled back by the mean term of the loss; downstream, DEG/HDEG pairs above it tied and attributions were 0.
+  - Now `soft_cap(x) = cap − softplus(cap − x)` with `MAX_LOG_MEAN = 15` (class attribute): about x below the cap (shift log(1 + e^(x−15)): 3e-4 at 7, 7e-3 at 10), approaching 15 from below, gradient sigmoid(15 − x) > 0 everywhere. 15 only guards `exp` against overflow (float32 overflows above ~88.7): e¹⁵ − 1 ≈ 3.3e6 counts, far above any per-gene count; the ZINB log-likelihood is finite at that mean for dispersions 1e-3 to 1e3. Both are documented in the code.
+  - **This changes training numerics** (deliberately): slightly everywhere (the shift above), and fully for log means above 7. Models trained with the old clip were never penalized above 7, so decoding them with the new cap can give large means where their outputs exceed 7.
 - ✅ (2026-11-21) `Parameterizer.modify_outputs` applied `tf.math.exp` to a KerasTensor, so `make(exp_transform=True)` raised on Keras 3. The exp is now wrapped in a `Lambda` layer (works on KerasTensors and eager tensors).
 - ✅ (2026-11-21) `HierarchicalEncoder` and `EncoderLatentParameterizer` had no `get_config`, so Keras 3 auto-config recorded the default constructor arguments. Both now store their arguments and return them from `get_config`.
 - ✅ (2026-11-21) **`Component.compile` / `train_step` follow `Model`.** Fixes, all in `components/component.py`:

@@ -31,7 +31,13 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
 
     exp_transform: bool
         whether to perform exponential transformation. This will be
-        performed after scaling by libsize by default.
+        performed after scaling by libsize by default. The log mean is
+        soft-capped at ``MAX_LOG_MEAN`` before the exponential (see
+        ``soft_cap``).
+
+    MAX_LOG_MEAN: float
+        class attribute, ceiling of the log mean before the
+        exponential transformation (see ``soft_cap``).
 
     See Also
     --------
@@ -47,6 +53,16 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
     """
 
     default_libsize_scaling = True
+
+    # Ceiling of the log mean, log(1 + mean), before exp_transform. It
+    # only guards exp against overflow (float32 exp overflows above
+    # ~88.7, which would turn the loss into inf/NaN): exp(15) - 1 is
+    # about 3.3e6, far above the count of one gene in one cell (in
+    # single-cell UMI data the largest are about 1e4, e.g. immunoglobulin
+    # genes in plasma cells), so real counts never get near it, and the
+    # NB/ZINB log-likelihood stays finite at that mean. The previous
+    # hard clip at 7 (exp(7) - 1 ~ 1096 counts) cut off such genes.
+    MAX_LOG_MEAN = 15.0
 
     def __init__(self, *args, **kwargs):
         """Constructor for
@@ -67,6 +83,37 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
         """
         super().__init__(*args, **kwargs)
 
+    @classmethod
+    def soft_cap(cls, x: tf.Tensor, cap: float = MAX_LOG_MEAN) -> tf.Tensor:
+        """Smooth upper bound of ``x`` at ``cap``::
+
+            soft_cap(x) = cap - softplus(cap - x)
+
+        Well below the cap it is ``x`` (it differs by
+        ``softplus(cap - x) - (cap - x) = log(1 + exp(x - cap))``, about
+        ``exp(x - cap)``: 3e-4 at x = 7, 7e-3 at x = 10 for cap = 15), and
+        it approaches ``cap`` from below as ``x`` grows. Unlike a hard
+        clip (``min(x, cap)``) its gradient,
+        ``sigmoid(cap - x)``, is never exactly 0, so an output that
+        overshoots the cap is still pulled back by the loss instead of
+        being stuck where the clip has no gradient.
+
+        Parameters
+        ----------
+        x: tf.Tensor
+            the log mean.
+
+        cap: float, optional
+            the ceiling. Defaults to ``MAX_LOG_MEAN``.
+
+        Returns
+        -------
+        tf.Tensor
+            the capped log mean, smaller than ``cap``.
+
+        """
+        return cap - tf.math.softplus(cap - x)
+
     def compute_attribution_target(self, inputs: Mapping[str, tf.Tensor]):
         outputs = self.layer(inputs.get(Constants.TENSOR_NAME_X))
         logits, means, dispersion = tf.keras.layers.Lambda(
@@ -75,8 +122,7 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
         if self.libsize_scaling:
             means *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
         if self.exp_transform:
-            means = tf.where(means > 7.0, 7 * tf.ones_like(means), means)
-            means = tf.math.exp(means) - 1
+            means = tf.math.exp(self.soft_cap(means)) - 1
         means = tf.where(means <= 0, 1e-7 * tf.ones_like(means), means)
         return means
 
@@ -104,8 +150,9 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
 
         exp_transform: bool, optional
             whether to perform exponential transformation. This will be
-            performed after scaling by libsize by default. Defaults to
-            True.
+            performed after scaling by libsize by default, on the log
+            mean soft-capped at ``MAX_LOG_MEAN`` (see ``soft_cap``).
+            Defaults to True.
 
         kwargs: Mapping[str, Any]
             additional parameters to modify the outputs, used for
@@ -125,10 +172,9 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
             mean *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
         if exp_transform:
             mean = tf.keras.layers.Lambda(
-                lambda x: tf.where(x > 7.0, 7 * tf.ones_like(x), x),
+                lambda x: tf.math.exp(cls.soft_cap(x)) - 1,
                 output_shape=(mean.shape[-1],),
             )(mean)
-            mean = tf.keras.layers.Lambda(lambda x: tf.math.exp(x) - 1)(mean)
 
         mean = tf.keras.layers.Lambda(
             lambda x: tf.where(x <= 0, 1e-7 * tf.ones_like(x), x),
@@ -169,8 +215,9 @@ class IndependentZeroInflatedNegativeBinomialParameterizer(Parameterizer):
 
         exp_transform: bool, optional
             whether to perform exponential transformation. This will be
-            performed after scaling by libsize by default. Defaults to
-            True.
+            performed after scaling by libsize by default, on the log
+            mean soft-capped at ``MAX_LOG_MEAN`` (see ``soft_cap``).
+            Defaults to True.
 
         Returns
         -------
