@@ -4,13 +4,13 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, edge cases | [`test/modules`](../../test/modules) | 198 | 4 | 100% | High: depends on 4 packages, used by 2 |
+| ✅ Clean | [`test/modules`](../../test/modules) | 202 | 0 | 100% | High: depends on 4 packages, used by 2 |
 
 | Subpackage | Tests | Passed | Open bugs |
 |---|---|---|---|
-| base | [`test/modules/base`](../../test/modules/base) | 38 | 2 |
+| base | [`test/modules/base`](../../test/modules/base) | 40 | 0 |
 | components | [`test/modules/components`](../../test/modules/components) | 115 | 0 |
-| parameterizers | [`test/modules/parameterizers`](../../test/modules/parameterizers) | 28 | 2 |
+| parameterizers | [`test/modules/parameterizers`](../../test/modules/parameterizers) | 30 | 0 |
 | preprocessors | [`test/modules/preprocessors`](../../test/modules/preprocessors) | 17 | 0 |
 
 - **Depends on:** environment, layers, losses, utils
@@ -28,13 +28,12 @@ Deliberate differences from `Model`, documented in `Component.compile`:
 
 ## Open bugs (strict xfails)
 
-| # | Location | Issue | Impact |
-|---|---|---|---|
-| — | `parameterizers/parameterizer.py` | `exp_transform=True` applies `tf.math.exp` to a KerasTensor, so `make` raises on Keras 3. (2 xfails) | Edge case |
-| — | `base/hierarchical_encoder.py`, `base/encoder_latent_parameterizer.py` | No `get_config`; Keras 3 auto-config records default constructor arguments. (2 xfails) | Breaks save/clone round trips |
+None.
 
 ## Fixed
 
+- ✅ (2026-11-21) `Parameterizer.modify_outputs` applied `tf.math.exp` to a KerasTensor, so `make(exp_transform=True)` raised on Keras 3. The exp is now wrapped in a `Lambda` layer (works on KerasTensors and eager tensors).
+- ✅ (2026-11-21) `HierarchicalEncoder` and `EncoderLatentParameterizer` had no `get_config`, so Keras 3 auto-config recorded the default constructor arguments. Both now store their arguments and return them from `get_config`.
 - ✅ (2026-11-21) **`Component.compile` / `train_step` follow `Model`.** Fixes, all in `components/component.py`:
   - **C1:** `train_step` no longer calls `compiled_metrics.update_state`, which raised on Keras 3.
   - **C3, C4:** the weight indices (`_standard_kl_weights`, `_gmm_kl_weights`, `_data_loss_weights`) are the losses' own `ProgressiveScaler`s, as in Model, so `pin_to`/`assign` on them changes the loss. They were standalone Variables never passed to the KL losses, and the data loss copied its Variable with `float()`.

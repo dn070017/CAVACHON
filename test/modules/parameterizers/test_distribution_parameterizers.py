@@ -140,10 +140,6 @@ class TestMVN:
         np.testing.assert_allclose(out.numpy(), x)
         assert model.exp_transform is False
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: base modify_outputs applies tf.math.exp to a KerasTensor -> make(exp_transform=True) raises",
-    )
     def test_exp_transform_option(self, fake_layer):
         model = MultivariateNormalDiagParameterizer.make(
             input_dims=2, event_dims=1, exp_transform=True

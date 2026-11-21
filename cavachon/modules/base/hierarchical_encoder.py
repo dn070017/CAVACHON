@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Optional
 
 import numpy as np
 import tensorflow as tf
@@ -69,6 +69,9 @@ class HierarchicalEncoder(tf.keras.Model):
             dtype).
         """
         super().__init__(name=name, **kwargs)
+        self.n_latent_dims = n_latent_dims
+        self.progressive_iterations = progressive_iterations
+        self.use_bias = use_bias
         self.is_conditioned_on_z = is_conditioned_on_z
         self.is_conditioned_on_z_hat = is_conditioned_on_z_hat
         self.progressive_scaler = ProgressiveScaler(progressive_iterations)
@@ -160,6 +163,18 @@ class HierarchicalEncoder(tf.keras.Model):
             tf.zeros_like(parameterizer.scale_diag_weight)
         )
         parameterizer.scale_diag_bias.assign(bias.reshape(1, -1))
+
+    def get_config(self) -> Dict:
+        # Keras 3 auto-config records the default constructor arguments.
+        config = super().get_config()
+        config.update(
+            n_latent_dims=self.n_latent_dims,
+            is_conditioned_on_z=self.is_conditioned_on_z,
+            is_conditioned_on_z_hat=self.is_conditioned_on_z_hat,
+            progressive_iterations=self.progressive_iterations,
+            use_bias=self.use_bias,
+        )
+        return config
 
     def train_step(self, data):
         raise NotImplementedError()

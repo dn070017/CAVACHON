@@ -82,10 +82,6 @@ class TestMake:
         np.testing.assert_allclose(out.numpy(), X_VAL * L_VAL)
         assert model.libsize_scaling is True and model.exp_transform is False
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: modify_outputs applies tf.math.exp to a KerasTensor -> make(exp_transform=True) raises",
-    )
     def test_make_with_exp_transform(self, fake_layer):
         model = Parameterizer.make(
             input_dims=4, event_dims=2, libsize_scaling=True, exp_transform=True

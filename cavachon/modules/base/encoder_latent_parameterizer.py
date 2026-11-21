@@ -31,6 +31,8 @@ class EncoderLatentParameterizer(tf.keras.Model):
 
     def __init__(self, n_layers: int = 3, n_latent_dims: int = 5, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.n_layers = n_layers
+        self.n_latent_dims = n_latent_dims
         self.backbone_network = TensorUtils.create_backbone_layers(
             n_layers, reverse=True, name=f"{self.name}_{Constants.MODULE_BACKBONE}"
         )
@@ -71,6 +73,12 @@ class EncoderLatentParameterizer(tf.keras.Model):
         result = self.z_parameterizer(result, training=training, mask=mask)
 
         return result
+
+    def get_config(self) -> Dict:
+        # Keras 3 auto-config records the default constructor arguments.
+        config = super().get_config()
+        config.update(n_layers=self.n_layers, n_latent_dims=self.n_latent_dims)
+        return config
 
     def train_step(self, data):
         raise NotImplementedError()

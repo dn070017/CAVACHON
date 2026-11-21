@@ -97,10 +97,6 @@ class TestCall:
 
 
 class TestConfig:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: no get_config; Keras 3 auto-config records default n_layers/n_latent_dims",
-    )
     def test_get_config_records_constructor_arguments(self, patched):
         enc = EncoderLatentParameterizer(n_layers=2, n_latent_dims=4, name="enc")
         config = enc.get_config()

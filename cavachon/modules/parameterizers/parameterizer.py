@@ -169,7 +169,8 @@ class Parameterizer(tf.keras.Model):
         if libsize_scaling:
             outputs *= inputs.get(Constants.TENSOR_NAME_LIBSIZE)
         if exp_transform:
-            outputs = tf.math.exp(outputs)
+            # Lambda so it also applies to KerasTensors (Keras 3).
+            outputs = tf.keras.layers.Lambda(tf.math.exp)(outputs)
 
         return outputs
 

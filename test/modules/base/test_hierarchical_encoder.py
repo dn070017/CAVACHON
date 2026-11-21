@@ -201,10 +201,6 @@ class TestInitializeScaleDiag:
 
 
 class TestConfig:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: no get_config; Keras 3 auto-config records default constructor args",
-    )
     def test_get_config_round_trip(self, patched):
         enc = HierarchicalEncoder(
             n_latent_dims=3,
