@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 77 passed, 2 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 81 passed, 1 open bug.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -34,16 +34,16 @@ Column names are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN` and `Constants.HIERA
 
 ## Open bugs (strict xfails)
 
-### T4
-
-`differential_analysis.py:142, 224` — `keep_only_significant` keeps a feature when `|K(A>B)| >= 3.2` or `|K(B>A)| >= 3.2`. Identical decoded means give P(A>B) = P(B>A) = 0, so both K ≈ −16 and the feature is kept as "significant" and sorted to the top.
-- Failing input: a 4-cell MuData with every X = 1, clusters a,a,b,b, `across_clusters_pairwise(..., keep_only_significant=True)`. `"a/b"` has 2 rows; it should have 0.
-- **Impact: yes**, for features with no difference at all.
-
 ### T5
 
 `differential_analysis.py:307-340` (also in [cluster_attribution](cluster_attribution.md#t5)) — `batch_effect_colnames=None` / `distribution_names=None` defaults go straight into `DataLoader`, which calls `.get()` on them, so AttributeError. The hierarchical and differential-attribution subclasses already use `or {}`.
 - **Impact:** only when called with defaults (the workflow always passes both). Marked with 6 `# type: ignore[arg-type]` lines in this file.
+
+## Fixed
+
+- ✅ (2026-11-21) <a id="t4"></a>**T4**: `keep_only_significant` kept a feature when `|K(A>B)| >= 3.2` or `|K(B>A)| >= 3.2`, and `sort_output` ranked by `max(|K|)`. Decoded means that are equal in every comparison give P(A>B) = P(B>A) = 0, so both K ≈ −16 (evidence of *no* difference): such features were kept as "significant" and sorted to the top. Mostly-equal ones (both P ≈ 0.02, K ≈ −3.9) too. Ties happen when a feature's output doesn't depend on the compared latent: an HDEG substitution of a component the decoder doesn't use (the whole table), saturated Bernoulli probabilities (exactly 1.0 in float32), features that ignore z.
+  - Filter and sort now use the signed Bayes factors, `max(K(A>B|Z), K(B>A|Z))` (`DifferentialAnalysis.bayes_factor_strength`, `keep_significant`, `sort_by_bayes_factor`; also the HDEG sort and the workflow's single-pair filter). Without ties `K(B>A) = −K(A>B)`, so real differences are kept and ordered exactly as before; ties are dropped and sort last.
+  - Config templates and `CONFIG_REFERENCE.md` describe the signed rule.
 
 ## Worth a look
 

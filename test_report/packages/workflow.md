@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ✅ No open bugs | [`test/workflow`](../../test/workflow) | 99 | 0 | 100% | Very high: depends on 10 packages, used by 1 |
+| ✅ No open bugs | [`test/workflow`](../../test/workflow) | 100 | 0 | 100% | Very high: depends on 10 packages, used by 1 |
 
 - **Depends on:** config, dataloader, environment, filter, io, modality, model, scheduler, tools, utils
 - **Used by:** app
