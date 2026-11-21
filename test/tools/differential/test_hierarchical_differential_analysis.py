@@ -430,3 +430,40 @@ def test_across_clusters_pairwise_end_to_end():
         results["r->d"].loc[["g0", "g1", "g2"], "MeanDelta(Substituted-Original)"],
         [-5, 5, 0],
     )
+
+
+# ---------------------------------------------------------------------------
+# open bugs found by the 2026-11-21 review
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="BUG: T14 the substituted and original decodes of a recipient cell "
+    "draw independent random batch effects, so the pair is not paired and a "
+    "substitution without effect still gives P(A>B|Z) > 0",
+)
+def test_between_groups_pairs_share_the_batch_effect():
+    # component b has no decoder weight: substituting it changes nothing
+    X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2
+    mdata = make_mdata(X, clusters=["d"] * 3 + ["r"] * 2, batch=[0, 1, 2, 3, 4])
+    result = make_hda(mdata).between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=2, donor_components=["b"]
+    )
+    np.testing.assert_allclose(result["P(A>B|Z)"], 0)
+    np.testing.assert_allclose(result["P(B>A|Z)"], 0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="BUG: T17 single-pair labels are compared as given, so integer-coded "
+    "clusters with string labels from the config raise 'Unknown donor group' "
+    "(DEG single-pair compares as strings)",
+)
+def test_between_groups_integer_coded_clusters_with_string_labels():
+    X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2
+    mdata = make_mdata(X, clusters=[0, 0, 0, 1, 1])
+    result = make_hda(mdata).between_groups(
+        "0", "1", "a", "RNA", "cluster", z_sampling_size=1
+    )
+    assert (result[DONOR_COL] == "0").all()

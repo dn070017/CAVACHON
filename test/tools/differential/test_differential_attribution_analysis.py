@@ -367,3 +367,26 @@ def test_from_deg_file_end_to_end(read_csv):
     _, _, d, _ = expected_terms()
     assert list(result.index) == ["g0", "g2"]
     np.testing.assert_allclose(result["attr_a"], d["a"][[0, 2]], atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# open bugs found by the 2026-11-21 review
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="BUG: T15 the decoder's batch effect and library size come from the "
+    "first cell of the whole dataset, so the result depends on the cell order",
+)
+def test_differential_attribution_does_not_depend_on_cell_order():
+    batch = [0.0, 1.0, 2.0, 3.0, 4.0]
+    mdata = make_mdata(X, batch=batch)
+    reordered = mdata[list(reversed(mdata.obs_names))].copy()
+    results = [
+        make_daa(mdata=m)[0].compute_differential_attribution(
+            deg(), "a", "RNA", A_IDX, B_IDX, ["a", "b"], batch_size=2, n_steps=3
+        )
+        for m in (mdata, reordered)
+    ]
+    pd.testing.assert_frame_equal(results[0], results[1])

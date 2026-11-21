@@ -21,6 +21,8 @@ The model is a ``FakeModel`` (passed in), deterministic and differentiable:
     z[c]      = X_RNA @ E[c]                       (encode)
     z_hat     = z                                  (hierarchical_encode)
     x_params  = link(sum_c z_hat[c] @ W[c]) + batch_effect_RNA   (decode)
+                (times the cell's library size sum(X_RNA) with
+                ``libsize_scaling``, as the ZINB decoder does)
 
 ``cavachon.environment.Constants`` stays real. No file I/O.
 """
@@ -135,7 +137,16 @@ def seed():
 class FakeModel:
     """Deterministic, differentiable stand-in for cavachon's Model."""
 
-    def __init__(self, E, W, modality="RNA", link=None, dist_name="FakeDist"):
+    def __init__(
+        self,
+        E,
+        W,
+        modality="RNA",
+        link=None,
+        dist_name="FakeDist",
+        libsize_scaling=False,
+    ):
+        self.libsize_scaling = libsize_scaling
         self.E = {k: tf.constant(v, dtype=tf.float32) for k, v in E.items()}
         self.W = {k: tf.constant(v, dtype=tf.float32) for k, v in W.items()}
         self.modality = modality
@@ -164,6 +175,9 @@ class FakeModel:
         params = self.link(total) + tf.cast(
             batch[f"{self.modality}_{BATCH_KEY}"], tf.float32
         )
+        if self.libsize_scaling:
+            x = tf.cast(batch[f"{self.modality}_{X_KEY}"], tf.float32)
+            params = params * tf.reduce_sum(x, axis=-1, keepdims=True)
         key = f"{components[0]}_{self.modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
         return {Constants.MODEL_OUTPUTS_X_PARAMS: {key: params}}
 

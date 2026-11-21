@@ -19,6 +19,7 @@ from test.tools.differential.conftest import (
     BATCH_KEY,
     X_KEY,
     FakeDataLoader,
+    FakeModel,
     identity_model,
     make_mdata,
 )
@@ -619,3 +620,48 @@ def test_keep_only_significant_drops_features_identical_in_both_groups():
         keep_only_significant=True,
     )
     assert len(results["a/b"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# open bugs found by the 2026-11-21 review
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="BUG: T13 decoded means are scaled by each sampled cell's own library "
+    "size, so groups that differ only in sequencing depth look differential",
+)
+def test_between_two_groups_depth_only_difference_is_not_significant():
+    # same latent (z = gene 0) and same decoded profile; group b is sequenced
+    # 5x deeper (library size 10 vs 2)
+    X = [[1.0, 1.0]] * 4 + [[1.0, 9.0]] * 4
+    model = FakeModel(
+        {"comp": np.array([[1.0], [0.0]])},
+        {"comp": np.array([[1.0, 1.0]])},
+        libsize_scaling=True,
+    )
+    da = make_analysis(make_mdata(X), model=model)
+    result = da.between_two_groups(
+        [f"cell{i}" for i in range(4)],
+        [f"cell{i}" for i in range(4, 8)],
+        "comp",
+        "RNA",
+        z_sampling_size=2,
+        x_sampling_size=20,
+        seed=0,
+    )
+    assert not result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN].any()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="BUG: T18 a NaN cluster label becomes a group with an empty index: "
+    "numpy's 'a cannot be empty'",
+)
+def test_across_clusters_pairwise_skips_missing_labels():
+    mdata = make_mdata(np.zeros((5, 3)), clusters=["a", "a", "b", "b", np.nan])
+    results = make_analysis(mdata).across_clusters_pairwise(
+        "comp", "RNA", "cluster", z_sampling_size=1, x_sampling_size=2
+    )
+    assert list(results) == ["a/b"]
