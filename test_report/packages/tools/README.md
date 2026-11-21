@@ -4,15 +4,15 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 230 | 13 | 100% | Very high: depends on 7 packages, used by 1 |
+| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 234 | 10 | 100% | Very high: depends on 7 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers, model, modules, utils
 - **Used by:** workflow
 
 | Modules | Report | Tests | Passed | Open bugs |
 |---|---|---|---|---|
-| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 81 | 1 |
-| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 41 | 6 |
+| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 83 | 0 |
+| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 43 | 4 |
 | `interactive_visualization`, `enrichment_analysis` | [visualization_enrichment.md](visualization_enrichment.md) | [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) | 108 | 6 |
 
 ## Mocking
@@ -34,4 +34,4 @@
 
 ## Typing
 
-`embedding(color=...)` is `Optional[str]` (a list never worked), and `differential_volcano_plot` raises a ValueError when `component`/`modality` are missing (it previously crashed later with KeyError). The remaining `type: ignore`s mark T5 (12 lines), T6 and the `across_clusters_pairwise` override.
+`embedding(color=...)` is `Optional[str]` (a list never worked), and `differential_volcano_plot` raises a ValueError when `component`/`modality` are missing (it previously crashed later with KeyError). The remaining `type: ignore`s mark T6 and the `across_clusters_pairwise` override (T5's 12 were removed with its fix).

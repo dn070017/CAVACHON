@@ -26,4 +26,4 @@
 ## Worth a look
 
 - `DataLoader.create_dataset` is annotated as returning a dataset but returns `None` (it sets `self.dataset`).
-- `batch_effect_colnames` / `distribution_names` must be Mappings: `None` raises AttributeError. Several [tools](tools/README.md) entry points pass `None` by default (T5).
+- `batch_effect_colnames` / `distribution_names` must be Mappings: `None` raises AttributeError. The [tools](tools/README.md) entry points used to pass `None` by default (T5, fixed there by passing empty mappings).
