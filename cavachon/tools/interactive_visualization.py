@@ -1,3 +1,4 @@
+import os
 import warnings
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -101,6 +102,7 @@ class InteractiveVisualization:
                     error_y=dict(type="data", array=sem),
                 )
             )
+            fig.update_layout(**kwargs)
 
         return fig
 
@@ -457,8 +459,10 @@ class InteractiveVisualization:
             dict()
 
         filename: Optional[str], optional
-            filename to save the figure. None if disable saving.
-            Defaults to None.
+            filename to save the figure. None if disable saving. With
+            more than one `with_respect_to`, each figure is saved with
+            the variable appended to the name (``a.html`` becomes
+            ``a_z1.html``, ``a_z2.html``). Defaults to None.
 
         title: str, optional
             title for the figure. Defaults to 'Attribution Score
@@ -538,13 +542,29 @@ class InteractiveVisualization:
             fig.show()
 
             if filename:
-                if filename.endswith("html"):
-                    fig.write_html(filename)
+                wrt_filename = InteractiveVisualization.attribution_score_filename(
+                    filename, wrt, len(with_respect_to)
+                )
+                if wrt_filename.endswith("html"):
+                    fig.write_html(wrt_filename)
                 else:
-                    fig.write_image(filename)
+                    fig.write_image(wrt_filename)
             figs.append(fig)
 
         return figs, attribution_scores
+
+    @staticmethod
+    def attribution_score_filename(filename: str, wrt: str, n_wrt: int) -> str:
+        """Filename of the `attribution_score` figure for `wrt`.
+
+        With a single `with_respect_to` the filename is used as is;
+        with more, `wrt` is appended to the name, so the figures don't
+        overwrite each other (``a.html`` becomes ``a_z1.html``).
+        """
+        if n_wrt <= 1:
+            return filename
+        stem, extension = os.path.splitext(filename)
+        return f"{stem}_{wrt.replace('/', '_')}{extension}"
 
     @staticmethod
     def differential_attribution_radviz(
@@ -850,7 +870,8 @@ class InteractiveVisualization:
         data = data.loc[data[metric] <= threshold]
         data = data.loc[data.index[::-1]]
         color = np.log(1 / (data[metric].values.astype(np.float32) + 1e-7))
-        size = np.array([float(x[:-2]) for x in data["Gene %"]])
+        # gseapy writes "Gene %" as e.g. "12.35%"
+        size = np.array([float(str(x).strip().rstrip("%")) for x in data["Gene %"]])
 
         data["Hits (%)"] = size
         data[f"log(1/{metric})"] = color
@@ -945,6 +966,11 @@ class InteractiveVisualization:
             }
         )
 
+        # each trace gets the targets of the rows it plots, so hover
+        # labels line up with the points
+        head = data.loc[indices < zero_score_index]
+        tail = data.loc[indices >= zero_score_index]
+
         fig = make_subplots(
             rows=4, cols=1, row_heights=[0.45, 0.05, 0.05, 0.45], vertical_spacing=0.00
         )
@@ -956,9 +982,9 @@ class InteractiveVisualization:
         )
         fig.add_trace(
             go.Scatter(
-                x=data.loc[indices < zero_score_index]["Rank in Ordered Dataset"],
-                y=data.loc[indices < zero_score_index]["Enrichment Score"],
-                text=data["Target"],
+                x=head["Rank in Ordered Dataset"],
+                y=head["Enrichment Score"],
+                text=head["Target"],
                 showlegend=False,
                 name="",
                 marker_color="salmon",
@@ -969,9 +995,9 @@ class InteractiveVisualization:
         )
         fig.add_trace(
             go.Scatter(
-                x=data.loc[indices >= zero_score_index]["Rank in Ordered Dataset"],
-                y=data.loc[indices >= zero_score_index]["Enrichment Score"],
-                text=data["Target"],
+                x=tail["Rank in Ordered Dataset"],
+                y=tail["Enrichment Score"],
+                text=tail["Target"],
                 showlegend=False,
                 name="",
                 marker_color="royalblue",
@@ -1028,9 +1054,9 @@ class InteractiveVisualization:
         )
         fig.add_trace(
             go.Scatter(
-                x=data.loc[indices < zero_score_index]["Rank in Ordered Dataset"],
-                y=data.loc[indices < zero_score_index]["Rank List Metric"],
-                text=data["Target"],
+                x=head["Rank in Ordered Dataset"],
+                y=head["Rank List Metric"],
+                text=head["Target"],
                 marker_color="salmon",
                 fill="tozeroy",
                 showlegend=False,
@@ -1042,9 +1068,9 @@ class InteractiveVisualization:
         )
         fig.add_trace(
             go.Scatter(
-                x=data.loc[indices >= zero_score_index]["Rank in Ordered Dataset"],
-                y=data.loc[indices >= zero_score_index]["Rank List Metric"],
-                text=data["Target"],
+                x=tail["Rank in Ordered Dataset"],
+                y=tail["Rank List Metric"],
+                text=tail["Target"],
                 marker_color="royalblue",
                 fill="tozeroy",
                 showlegend=False,

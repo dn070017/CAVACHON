@@ -35,11 +35,9 @@ class TestBarWithoutGroup:
         assert trace.marker.line.color == "DarkSlateGrey"
         assert trace.marker.line.width == 1
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: bar() ignores **kwargs (layout args) when group is None",
-    )
     def test_layout_kwargs_applied(self, data):
+        # regression: T7 - without a group, **kwargs never reached
+        # fig.update_layout
         fig = InteractiveVisualization.bar(
             data, x="x", y="y", title="T", xaxis_title="X axis"
         )

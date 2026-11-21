@@ -210,18 +210,33 @@ class TestAttributionScore:
         assert figure_io.write_image.calls == []
         assert len(figure_io.show.calls) == 2
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: attribution_score writes every with_respect_to figure to "
-        "the same filename, so all but the last are overwritten",
-    )
     def test_multiple_wrt_saved_to_distinct_files(self, attribution, mdata, figure_io):
-        InteractiveVisualization.attribution_score(
+        # regression: T9 - every with_respect_to figure was written to the
+        # same filename, so only the last survived
+        figs, _ = InteractiveVisualization.attribution_score(
             mdata, "MODEL", "comp", "rna", ["z1", "z2"], "cluster", filename="a.html"
         )
-        filenames = [c[1][0] for c in figure_io.write_html.calls]
-        assert len(filenames) == 2
-        assert len(set(filenames)) == 2
+        assert figure_io.write_html.calls == [
+            (figs[0], ("a_z1.html",), {}),
+            (figs[1], ("a_z2.html",), {}),
+        ]
+
+    @pytest.mark.parametrize(
+        "filename, wrt, n_wrt, expected",
+        [
+            ("out/a.html", "z1", 1, "out/a.html"),
+            ("out/a.html", "z1", 2, "out/a_z1.html"),
+            ("out/a.png", "z2", 3, "out/a_z2.png"),
+            ("out/a", "z1", 2, "out/a_z1"),
+            ("out/a.html", "p/q", 2, "out/a_p_q.html"),
+        ],
+        ids=["single", "html", "image", "no-extension", "slash-in-name"],
+    )
+    def test_attribution_score_filename(self, filename, wrt, n_wrt, expected):
+        assert (
+            InteractiveVisualization.attribution_score_filename(filename, wrt, n_wrt)
+            == expected
+        )
 
 
 # ---------------------------------------------------------------------------

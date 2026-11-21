@@ -61,17 +61,19 @@ class TestRingplot:
         InteractiveVisualization.prerank_ringplot(result)
         pd.testing.assert_frame_equal(result.res2d, before)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: prerank_ringplot parses 'Gene %' with x[:-2], dropping the "
-        "last digit of gseapy's '12.35%' format",
-    )
     def test_gene_percent_parsed_exactly(self):
+        # regression: T10 - x[:-2] dropped the last digit of "12.35%"
         res2d = pd.DataFrame(
-            {"Term": ["T1"], "NES": [1.0], "FDR q-val": [0.01], "Gene %": ["12.35%"]}
+            {
+                "Term": ["T1", "T2", "T3"],
+                "NES": [1.0, 2.0, 3.0],
+                "FDR q-val": [0.01, 0.02, 0.03],
+                "Gene %": ["12.35%", " 7% ", 40.5],
+            }
         )
         fig = InteractiveVisualization.prerank_ringplot(make_prerank_result(res2d))
-        np.testing.assert_allclose(fig.data[0].marker.size, [12.35])
+        # rows are reversed for plotting
+        np.testing.assert_allclose(fig.data[0].marker.size, [40.5, 7.0, 12.35])
 
     @pytest.mark.parametrize(
         "filename,html,image", [(None, 0, 0), ("r.html", 1, 0), ("r.png", 0, 1)]
@@ -144,16 +146,17 @@ class TestEnrichmentScore:
         assert fig.layout.width == 700
         assert fig.layout.height == 700
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: prerank_enrichment_score passes the full Target column as "
-        "hover text to the split (index >= zero score) traces, so hover labels "
-        "are offset",
-    )
     def test_hover_text_matches_split_traces(self, es_result):
+        # regression: T11 - the split traces got the full Target column as
+        # hover text, so labels were offset from their points
         fig = InteractiveVisualization.prerank_enrichment_score(es_result, "T1")
-        es_neg = fig.data[1]
-        assert list(es_neg.text) == ["g2", "g3", "g4"]
+        es_pos, es_neg, metric_pos, metric_neg = (fig.data[i] for i in (0, 1, 4, 5))
+        for trace in (es_pos, metric_pos):
+            assert list(trace.x) == [0, 1]
+            assert list(trace.text) == ["g0", "g1"]
+        for trace in (es_neg, metric_neg):
+            assert list(trace.x) == [2, 3, 4]
+            assert list(trace.text) == ["g2", "g3", "g4"]
 
     def test_unknown_term_raises(self, es_result):
         with pytest.raises(KeyError):
