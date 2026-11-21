@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bug affecting results | [`test/workflow`](../../test/workflow) | 86 | 3 | 100% | Very high: depends on 10 packages, used by 1 |
+| 🔴 Open bug affecting results | [`test/workflow`](../../test/workflow) | 89 | 1 | 100% | Very high: depends on 10 packages, used by 1 |
 
 - **Depends on:** config, dataloader, environment, filter, io, modality, model, scheduler, tools, utils
 - **Used by:** app
@@ -16,12 +16,12 @@
 
 | # | Location | Issue | Impact |
 |---|---|---|---|
-| W1 | `workflow.py:572-596` | **Differential attribution uses every DEG/HDEG table in the folder**, including tables from other components and modalities, and runs them through its own component and `use_cluster`. | **Yes**: silently wrong attribution output when 2+ DEG/HDEG entries for different components exist |
-| W2 | `workflow.py:609-629`, `441-443` | Group labels from DEG tables are converted to `str`, but the obs column isn't, so integer-coded or zero-padded labels give empty groups. | Only with non-string annotations |
-| W7 | `workflow.py:377-390` | A `color_by` of the form `<obsm_key>/<index>` puts a `/` in the embedding filename, so the write fails before the h5mu is saved. | Only with that `color_by` form |
+| W1 | `workflow.py:625-635` | **Differential attribution uses every DEG/HDEG table in the folder**, including tables from other components and modalities, and runs them through its own component and `use_cluster`. | **Yes**: silently wrong attribution output when 2+ DEG/HDEG entries for different components exist |
 
 ## Fixed
 
+- ✅ (2026-11-21) **W2** (`perform_differential_analysis`, `perform_differential_attribution_analysis`): group labels (from the config or `str()`-ed from DEG tables) were compared to the raw obs column, so integer-coded annotations gave empty groups. The obs column is now compared as strings. Zero-padded labels (`"01"` vs `1`) still don't match, since a TSV read-back loses the padding.
+- ✅ (2026-11-21) **W7** (`visualize_embedding`): a `color_by` of the form `<obsm_key>/<index>` put a `/` in the embedding filename. It is replaced with `_`, as in the other output names.
 - ✅ **M5** (`workflow.py:242-251`): positional arguments to `SequentialTrainingScheduler` were swapped (`batch_effect_colnames` ↔ `distribution_names`). They are passed by keyword now.
 - ✅ **W3–W6** (`workflow.py:426-502`):
   - DEG filenames no longer contain spaces;
