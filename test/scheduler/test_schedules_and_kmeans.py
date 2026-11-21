@@ -1,6 +1,8 @@
 """KL annealing schedule, GMMPriorInitializer (k-means++ prior
 initialisation), the compile helper and mlflow runs."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -144,19 +146,65 @@ class TestEstimate:
         assert estimate.logits.shape == (1, 2)
         assert estimate.scale_biases.shape == (2, 2)
 
-    def test_noise_moves_the_centers_off_the_data_points(self):
+    def test_centers_are_cluster_means_and_noise_moves_them(self):
         z = _two_cluster_data(0.5)
-
-        def distance_to_nearest_point(locs):
-            locs = np.asarray(locs)
-            return np.linalg.norm(z[None, :, :] - locs[:, None, :], axis=2).min(axis=1)
-
         plain = _initializer(add_noise=False).estimate(z, 2)
         noisy = _initializer(add_noise=True).estimate(z, 2)
-        # k-means++ picks data points; the noise (std 0.1) moves them a bit
-        np.testing.assert_array_equal(distance_to_nearest_point(plain.locs), 0.0)
-        d = distance_to_nearest_point(noisy.locs)
+        # Lloyd iterations: each center is the mean of its cluster
+        for k in range(2):
+            np.testing.assert_allclose(
+                np.asarray(plain.locs)[k],
+                z[plain.assignments == k].mean(axis=0),
+                rtol=1e-5,
+            )
+        # the K-means++ seeds are data points
+        seed_distance = np.linalg.norm(
+            z[None, :, :] - plain.seeds[:, None, :], axis=2
+        ).min(axis=1)
+        np.testing.assert_array_equal(seed_distance, 0.0)
+        # the noise (std 0.1) moves the centers a bit (the clusters may come
+        # in another order: compare with the nearest plain center)
+        d = np.linalg.norm(
+            np.asarray(noisy.locs)[:, None, :] - np.asarray(plain.locs)[None],
+            axis=2,
+        ).min(axis=1)
         assert np.all(d > 0) and np.all(d < 1.0)
+
+    def test_lloyd_moves_a_bad_seed_to_the_cluster_mean(self):
+        z = np.array([[0.0], [1.0], [2.0], [10.0], [11.0]], dtype=np.float32)
+        centers, assignments = GMMPriorInitializer.lloyd(z, np.array([[0.0], [2.0]]))
+        np.testing.assert_allclose(sorted(centers.ravel()), [1.0, 10.5])
+        assert list(assignments) == [0, 0, 0, 1, 1]
+
+    def test_lloyd_keeps_the_center_of_an_empty_cluster(self):
+        z = np.array([[0.0], [1.0]], dtype=np.float32)
+        centers, _ = GMMPriorInitializer.lloyd(z, np.array([[0.5], [100.0]]))
+        np.testing.assert_allclose(centers.ravel(), [0.5, 100.0])
+
+    def test_prior_std_adds_the_posterior_variance(self):
+        # two clusters of means, posterior std 2 in every sample
+        z = _two_cluster_data(0.5)
+        z_std = np.full_like(z, 2.0)
+        estimate = _initializer().estimate(z, 2, z_std)
+        for k in range(2):
+            members = z[estimate.assignments == k]
+            expected = np.sqrt(np.var(members, axis=0) + 4.0)
+            np.testing.assert_allclose(
+                softplus(estimate.scale_biases[k].astype(np.float64)),
+                expected,
+                rtol=1e-4,
+            )
+
+    def test_prior_std_with_posterior_variance_for_a_single_sample_cluster(self):
+        z = np.array([[0.0, 0.0], [0.1, 0.0], [50.0, 50.0]], dtype=np.float32)
+        z_std = np.array([[1.0, 1.0], [1.0, 1.0], [0.3, 0.4]], dtype=np.float32)
+        estimate = _initializer().estimate(z, 2, z_std)
+        lone = estimate.assignments[2]
+        np.testing.assert_allclose(
+            softplus(estimate.scale_biases[lone].astype(np.float64)),
+            [0.3, 0.4],
+            rtol=1e-4,
+        )
 
     def test_apply_writes_every_parameter(self, fakes):
         _, model = make_scheduler([make_config("A")])
@@ -282,6 +330,72 @@ class TestInitialize:
         got, expected = self._prior_std_vs_cluster_std(model, z)
         # softplus(bias) should reproduce the per-cluster std (within 5%)
         np.testing.assert_allclose(got, expected, rtol=0.05)
+
+    def test_uses_the_posterior_std_from_the_model(self, fakes):
+        configs = [make_config("A"), make_config("B", z=["A"])]
+        s, model = make_scheduler(configs, batch_size=17)
+        z = _two_cluster_data(0.5)
+        model.predict_outputs = {
+            "B_z": z,
+            "B_z_parameters": np.concatenate([z, np.full_like(z, 2.0)], axis=1),
+        }
+        s.prior_initializer.add_noise = False
+        s.prior_initializer.initialize("B")
+        assert model.predict_extra_outputs == ["B_z_parameters"]
+        prior = model.components["B"].z_prior_parameterizer
+        for loc, bias in zip(prior.loc_bias, prior.scale_diag_bias):
+            members = z[np.sign(z[:, 0]) == np.sign(loc.numpy()[0, 0])]
+            np.testing.assert_allclose(
+                softplus(bias.numpy()[0].astype(np.float64)),
+                np.sqrt(np.var(members, axis=0) + 4.0),
+                rtol=1e-3,
+            )
+
+    def test_saves_the_latents_and_the_prior_to_outdir(self, fakes, monkeypatch):
+        module = "cavachon.scheduler.gmm_prior_initializer"
+        made, saved = [], {}
+        monkeypatch.setattr(
+            f"{module}.os.makedirs", lambda path, exist_ok: made.append(path)
+        )
+        monkeypatch.setattr(
+            f"{module}.np.savez",
+            lambda path, **arrays: saved.update(path=path, **arrays),
+        )
+        configs = [make_config("A"), make_config("B", z=["A"])]
+        s, model = make_scheduler(configs, batch_size=17)
+        z = _two_cluster_data(0.5)
+        z_std = np.full_like(z, 2.0)
+        model.predict_outputs = {
+            "B_z": z,
+            "B_z_parameters": np.concatenate([z, z_std], axis=1),
+        }
+        initializer = s.prior_initializer
+        initializer.outdir = "/out"
+        initializer.mdata = SimpleNamespace(obs_names=[f"c{i}" for i in range(len(z))])
+        initializer.initialize("B")
+        assert made == ["/out/kmeans_initialization/B"]
+        assert saved["path"] == "/out/kmeans_initialization/B/z.npz"
+        np.testing.assert_array_equal(saved["z_mean"], z)
+        np.testing.assert_array_equal(saved["z_std"], z_std)
+        assert list(saved["obs_names"][:2]) == ["c0", "c1"]
+        assert saved["assignments"].shape == (len(z),)
+        assert saved["seeds"].shape == saved["prior_loc"].shape == (2, 2)
+        prior = model.components["B"].z_prior_parameterizer
+        np.testing.assert_allclose(
+            saved["prior_std"][0],
+            softplus(prior.scale_diag_bias[0].numpy()[0].astype(np.float64)),
+            rtol=1e-5,
+        )
+        np.testing.assert_allclose(saved["prior_logits"], prior.logits_bias.numpy())
+
+    def test_saves_nothing_without_outdir(self, fakes, monkeypatch):
+        saved = []
+        monkeypatch.setattr(
+            "cavachon.scheduler.gmm_prior_initializer.np.savez",
+            lambda *a, **k: saved.append(a),
+        )
+        self._run(0.5)
+        assert saved == []
 
 
 # ---------------------------------------------------------------------------

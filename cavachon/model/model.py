@@ -7,6 +7,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Sequence,
     Tuple,
     Union,
     cast,
@@ -351,6 +352,7 @@ class Model(tf.keras.Model):
         self,
         x: Union[Mapping[str, tf.Tensor], mu.MuData],
         batch_size: Optional[int] = None,
+        extra_outputs: Sequence[str] = (),
         **kwargs,
     ):
         """Predict based on Mapping[str, tf.Tensor] (with the same
@@ -366,6 +368,13 @@ class Model(tf.keras.Model):
         batch_size: int, optional
             batch size. If provided with None, will automatically set
             to 1. Defaults to None.
+
+        extra_outputs: Sequence[str], optional
+            with mu.MuData, more model outputs to collect besides the
+            z and z_hat of every component, e.g.
+            ``"{component}_z_parameters"`` (the loc and scale_diag of
+            the posterior). They are returned, not stored in the obsm.
+            Defaults to ().
 
         kwargs: Mapping[str, Any]
             Additional parameters used to compile the model.
@@ -408,6 +417,9 @@ class Model(tf.keras.Model):
                         outputs.setdefault(
                             f"{component_name}_{modality_name}_x_parameters", list()
                         )
+
+            for key in extra_outputs:
+                outputs.setdefault(key, list())
 
             dataloader = DataLoader(mdata, batch_size=batch_size)
             for batch in tqdm(dataloader):

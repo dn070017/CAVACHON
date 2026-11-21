@@ -146,7 +146,7 @@ class SequentialTrainingScheduler:
 
         self.state = TrainingStateController(model, self.modality_weight)
         self.prior_initializer = GMMPriorInitializer(
-            model, mdata, batch_size, self.component_order
+            model, mdata, batch_size, self.component_order, outdir=outdir
         )
         self.planner = PhasePlanner(
             model,

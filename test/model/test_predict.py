@@ -124,6 +124,15 @@ class TestPredictMuData:
         } <= set(outputs)
         assert all(isinstance(v, np.ndarray) for v in outputs.values())
 
+    def test_extra_outputs_are_collected_but_not_stored(self, setup):
+        model, mdata, _ = setup
+        outputs = model.predict(mdata, batch_size=3, extra_outputs=["a_z_parameters"])
+        np.testing.assert_allclose(
+            outputs["a_z_parameters"], 2 * _expected(mdata)["a_z"], rtol=1e-6
+        )
+        assert "z_parameters_a" not in mdata.mod["rna"].obsm
+        assert "b_z_parameters" not in model.predict(mdata, batch_size=3)
+
     def test_inference_mode(self, setup):
         model, mdata, _ = setup
         model.predict(mdata)

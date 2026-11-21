@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ⏸️ Reviewed, deferred | [`test/model`](../../test/model) | 112 | 0 | 100% | Very high: depends on 7 packages, used by 2 |
+| ⏸️ Reviewed, deferred | [`test/model`](../../test/model) | 113 | 0 | 100% | Very high: depends on 7 packages, used by 2 |
 
 - **Depends on:** config, dataloader, environment, layers, losses, modules, utils
 - **Used by:** tools, workflow
@@ -29,6 +29,7 @@
 
 ## Fixed
 
+- ✅ (2026-11-22) `Model.predict(mdata, extra_outputs=[...])` also collects the named model outputs (e.g. `"{component}_z_parameters"`, the posterior loc and scale) and returns them, without storing them in the obsm. Used by the GMM prior initialization (see [scheduler](scheduler.md#fixed)).
 - ✅ (2026-11-21) **`Model.evaluate` and `fit(validation_data=...)` work.** Model had no `test_step`, so Keras's default failed with "y_true and y_pred have different structures". `train_step` is split into `_prepare_loss_inputs` and `_evaluate_losses` (each loss evaluated once, not twice), shared by the new `test_step`; the new `predict_step` applies `select_inputs` (also for datasets). All three follow the Keras step API (batches unpacked with `unpack_x_y_sample_weight`, dict of losses returned), as in `Component`. **Training is unchanged:** the seeded 7-phase e2e run gives identical losses, priors, alpha and sampler flags.
 - ✅ (2026-11-21) **Explicit library size for `decode`.** `Model.compute_libsize(batch)` / `Component.compute_libsize(batch)` compute it exactly as in training (after the preprocessor's transforms, e.g. the row sum of log1p counts, not the raw count total), and `decode(..., libsize=...)` accepts it per modality, so decoding new z_hat (e.g. generation with a typical library size) needs no data matrix. Without `libsize` it is computed from the matrices as before, and if neither is given a clear ValueError names the key (the decoder used to fall back to 1 silently). Modalities whose decoder does not scale by the library size (`Component.requires_libsize`, e.g. Bernoulli) no longer need their matrix at all. Checked on a real model: decoding with `libsize(...)` and no matrices equals decoding from the data.
 - ✅ (2026-11-21) `Model.decode` documents that the batch needs each modality's matrix as well as its batch effect (the preprocessor runs again for the library size), and a missing matrix now raises a clear ValueError naming the key instead of a Keras error about `None`.
