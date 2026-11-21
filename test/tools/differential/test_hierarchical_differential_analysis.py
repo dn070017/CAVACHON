@@ -144,11 +144,22 @@ def test_encode_z_pool_empty_mdata():
     assert pools["a"].shape == (0, 0) and pools["b"].shape == (0, 0)
 
 
-def test_build_batch_effect_concatenates_batches():
-    mdata = make_mdata(np.zeros((5, 2)), batch=[0, 1, 2, 3, 4])
-    hda = make_hda(mdata)
-    be = hda._build_batch_effect(batch_size=2)
-    np.testing.assert_allclose(np.asarray(be["RNA"]).ravel(), [0, 1, 2, 3, 4])
+def test_between_groups_decodes_both_at_the_median_library_size():
+    # library sizes 6, 6, 6, 5, 5 -> median 6, for donor and recipient
+    X = [[5, 0, 1]] * 3 + [[0, 5, 0]] * 2
+    model = identity_model(3, components=("a", "b"))
+    model.libsize_scaling = True
+    hda = make_hda(make_mdata(X, clusters=["d"] * 3 + ["r"] * 2), model)
+    result = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=1, sort_output=False
+    )
+    assert len(model.decode_libsizes) == 2  # substituted, original
+    for libsize in model.decode_libsizes:
+        np.testing.assert_allclose(np.asarray(libsize["RNA"]), 6.0)
+    # A = donor latent, B = recipient latent, both at library size 6
+    np.testing.assert_allclose(result["Mean(A)"], [30, 0, 6])
+    np.testing.assert_allclose(result["Mean(B)"], [0, 30, 0])
+    assert (result[Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN] == 6.0).all()
 
 
 # --------------------------------------------------------------------------

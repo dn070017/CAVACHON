@@ -627,11 +627,8 @@ def test_keep_only_significant_drops_features_identical_in_both_groups():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T13 decoded means are scaled by each sampled cell's own library "
-    "size, so groups that differ only in sequencing depth look differential",
-)
+# regression: T13 decoded means were scaled by each sampled cell's own library
+# size, so groups that differ only in sequencing depth looked differential
 def test_between_two_groups_depth_only_difference_is_not_significant():
     # same latent (z = gene 0) and same decoded profile; group b is sequenced
     # 5x deeper (library size 10 vs 2)
@@ -652,6 +649,68 @@ def test_between_two_groups_depth_only_difference_is_not_significant():
         seed=0,
     )
     assert not result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN].any()
+    # both groups decoded at the median library size (2 and 10 -> 6)
+    np.testing.assert_allclose(result["Mean(A)"], [6.0, 6.0])
+    np.testing.assert_allclose(result["Mean(B)"], [6.0, 6.0])
+    assert (result[Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN] == 6.0).all()
+
+
+def libsize_model(n_vars=2):
+    eye = np.eye(n_vars, dtype=np.float32)
+    return FakeModel({"comp": eye}, {"comp": eye}, libsize_scaling=True)
+
+
+def test_compute_decoding_reference_batch_effect_and_median_library_size():
+    # library sizes 1, 2, 3, 10, 20 over batches of 2 -> median 3
+    X = [[1, 0], [1, 1], [3, 0], [5, 5], [20, 0]]
+    mdata = make_mdata(X, batch=[0, 1, 2, 3, 4])
+    da = make_analysis(mdata, model=libsize_model())
+    batch_effect, library_size = da.compute_decoding_reference("comp", 2)
+    np.testing.assert_allclose(np.asarray(batch_effect["RNA"]).ravel(), range(5))
+    assert library_size == {"RNA": 3.0}
+
+
+def test_compute_decoding_reference_without_library_size_scaling():
+    da = make_analysis(make_mdata(np.ones((3, 2))))
+    _, library_size = da.compute_decoding_reference("comp", 2)
+    assert library_size == {}
+
+
+def test_compute_x_means_decodes_at_the_given_library_size():
+    model = libsize_model()
+    da = make_analysis(make_mdata(np.ones((3, 2))), model=model)
+    dataset = tf.data.Dataset.from_tensor_slices(
+        {
+            f"RNA_{X_KEY}": np.array([[1, 2], [3, 4], [5, 6]], np.float32),
+            f"RNA_{BATCH_KEY}": np.zeros((3, 1), np.float32),
+        }
+    )
+    out = da.compute_x_means(
+        dataset,
+        "comp",
+        "RNA",
+        {"RNA": tf.zeros((3, 1))},
+        batch_size=2,
+        library_size={"RNA": 7.0},
+    )
+    np.testing.assert_allclose(out, 7 * np.array([[1, 2], [3, 4], [5, 6]]))
+    assert [tuple(np.shape(ls["RNA"])) for ls in model.decode_libsizes] == [
+        (2, 1),
+        (1, 1),
+    ]
+
+
+def test_between_two_groups_without_library_size_scaling_has_no_column():
+    da = make_analysis(make_mdata(np.ones((4, 2))))
+    result = da.between_two_groups(
+        ["cell0", "cell1"],
+        ["cell2", "cell3"],
+        "comp",
+        "RNA",
+        z_sampling_size=1,
+        x_sampling_size=2,
+    )
+    assert Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN not in result
 
 
 @pytest.mark.xfail(

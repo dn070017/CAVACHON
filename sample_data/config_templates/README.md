@@ -188,7 +188,7 @@ rna_from_rna_substitute_atac_cd4_naive_to_cd8_naive.tsv
 
 When `donor_components` is omitted, the filename uses `all` in place of the component list.
 
-Both tables mark each gene `Significant` (or not) and record the run on every row: `Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed` and `SignificanceThreshold`, plus the groups compared (`GroupA`/`GroupB` for DEG, `DonorGroup`/`RecipientGroup` for HDEG). Differential attribution uses these columns to pick the tables of its component, modality and `use_cluster`.
+Both tables mark each gene `Significant` (or not) and record the run on every row: `Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`, `SignificanceThreshold` and, for modalities whose decoder scales by the library size (ZINB), `LibrarySize`, plus the groups compared (`GroupA`/`GroupB` for DEG, `DonorGroup`/`RecipientGroup` for HDEG). Every decoded cell uses the same library size, the median over all cells (`LibrarySize`), so groups sequenced at different depths are compared at one depth; `Mean(A)`/`Mean(B)` are the expected expression at that depth. Differential attribution uses these columns to pick the tables of its component, modality and `use_cluster`.
 
 ## Tips
 

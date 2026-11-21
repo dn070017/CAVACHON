@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 86 passed, 5 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 91 passed, 4 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -17,7 +17,7 @@ Tests: [`test/tools/differential`](../../../test/tools/differential) — 86 pass
 
 (2026-11-21) Every DEG/HDEG table records the analysis that produced it, on every row, so a table read back from disk can be matched to its analysis (used by the workflow's differential attribution, see [W1](../workflow.md#w1)). Both end with the **same run columns, in the same order**, written by `DifferentialAnalysis.record_run_parameters`:
 
-`Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`, `SignificanceThreshold`
+`Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`, `SignificanceThreshold`, `LibrarySize` (only when the decoder scales by the library size, see [T13](#t13))
 
 | Table | Before the run columns | Notes |
 |---|---|---|
@@ -43,13 +43,7 @@ Checked with real DEG/HDEG tables written to disk and read back: `Significant` p
 
 ## Open bugs (strict xfails)
 
-Found by the 2026-11-21 review of the differential and attribution tools. Nothing is fixed yet; T13 and T15 need a design decision first (which library size and batch effect to decode with: fixed, matched, or averaged over a reference set).
-
-### T13
-
-`differential_analysis.py:609-635` — **DEG compares sequencing depth along with expression.** `compute_x_means` decodes each sampled cell with its own matrix in `batch`, so for decoders with `libsize_scaling` (ZINB, the RNA default) the decoded mean is scaled by that cell's library size. The batch effect is marginalized (a random cell's batch), the library size is not.
-- Failing input: identical latent and decoded profile, group B sequenced 5× deeper (library size 10 vs 2) → every feature `Significant`.
-- **Impact: yes**: when two clusters differ in depth, most genes look up in the deeper one, and `Mean(A)`/`Mean(B)` are on each group's own depth. HDEG is not affected: both decodes of a pair use the same recipient cell's library size.
+Found by the 2026-11-21 review of the differential and attribution tools. T13 is fixed (see below); T15 still needs a decision on the batch effect to decode with.
 
 ### T14
 
@@ -75,6 +69,10 @@ Found by the 2026-11-21 review of the differential and attribution tools. Nothin
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t13"></a>**T13** (`compute_x_means`): DEG decoded each sampled cell with its own matrix, so for decoders with `libsize_scaling` (ZINB, the RNA default) the mean was scaled by that cell's library size: groups that differed only in sequencing depth looked differential (identical latents, group B 5× deeper → every feature `Significant`). The batch effect was marginalized, the library size was not.
+  - DEG and HDEG now decode every cell at **one library size, the median over all cells** (`DifferentialAnalysis.compute_decoding_reference`, which also builds the batch-effect pool in the same pass and replaces HDEG's `_build_batch_effect`; `compute_x_means` / `_compute_substituted_x_means` take `library_size` and pass it to `Model.decode(libsize=...)`). The library size is computed as in training (`Model.library_size`, for the decoded component).
+  - The ZINB library size is Σ log1p(counts) and it scales the predicted **log** mean (μ = exp(min(m·L, 7)) − 1), a design choice kept as is (the network compares log values). With one L for every cell, P/K/`Significant` depend only on m_A vs m_B, so they are the same for any constant L except where m·L reaches the clip at 7 (pairs above it tie); the median keeps m·L in the range the decoder was trained on. `Mean(A)`/`Mean(B)` are the expected expression at that depth.
+  - New run column `LibrarySize` (written when the modality's decoder scales by it; `Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN`). HDEG wasn't confounded (both decodes of a pair used the recipient cell's library size) and now uses the same median, so DEG and HDEG means are on one scale.
 - ✅ (2026-11-21) <a id="t5"></a>**T5** (`differential_analysis.py`, `cluster_analysis.py`, `attribution_analysis.py`): the `batch_effect_colnames=None` / `distribution_names=None` defaults went straight into `DataLoader`, which calls `.get()` on them, so AttributeError (only when the tools are used without them; the workflow always passes both). `None` is now turned into an empty mapping, which DataLoader reads as "use `adata.uns['cavachon']` for every modality":
   - once, in `DifferentialAnalysis.__init__`, so its attributes are always mappings and the three subclasses pass them as they are (the hierarchical and differential-attribution `or {}` were removed); `batch_effect_encoders` defaults to `None` the same way instead of a shared mutable `dict()`;
   - at the `DataLoader` call in `AttributionAnalysis.__init__` and both `ClusterAnalysis.compute_cluster_log_probability*` methods (they don't keep the options).

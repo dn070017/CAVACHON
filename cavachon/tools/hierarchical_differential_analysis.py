@@ -3,7 +3,6 @@
 import warnings
 from collections.abc import Mapping
 from itertools import combinations
-from typing import Any
 
 import muon as mu
 import numpy as np
@@ -104,23 +103,6 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         return result
 
-    def _build_batch_effect(self, batch_size: int) -> Mapping[str, tf.Tensor]:
-        # holds a list of per-batch tensors first, then their concatenation
-        batch_effect: dict[str, Any] = dict()
-        dataloader = self._make_dataloader(self.mdata, batch_size)
-
-        for batch in dataloader:
-            for modality_name in self.mdata.mod.keys():
-                if modality_name not in batch_effect:
-                    batch_effect.setdefault(modality_name, [])
-                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
-                batch_effect[modality_name].append(batch.get(batch_effect_key))
-
-        for modality_name in batch_effect.keys():
-            batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
-
-        return batch_effect
-
     def _compute_substituted_x_means(
         self,
         dataset: tf.data.Dataset,
@@ -130,6 +112,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         batch_effect: Mapping[str, tf.Tensor],
         training: bool = False,
         batch_size: int = 128,
+        library_size: Mapping[str, float] | None = None,
     ) -> np.ndarray:
         modality_names = self.mdata.mod.keys()
         dist_x_z_name = self.model.components.get(component).distribution_names.get(
@@ -173,7 +156,11 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 )
 
             decode_outputs = self.model.decode(
-                batch, z_hat_substituted, components=[component], training=training
+                batch,
+                z_hat_substituted,
+                components=[component],
+                training=training,
+                libsize=self.constant_library_size(library_size, n_obs_batch),
             )
             x_parameters = decode_outputs[Constants.MODEL_OUTPUTS_X_PARAMS].get(
                 f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
@@ -259,7 +246,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             are drawn; every drawn cell is decoded twice: **A** with the
             ``z`` of ``donor_components`` replaced by the ``z`` of a random
             donor cell, and **B** unchanged (each decode with a batch
-            effect drawn at random from all cells). Over these
+            effect drawn at random from all cells, and at the median
+            library size of all cells, see
+            ``DifferentialAnalysis.compute_decoding_reference``). Over these
             (round, cell) pairs:
 
             - ``Mean(A)`` / ``Mean(B)``: mean of the decoded means of A /
@@ -282,7 +271,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             the run, as in ``DifferentialAnalysis.between_two_groups``:
             ``Component``, ``Modality``, ``UseCluster``,
             ``ZSamplingSize``, ``XSamplingSize`` (the number actually
-            drawn), ``RandomSeed`` and ``SignificanceThreshold``. The
+            drawn), ``RandomSeed``, ``SignificanceThreshold`` and
+            ``LibrarySize``. The
             parameters let a table read back from disk be matched to the
             analysis that produced it.
 
@@ -326,7 +316,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         if all(len(v) == 0 for v in donor_z_pools.values()):
             raise ValueError(f"Donor group '{donor_group}' is empty.")
 
-        batch_effect = self._build_batch_effect(batch_size)
+        batch_effect, library_size = self.compute_decoding_reference(
+            component, batch_size
+        )
 
         x_means_substituted_list: list[np.ndarray] = []
         x_means_original_list: list[np.ndarray] = []
@@ -346,6 +338,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     donor_z_pools=donor_z_pools,
                     batch_effect=batch_effect,
                     batch_size=batch_size,
+                    library_size=library_size,
                 )
             )
             x_means_original_list.append(
@@ -355,6 +348,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     modality=modality,
                     batch_effect=batch_effect,
                     batch_size=batch_size,
+                    library_size=library_size,
                 )
             )
 
@@ -387,6 +381,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             x_sampling_size=x_sampling_size,
             seed=seed,
             significance_threshold=significance_threshold,
+            library_size=library_size.get(modality),
         )
 
         if sort_output:

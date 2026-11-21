@@ -4,14 +4,14 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 269 | 6 | 100% | Very high: depends on 7 packages, used by 1 |
+| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 274 | 5 | 100% | Very high: depends on 7 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers, model, modules, utils
 - **Used by:** workflow
 
 | Modules | Report | Tests | Passed | Open bugs |
 |---|---|---|---|---|
-| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 86 | 5 |
+| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 91 | 4 |
 | `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 57 | 1 |
 | `interactive_visualization`, `enrichment_analysis` | [visualization_enrichment.md](visualization_enrichment.md) | [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) | 126 | 0 |
 
@@ -26,7 +26,6 @@
 
 | # | Module | Issue |
 |---|---|---|
-| [T13](differential.md#t13) | differential_analysis | DEG means are scaled by each cell's own library size, so depth differences look differential. |
 | [T14](differential.md#t14) | hierarchical_differential_analysis | The HDEG pair draws two independent batch effects, so it is only half paired. |
 | [T15](differential.md#t15) | differential_attribution_analysis | Attribution is decoded with the first cell's batch effect and library size. |
 

@@ -21,8 +21,10 @@ The model is a ``FakeModel`` (passed in), deterministic and differentiable:
     z[c]      = X_RNA @ E[c]                       (encode)
     z_hat     = z                                  (hierarchical_encode)
     x_params  = link(sum_c z_hat[c] @ W[c]) + batch_effect_RNA   (decode)
-                (times the cell's library size sum(X_RNA) with
-                ``libsize_scaling``, as the ZINB decoder does)
+                (times the library size with ``libsize_scaling``, as
+                the ZINB decoder does: the ``libsize`` given to decode,
+                else the cell's own sum(X_RNA))
+    library_size = {RNA: sum(X_RNA)} with ``libsize_scaling``, else {}
 
 ``cavachon.environment.Constants`` stays real. No file I/O.
 """
@@ -158,6 +160,7 @@ class FakeModel:
         self.encode_calls = []
         self.hier_calls = []
         self.decode_calls = []
+        self.decode_libsizes = []
 
     def encode(self, batch, training=False):
         self.encode_calls.append(training)
@@ -169,15 +172,24 @@ class FakeModel:
         self.hier_calls.append({k: np.array(v) for k, v in z.items()})
         return {Constants.MODEL_OUTPUTS_Z_HAT: dict(z)}
 
-    def decode(self, batch, z_hat, components=None, training=False):
+    def library_size(self, batch, components=None):
+        if not self.libsize_scaling:
+            return {}
+        x = tf.cast(batch[f"{self.modality}_{X_KEY}"], tf.float32)
+        return {self.modality: tf.reduce_sum(x, axis=-1, keepdims=True)}
+
+    def decode(self, batch, z_hat, components=None, training=False, libsize=None):
         self.decode_calls.append((list(components or []), training))
+        self.decode_libsizes.append(libsize)
         total = tf.add_n([tf.matmul(z_hat[name], w) for name, w in self.W.items()])
         params = self.link(total) + tf.cast(
             batch[f"{self.modality}_{BATCH_KEY}"], tf.float32
         )
         if self.libsize_scaling:
-            x = tf.cast(batch[f"{self.modality}_{X_KEY}"], tf.float32)
-            params = params * tf.reduce_sum(x, axis=-1, keepdims=True)
+            if libsize is not None:
+                params = params * libsize[self.modality]
+            else:
+                params = params * self.library_size(batch)[self.modality]
         key = f"{components[0]}_{self.modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
         return {Constants.MODEL_OUTPUTS_X_PARAMS: {key: params}}
 

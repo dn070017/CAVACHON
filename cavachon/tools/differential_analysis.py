@@ -1,6 +1,6 @@
 import warnings
 from itertools import combinations
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import muon as mu
 import numpy as np
@@ -346,9 +346,15 @@ class DifferentialAnalysis:
             and ``GroupB`` when labels are provided, then the parameters
             of the run (see ``record_run_parameters``): ``Component``,
             ``Modality``, ``UseCluster`` (when provided),
-            ``ZSamplingSize``, ``XSamplingSize``, ``RandomSeed`` and
-            ``SignificanceThreshold``. The parameters let a table read
-            back from disk be matched to the analysis that produced it.
+            ``ZSamplingSize``, ``XSamplingSize``, ``RandomSeed``,
+            ``SignificanceThreshold`` and ``LibrarySize``. The parameters
+            let a table read back from disk be matched to the analysis
+            that produced it.
+
+            Every sampled cell is decoded with the batch effect of a
+            random cell and at the median library size of all cells
+            (see ``compute_decoding_reference``), so the groups are
+            compared at one sequencing depth.
 
         """
         if seed is not None:
@@ -357,27 +363,9 @@ class DifferentialAnalysis:
         x_means_a_list: List[np.ndarray] = []
         x_means_b_list: List[np.ndarray] = []
 
-        modality_names = self.mdata.mod.keys()
-
-        # holds a list of per-batch tensors first, then their concatenation
-        batch_effect: Dict[str, Any] = dict()
-        dataloader = DataLoader(
-            self.mdata,
-            batch_size,
-            self.batch_effect_colnames,
-            self.distribution_names,
-            self.batch_effect_encoders,
+        batch_effect, library_size = self.compute_decoding_reference(
+            component, batch_size
         )
-
-        for batch in dataloader:
-            for modality_name in modality_names:
-                if modality_name not in batch_effect:
-                    batch_effect.setdefault(modality_name, [])
-                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
-                batch_effect[modality_name].append(batch.get(batch_effect_key))
-
-        for modality_name in batch_effect.keys():
-            batch_effect[modality_name] = tf.concat(batch_effect[modality_name], axis=0)
 
         for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             mdata_group_a = self.sample_mdata_x(
@@ -410,6 +398,7 @@ class DifferentialAnalysis:
                     modality=modality,
                     batch_effect=batch_effect,
                     batch_size=batch_size,
+                    library_size=library_size,
                 )
             )
             x_means_b_list.append(
@@ -419,6 +408,7 @@ class DifferentialAnalysis:
                     modality=modality,
                     batch_effect=batch_effect,
                     batch_size=batch_size,
+                    library_size=library_size,
                 )
             )
 
@@ -444,9 +434,84 @@ class DifferentialAnalysis:
             x_sampling_size=x_sampling_size,
             seed=seed,
             significance_threshold=significance_threshold,
+            library_size=library_size.get(modality),
         )
 
         return result
+
+    def compute_decoding_reference(
+        self, component: str, batch_size: int = 128
+    ) -> Tuple[Dict[str, tf.Tensor], Dict[str, float]]:
+        """Batch effects and library size to decode the sampled cells
+        with, from one pass over all cells of ``self.mdata``.
+
+        Each decoded cell gets the batch effect of a random cell (see
+        ``compute_x_means``), so the comparison marginalizes over the
+        batches. Every cell is decoded at the same library size, the
+        median over all cells (computed as in training, see
+        ``Model.library_size``), so that groups sequenced at different
+        depths are compared at one depth.
+
+        Parameters
+        ----------
+        component: str
+            the decoded component; the library size is computed for the
+            modalities its decoders scale by it.
+
+        batch_size: int, optional
+            batch size used for the pass. Defaults to 128.
+
+        Returns
+        -------
+        Tuple[Dict[str, tf.Tensor], Dict[str, float]]
+            the batch effect of every cell and the median library size,
+            both keyed by modality name (the library size only for the
+            modalities that scale by it).
+        """
+        batch_effects: Dict[str, List[tf.Tensor]] = dict()
+        library_sizes: Dict[str, List[np.ndarray]] = dict()
+        dataloader = DataLoader(
+            self.mdata,
+            batch_size,
+            self.batch_effect_colnames,
+            self.distribution_names,
+            self.batch_effect_encoders,
+        )
+        for batch in dataloader:
+            for modality_name in self.mdata.mod.keys():
+                batch_effect_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
+                batch_effects.setdefault(modality_name, []).append(
+                    batch.get(batch_effect_key)
+                )
+            libsize = self.model.library_size(batch, components=[component])
+            for modality_name, value in libsize.items():
+                library_sizes.setdefault(modality_name, []).append(
+                    np.asarray(value).reshape(-1)
+                )
+
+        batch_effect = {
+            modality_name: tf.concat(values, axis=0)
+            for modality_name, values in batch_effects.items()
+        }
+        library_size = {
+            modality_name: float(np.median(np.concatenate(values)))
+            for modality_name, values in library_sizes.items()
+        }
+        return batch_effect, library_size
+
+    @staticmethod
+    def constant_library_size(
+        library_size: Optional[Mapping[str, float]], n_obs: int
+    ) -> Optional[Dict[str, tf.Tensor]]:
+        """``libsize`` for ``Model.decode``: ``library_size`` of each
+        modality for all ``n_obs`` cells, or None (each cell's own) when
+        ``library_size`` is None."""
+        if library_size is None:
+            return None
+        return {
+            modality_name: tf.fill((n_obs, 1), tf.constant(value, tf.float32))
+            for modality_name, value in library_size.items()
+        }
 
     @staticmethod
     def bayes_factor_strength(result: pd.DataFrame) -> pd.Series:
@@ -503,12 +568,15 @@ class DifferentialAnalysis:
         x_sampling_size: int,
         seed: Optional[int],
         significance_threshold: float,
+        library_size: Optional[float] = None,
     ) -> None:
         """Record the parameters of a DEG/HDEG run on every row of its
         result (in place), with the same columns for both analyses:
         ``Component``, ``Modality``, ``UseCluster`` (skipped when None),
         ``ZSamplingSize``, ``XSamplingSize``, ``RandomSeed`` (empty
-        when None) and ``SignificanceThreshold``."""
+        when None), ``SignificanceThreshold`` and ``LibrarySize`` (the
+        library size every cell was decoded at; skipped when None, i.e.
+        the modality's decoder doesn't scale by it)."""
         result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
         result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
         if use_cluster is not None:
@@ -519,6 +587,8 @@ class DifferentialAnalysis:
         result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANCE_THRESHOLD_COLUMN] = (
             significance_threshold
         )
+        if library_size is not None:
+            result[Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN] = library_size
 
     def sample_mdata_x(
         self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500
@@ -560,6 +630,7 @@ class DifferentialAnalysis:
         batch_effect: Mapping[str, tf.Tensor],
         training: bool = False,
         batch_size: int = 128,
+        library_size: Optional[Mapping[str, float]] = None,
     ) -> np.ndarray:
         """Compute the means of generative data.
 
@@ -588,6 +659,11 @@ class DifferentialAnalysis:
 
         batch_size: int, optional
             batch size used for the forward pass. Defaults to 128.
+
+        library_size: Mapping[str, float], optional
+            library size every cell is decoded at, keyed by modality
+            (see ``compute_decoding_reference``). Defaults to None: each
+            cell's own.
 
         Returns
         -------
@@ -626,7 +702,11 @@ class DifferentialAnalysis:
                     batch_effect[modality_name], random_batch_index, axis=0
                 )
             decode_outputs = self.model.decode(
-                batch, z_hat, components=[component], training=training
+                batch,
+                z_hat,
+                components=[component],
+                training=training,
+                libsize=self.constant_library_size(library_size, n_obs_batch),
             )
             x_parameters = decode_outputs[Constants.MODEL_OUTPUTS_X_PARAMS].get(
                 f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
