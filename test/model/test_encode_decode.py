@@ -230,9 +230,9 @@ class TestDecode:
         assert _rec(model, "b").decode_calls[-1]["training"] is expected
 
 
-class TestLibrarySize:
-    def test_library_size_by_modality(self, model, batch):
-        libsize = model.library_size(batch)
+class TestComputeLibsize:
+    def test_compute_libsize_by_modality(self, model, batch):
+        libsize = model.compute_libsize(batch)
         assert set(libsize) == {"rna", "atac"}
         np.testing.assert_allclose(
             libsize["rna"], batch["rna_matrix"].numpy().sum(-1, keepdims=True)
@@ -240,7 +240,7 @@ class TestLibrarySize:
 
     def test_unknown_component_raises(self, model, batch):
         with pytest.raises(ValueError, match="Unknown component names"):
-            model.library_size(batch, components=["zzz"])
+            model.compute_libsize(batch, components=["zzz"])
 
     def test_decode_passes_libsize_to_every_component(self, model, batch):
         z_hat = {"a": tf.ones((3, 2)), "b": tf.ones((3, 2))}

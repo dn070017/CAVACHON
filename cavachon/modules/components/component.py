@@ -1075,7 +1075,7 @@ class Component(tf.keras.Model):
             Input tensors. Each modality must provide
             ``{modality_name}_batch_effect``. The modality matrices are
             only needed to compute the library size of modalities whose
-            decoder scales by it (see ``requires_library_size``) when
+            decoder scales by it (see ``requires_libsize``) when
             ``libsize`` does not give it.
 
         z_hat: tf.Tensor
@@ -1089,7 +1089,7 @@ class Component(tf.keras.Model):
 
         libsize: Mapping[str, tf.Tensor], optional
             library size of each modality, with shape (batch_size, 1),
-            for decoders that scale by it. Use ``library_size`` to
+            for decoders that scale by it. Use ``compute_libsize`` to
             compute it the way training does (e.g. from training data,
             when decoding new z_hat). Defaults to None: computed from
             the modality matrices in ``batch``.
@@ -1124,11 +1124,10 @@ class Component(tf.keras.Model):
         missing = [
             modality_name
             for modality_name in self.modality_names
-            if self.requires_library_size(modality_name)
-            and modality_name not in libsize
+            if self.requires_libsize(modality_name) and modality_name not in libsize
         ]
         if missing:
-            computed = self.library_size(batch, training=training)
+            computed = self.compute_libsize(batch, training=training)
             libsize.update({m: computed[m] for m in missing})
 
         outputs = dict()
@@ -1142,7 +1141,7 @@ class Component(tf.keras.Model):
             )
             preprocessor_outputs = (
                 {libsize_key: libsize[modality_name]}
-                if self.requires_library_size(modality_name)
+                if self.requires_libsize(modality_name)
                 else {}
             )
             decoder_inputs = Component.prepare_decoder_inputs(
@@ -1155,14 +1154,14 @@ class Component(tf.keras.Model):
 
         return outputs
 
-    def requires_library_size(self, modality_name: str) -> bool:
+    def requires_libsize(self, modality_name: str) -> bool:
         """Whether the decoder of a modality scales its outputs by the
         library size (e.g. IndependentZeroInflatedNegativeBinomial)."""
         decoder = self.decoders.get(modality_name)
         x_parameterizer = getattr(decoder, "x_parameterizer", None)
         return bool(getattr(x_parameterizer, "libsize_scaling", False))
 
-    def library_size(
+    def compute_libsize(
         self, batch: Mapping[str, tf.Tensor], training: bool = False
     ) -> Dict[str, tf.Tensor]:
         """Library size of each modality whose decoder scales by it,
@@ -1213,10 +1212,7 @@ class Component(tf.keras.Model):
                 f"{modality_name}_{Constants.TENSOR_NAME_X}_"
                 f"{Constants.TENSOR_NAME_LIBSIZE}"
             )
-            if (
-                self.requires_library_size(modality_name)
-                and key in preprocessor_outputs
-            ):
+            if self.requires_libsize(modality_name) and key in preprocessor_outputs:
                 libsize[modality_name] = preprocessor_outputs[key]
         return libsize
 

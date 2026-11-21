@@ -1342,7 +1342,7 @@ class Model(tf.keras.Model):
         libsize: Mapping[str, tf.Tensor], optional
             library size of each modality, with shape (batch_size, 1),
             keyed by modality name and shared by the components (see
-            ``library_size``). Defaults to None: computed from the
+            ``compute_libsize``). Defaults to None: computed from the
             modality matrices in ``batch``.
 
         Returns
@@ -1405,13 +1405,13 @@ class Model(tf.keras.Model):
 
         return outputs
 
-    def library_size(
+    def compute_libsize(
         self,
         batch: Mapping[str, tf.Tensor],
         components: Optional[List[str]] = None,
     ) -> Dict[str, tf.Tensor]:
         """Library size of each modality whose decoder scales by it,
-        computed as in training (see Component.library_size), keyed by
+        computed as in training (see Component.compute_libsize), keyed by
         modality name. Use it to pass ``libsize`` to ``decode``, e.g.
         a typical library size from training data when decoding new
         z_hat.
@@ -1449,6 +1449,6 @@ class Model(tf.keras.Model):
                 continue
             component = self.components.get(component_name)
             assert component is not None
-            for modality_name, value in component.library_size(batch).items():
+            for modality_name, value in component.compute_libsize(batch).items():
                 libsize.setdefault(modality_name, value)
         return libsize

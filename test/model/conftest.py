@@ -225,7 +225,7 @@ class FakeComponent(tf.keras.Model):
         )
         return self._x_params(z_hat)
 
-    def library_size(self, batch, training=False):
+    def compute_libsize(self, batch, training=False):
         # fake contract: row sum of each modality matrix
         return {
             m: tf.reduce_sum(batch[f"{m}_matrix"], axis=-1, keepdims=True)

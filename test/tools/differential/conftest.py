@@ -24,7 +24,7 @@ The model is a ``FakeModel`` (passed in), deterministic and differentiable:
                 (times the library size with ``libsize_scaling``, as
                 the ZINB decoder does: the ``libsize`` given to decode,
                 else the cell's own sum(X_RNA))
-    library_size = {RNA: sum(X_RNA)} with ``libsize_scaling``, else {}
+    compute_libsize = {RNA: sum(X_RNA)} with ``libsize_scaling``, else {}
 
 ``cavachon.environment.Constants`` stays real. No file I/O.
 """
@@ -172,7 +172,7 @@ class FakeModel:
         self.hier_calls.append({k: np.array(v) for k, v in z.items()})
         return {Constants.MODEL_OUTPUTS_Z_HAT: dict(z)}
 
-    def library_size(self, batch, components=None):
+    def compute_libsize(self, batch, components=None):
         if not self.libsize_scaling:
             return {}
         x = tf.cast(batch[f"{self.modality}_{X_KEY}"], tf.float32)
@@ -189,7 +189,7 @@ class FakeModel:
             if libsize is not None:
                 params = params * libsize[self.modality]
             else:
-                params = params * self.library_size(batch)[self.modality]
+                params = params * self.compute_libsize(batch)[self.modality]
         key = f"{components[0]}_{self.modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
         return {Constants.MODEL_OUTPUTS_X_PARAMS: {key: params}}
 

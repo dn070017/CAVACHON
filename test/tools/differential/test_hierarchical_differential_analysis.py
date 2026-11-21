@@ -144,7 +144,7 @@ def test_encode_z_pool_empty_mdata():
     assert pools["a"].shape == (0, 0) and pools["b"].shape == (0, 0)
 
 
-def test_between_groups_decodes_both_at_the_median_library_size():
+def test_between_groups_decodes_both_at_the_median_libsize():
     # library sizes 6, 6, 6, 5, 5 -> median 6, for donor and recipient
     X = [[5, 0, 1]] * 3 + [[0, 5, 0]] * 2
     model = identity_model(3, components=("a", "b"))
@@ -159,7 +159,7 @@ def test_between_groups_decodes_both_at_the_median_library_size():
     # A = donor latent, B = recipient latent, both at library size 6
     np.testing.assert_allclose(result["Mean(A)"], [30, 0, 6])
     np.testing.assert_allclose(result["Mean(B)"], [0, 30, 0])
-    assert (result[Constants.DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN] == 6.0).all()
+    assert (result[Constants.DIFFERENTIAL_ANALYSIS_LIBSIZE_COLUMN] == 6.0).all()
 
 
 # --------------------------------------------------------------------------

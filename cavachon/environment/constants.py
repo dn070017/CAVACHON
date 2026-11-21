@@ -37,7 +37,7 @@ class Constants:
     DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN = "XSamplingSize"
     DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN = "RandomSeed"
     DIFFERENTIAL_ANALYSIS_SIGNIFICANCE_THRESHOLD_COLUMN = "SignificanceThreshold"
-    DIFFERENTIAL_ANALYSIS_LIBRARY_SIZE_COLUMN = "LibrarySize"
+    DIFFERENTIAL_ANALYSIS_LIBSIZE_COLUMN = "Libsize"
     # per feature: the differential analysis found a significant difference
     DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN = "Significant"
 
