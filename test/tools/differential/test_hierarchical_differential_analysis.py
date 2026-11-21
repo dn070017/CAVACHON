@@ -177,7 +177,6 @@ def test_compute_substituted_x_means_uses_one_donor_cell_for_all_components():
     ids = np.arange(1, 6, dtype=np.float32).reshape(-1, 1)
     pools = {"a": ids * np.ones((1, 2)), "b": 10 * ids * np.ones((1, 2))}
 
-    np.random.seed(5)
     out = hda._compute_substituted_x_means(
         dataset_from(np.ones((3, 2))),
         "a",
@@ -185,9 +184,9 @@ def test_compute_substituted_x_means_uses_one_donor_cell_for_all_components():
         pools,
         {"RNA": tf.zeros((4, 1))},
         batch_size=3,
+        rng=np.random.default_rng(5),
     )
-    np.random.seed(5)
-    expected_idx = np.random.choice(5, size=3, replace=True)
+    expected_idx = np.random.default_rng(5).choice(5, size=3, replace=True)
     np.testing.assert_allclose(out, 11 * (expected_idx + 1).reshape(-1, 1) * [1, 1])
 
 
@@ -294,9 +293,9 @@ def test_between_groups_uses_recipient_size_per_sample(monkeypatch):
     sizes = []
     real = hda.sample_mdata_x
 
-    def spy(index, x_sampling_size):
+    def spy(index, x_sampling_size, rng):
         sizes.append((list(index), x_sampling_size))
-        return real(index, x_sampling_size=x_sampling_size)
+        return real(index, x_sampling_size=x_sampling_size, rng=rng)
 
     monkeypatch.setattr(hda, "sample_mdata_x", spy)
     hda.between_groups("d", "r", "a", "RNA", "cluster", z_sampling_size=3, batch_size=5)
@@ -309,9 +308,9 @@ def test_between_groups_x_sampling_size(monkeypatch):
     sizes = []
     real = hda.sample_mdata_x
 
-    def spy(index, x_sampling_size):
+    def spy(index, x_sampling_size, rng):
         sizes.append(x_sampling_size)
-        return real(index, x_sampling_size=x_sampling_size)
+        return real(index, x_sampling_size=x_sampling_size, rng=rng)
 
     monkeypatch.setattr(hda, "sample_mdata_x", spy)
     result = hda.between_groups(
@@ -475,3 +474,20 @@ def test_between_groups_integer_coded_clusters_with_string_labels():
         "0", "1", "a", "RNA", "cluster", z_sampling_size=1
     )
     assert (result[DONOR_COL] == "0").all()
+
+
+def test_between_groups_seed_reproduces_and_leaves_global_state():
+    X = np.random.default_rng(0).poisson(3, size=(6, 3)).astype(np.float32)
+    mdata = make_mdata(X, clusters=["d"] * 3 + ["r"] * 3, batch=[0, 1, 2] * 2)
+
+    def run():
+        return make_hda(mdata).between_groups(
+            "d", "r", "a", "RNA", "cluster", z_sampling_size=2, x_sampling_size=5
+        )
+
+    state = np.random.get_state()[1].copy()
+    first = run()
+    np.testing.assert_array_equal(np.random.get_state()[1], state)
+    np.random.rand(100)
+    pd.testing.assert_frame_equal(first, run())
+    assert (first["RandomSeed"] == 42).all()

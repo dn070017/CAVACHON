@@ -123,7 +123,7 @@ differential_analysis:
 | `use_cluster` | Column in `.obs` that defines cluster labels. Defaults to `cluster_{component}`. |
 | `group_a` / `group_b` | Cluster labels for single-pair mode. Leave empty for pairwise. |
 | `z_sampling_size` / `x_sampling_size` | Sampling rounds (default `5`) / cells drawn from each group per round (default `1000`). |
-| `seed` | Random seed. |
+| `seed` | Seed of the sampling (default `42`): the same seed gives the same table; `null` for an unseeded run. |
 | `significance_threshold` | A gene is marked `Significant` when `K(A>B|Z)` or `K(B>A|Z)` reaches it (default `3.2`). Enrichment and differential attribution use these genes. |
 | `keep_only_significant` | Keep only the `Significant` rows (default `false`). Leave it off for tables used by enrichment, which needs the full ranking. |
 | `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
@@ -168,7 +168,7 @@ hierarchical_differential_analysis:
 | `donor_components` | Parent components to substitute. Defaults to all parents if omitted. |
 | `z_sampling_size` | Number of sampling rounds (default `10`; `n_samples` is the deprecated name). |
 | `x_sampling_size` | Recipient cells drawn per round (default: the recipient group's size). |
-| `seed` | Random seed. |
+| `seed` | Seed of the sampling (default `42`): the same seed gives the same table; `null` for an unseeded run. |
 | `significance_threshold` | As in DEG (default `3.2`). |
 | `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
 

@@ -105,6 +105,9 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
       specified. The workflow calls ``between_two_groups`` for that one
       pair only.
 
+    ``seed`` (default 42) makes the sampling reproducible; None for an
+    unseeded run.
+
     """
 
     use_cluster: str = ""
@@ -112,7 +115,7 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
     group_b: str = ""
     z_sampling_size: int = 5
     x_sampling_size: int = 1000
-    seed: Optional[int] = None
+    seed: Optional[int] = 42
     significance_threshold: float = 3.2
     batch_size: int = 128
     keep_only_significant: bool = False
@@ -142,7 +145,8 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     The sampling parameters match the differential analysis:
     ``z_sampling_size`` sampling rounds, ``x_sampling_size`` recipient
     cells drawn per round (None: as many as the recipient group has) and
-    ``seed``, and so is ``significance_threshold``. ``n_samples`` is the
+    ``seed`` (default 42; None for an unseeded run), and so is
+    ``significance_threshold``. ``n_samples`` is the
     deprecated name of ``z_sampling_size``.
 
     """
@@ -153,7 +157,7 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     donor_components: Optional[List[TensorflowCompatibleStr]] = None
     z_sampling_size: int = 10
     x_sampling_size: Optional[int] = None
-    seed: Optional[int] = None
+    seed: Optional[int] = 42
     significance_threshold: float = 3.2
     batch_size: int = 128
     sort_output: bool = True

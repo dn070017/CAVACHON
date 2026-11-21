@@ -31,6 +31,9 @@ class DifferentialAnalysis:
 
     # default K above which a difference counts as significant
     SIGNIFICANCE_THRESHOLD = 3.2
+    # default seed of the sampling, so that runs are reproducible unless
+    # seed=None is given
+    DEFAULT_SEED = 42
 
     def __init__(
         self,
@@ -86,7 +89,7 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         keep_only_significant: bool = False,
         sort_output: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[int] = DEFAULT_SEED,
         significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between every groups of
@@ -119,8 +122,9 @@ class DifferentialAnalysis:
             entity. Default to False.
 
         seed: Optional[int], optional
-            NumPy random seed, applied at the start of every comparison.
-            Defaults to None.
+            seed of the sampling, applied at the start of every
+            comparison (see ``between_two_groups``). Defaults to 42;
+            None for an unseeded run.
 
         significance_threshold: float, optional
             K above which a feature is marked ``Significant`` (see
@@ -181,7 +185,7 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         keep_only_significant: bool = False,
         sort_output: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[int] = DEFAULT_SEED,
         significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between one specific group and
@@ -214,8 +218,9 @@ class DifferentialAnalysis:
             entity. Default to False.
 
         seed: Optional[int], optional
-            NumPy random seed, applied at the start of every comparison.
-            Defaults to None.
+            seed of the sampling, applied at the start of every
+            comparison (see ``between_two_groups``). Defaults to 42;
+            None for an unseeded run.
 
         significance_threshold: float, optional
             K above which a feature is marked ``Significant`` (see
@@ -278,7 +283,7 @@ class DifferentialAnalysis:
         group_a_label: Optional[str] = None,
         group_b_label: Optional[str] = None,
         use_cluster: Optional[str] = None,
-        seed: Optional[int] = None,
+        seed: Optional[int] = DEFAULT_SEED,
         significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
@@ -331,7 +336,10 @@ class DifferentialAnalysis:
             ``UseCluster`` column is added to the result.
 
         seed: Optional[int], optional
-            NumPy random seed, applied before sampling. Defaults to None.
+            seed of the generator every draw of the comparison uses
+            (cells, batch effects); the same seed gives the same result.
+            The global NumPy state is not touched. Defaults to 42; None
+            for an unseeded run.
 
         significance_threshold: float, optional
             a feature is marked ``Significant`` when ``K(A>B|Z)`` or
@@ -361,8 +369,9 @@ class DifferentialAnalysis:
             marginalized over all cells).
 
         """
-        if seed is not None:
-            np.random.seed(seed)
+        # one generator for every draw of this comparison (the global NumPy
+        # state is left untouched); seed=None draws fresh entropy
+        rng = np.random.default_rng(seed)
 
         x_means_a_list: List[np.ndarray] = []
         x_means_b_list: List[np.ndarray] = []
@@ -371,10 +380,10 @@ class DifferentialAnalysis:
 
         for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             mdata_group_a = self.sample_mdata_x(
-                index=group_a_index, x_sampling_size=x_sampling_size
+                index=group_a_index, x_sampling_size=x_sampling_size, rng=rng
             )
             mdata_group_b = self.sample_mdata_x(
-                index=group_b_index, x_sampling_size=x_sampling_size
+                index=group_b_index, x_sampling_size=x_sampling_size, rng=rng
             )
             dataloader_group_a = DataLoader(
                 mdata_group_a,
@@ -394,7 +403,7 @@ class DifferentialAnalysis:
                 dataloader_group_a.batch_size, dataloader_group_b.batch_size
             )
             # A_i and B_i are compared: decode both with one batch effect
-            batch_index = self.sample_batch_index(batch_effect, x_sampling_size)
+            batch_index = self.sample_batch_index(batch_effect, x_sampling_size, rng)
             x_means_a_list.append(
                 self.compute_x_means(
                     dataset=dataloader_group_a.dataset,
@@ -507,15 +516,19 @@ class DifferentialAnalysis:
 
     @staticmethod
     def sample_batch_index(
-        batch_effect: Mapping[str, tf.Tensor], n_obs: int
+        batch_effect: Mapping[str, tf.Tensor],
+        n_obs: int,
+        rng: Optional[np.random.Generator] = None,
     ) -> np.ndarray:
         """Random cells (with replacement) whose batch effects
         ``n_obs`` decoded cells take, as indices into the batch-effect
         pool of ``compute_decoding_reference``. Passing the same indices
         to both arms of a comparison (``batch_index`` of
-        ``compute_x_means``) decodes each pair with one batch effect."""
+        ``compute_x_means``) decodes each pair with one batch effect.
+        Drawn with ``rng`` (default: a fresh unseeded generator)."""
+        rng = rng if rng is not None else np.random.default_rng()
         n_pool = next(iter(batch_effect.values())).shape[0]
-        return np.random.choice(n_pool, n_obs)
+        return rng.choice(n_pool, n_obs)
 
     @staticmethod
     def constant_libsize(
@@ -609,7 +622,10 @@ class DifferentialAnalysis:
             result[Constants.DIFFERENTIAL_ANALYSIS_LIBSIZE_COLUMN] = libsize
 
     def sample_mdata_x(
-        self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500
+        self,
+        index: Union[pd.Index, Sequence[str]],
+        x_sampling_size: int = 2500,
+        rng: Optional[np.random.Generator] = None,
     ) -> mu.MuData:
         """sample x from the mdata of samples with provided index.
 
@@ -621,13 +637,18 @@ class DifferentialAnalysis:
         x_sampling_size: int, optional
             how many x to sample, by default 2500.
 
+        rng: np.random.Generator, optional
+            the generator to draw with. Defaults to None: a fresh
+            unseeded one.
+
         Returns
         -------
         mu.MuData
             MuData with sampled data.
 
         """
-        index_sampled = np.random.choice(index, x_sampling_size, replace=True)
+        rng = rng if rng is not None else np.random.default_rng()
+        index_sampled = rng.choice(np.asarray(index), x_sampling_size, replace=True)
 
         adata_dict = dict()
         with warnings.catch_warnings():
@@ -650,6 +671,7 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         libsize: Optional[Mapping[str, float]] = None,
         batch_index: Optional[np.ndarray] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> np.ndarray:
         """Compute the means of generative data.
 
@@ -688,7 +710,11 @@ class DifferentialAnalysis:
             for every cell of ``dataset``, in order, the index of the
             cell of ``batch_effect`` whose batch effect it is decoded
             with (see ``sample_batch_index``). Defaults to None: drawn
-            at random for each batch.
+            at random for each batch, with ``rng``.
+
+        rng: np.random.Generator, optional
+            the generator of those draws. Defaults to None: a fresh
+            unseeded one.
 
         Returns
         -------
@@ -720,7 +746,9 @@ class DifferentialAnalysis:
                 n_obs_batch = batch[batch_effect_key].shape[0]
 
             if batch_index is None:
-                random_batch_index = self.sample_batch_index(batch_effect, n_obs_batch)
+                random_batch_index = self.sample_batch_index(
+                    batch_effect, n_obs_batch, rng
+                )
             else:
                 random_batch_index = batch_index[n_done : n_done + n_obs_batch]
             n_done += n_obs_batch

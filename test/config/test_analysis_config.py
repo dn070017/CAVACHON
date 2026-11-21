@@ -129,7 +129,7 @@ def test_hierarchical_defaults():
         modality="RNA", component="RNA", donor_components=["a b"]
     )
     assert h.donor_components == ["a_b"]
-    assert h.z_sampling_size == 10 and h.seed is None and h.batch_size == 128
+    assert h.z_sampling_size == 10 and h.seed == 42 and h.batch_size == 128
     assert h.x_sampling_size is None
     assert (h.donor_group, h.recipient_group) == ("", "")
     assert AnalysisHierarchicalDifferentialAnalysisConfig().donor_components is None
@@ -148,9 +148,11 @@ def test_hierarchical_n_samples_is_deprecated_alias():
     assert both.z_sampling_size == 7
 
 
-def test_differential_analysis_seed_defaults_to_none():
-    assert AnalysisDifferentialAnalysisConfig().seed is None
+def test_differential_analysis_seed_defaults_to_42():
+    assert AnalysisDifferentialAnalysisConfig().seed == 42
     assert AnalysisDifferentialAnalysisConfig(seed=4).seed == 4
+    # null in the YAML: an unseeded run
+    assert AnalysisDifferentialAnalysisConfig(seed=None).seed is None
 
 
 @pytest.mark.parametrize(

@@ -244,9 +244,9 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
   * description: cells drawn (with replacement) from each group per round.
 * `seed`:
   * required: `False`.
-  * defaults: `None`
+  * defaults: `42`
   * type: `int | None`
-  * description: random seed for reproducibility.
+  * description: seed of the sampling (cells, batch effects and, for HDEG, donor cells). The same seed gives the same table; `null` for an unseeded run, which differs every time.
 * `significance_threshold`:
   * required: `False`.
   * defaults: `3.2`
@@ -320,9 +320,9 @@ The sampling parameters are the same as in [Differential Analysis](#differential
   * description: recipient cells drawn (with replacement) per round. `None` draws as many as the recipient group has.
 * `seed`:
   * required: `False`.
-  * defaults: `None`
+  * defaults: `42`
   * type: `int | None`
-  * description: random seed for reproducibility.
+  * description: seed of the sampling (cells, batch effects and, for HDEG, donor cells). The same seed gives the same table; `null` for an unseeded run, which differs every time.
 * `significance_threshold`:
   * required: `False`.
   * defaults: `3.2`

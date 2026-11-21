@@ -3,13 +3,13 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 95 passed, 3 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 97 passed, 3 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
 **Checked and correct:**
 - Bayes factor / K values against hand computation on tiny inputs.
-- The seeded global random batch effect in `compute_x_means`.
+- The seeded random batch effect in `compute_x_means` (its draws follow the given generator).
 - Hierarchical donor substitution: the same donor cell is used for every donor component, and other components are untouched.
 - `DifferentialAttributionAnalysis` integrated gradients: exact for a linear model, completeness holds, a closed-form left-Riemann value for a quadratic link, and signed/absolute contributions each sum to 1 (0 instead of NaN when nothing changes).
 
@@ -40,6 +40,26 @@ Column names are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN` and `Constants.HIERA
 - differential attribution attributes exactly them: its `column`/`threshold`/`threshold_operator`/`use_absolute` options were removed (they defaulted to `|K| >= 3.2`, which kept tied features, as in T4). A table without the column is skipped with a message.
 
 Checked with real DEG/HDEG tables written to disk and read back: `Significant` parses as bool, and a feature equal in both groups is not significant.
+
+## Reproducibility
+
+(2026-11-21) DEG and HDEG are Monte Carlo estimates: every comparison draws which cells are compared (`sample_mdata_x`), the batch effect each pair is decoded with (`sample_batch_index`) and, for HDEG, the donor cell of each recipient cell. Everything else is deterministic: the encoder runs with `training=False` (z is the posterior mean) and decoding draws nothing.
+
+- **The same seed gives the same table.** Each comparison makes one local generator, `np.random.default_rng(seed)`, and passes it to every draw (`rng` argument of `sample_mdata_x`, `sample_batch_index`, `compute_x_means`, `_compute_substituted_x_means`). The global NumPy state is no longer seeded or touched (it was `np.random.seed(seed)`), so other code using NumPy before or between comparisons doesn't change the result, and the analysis doesn't change other code's draws. Checked: two runs with unrelated global draws in between give identical DEG and HDEG tables, and the global state is unchanged afterwards.
+- **`seed` defaults to 42** (`DifferentialAnalysis.DEFAULT_SEED`, in the tools and in both configs), so a run is reproducible unless `seed: null` is given. `RandomSeed` records it. Existing seeded tables won't be reproduced exactly: the generator changed.
+- What a seed doesn't remove: a different seed changes P/K by Monte Carlo error, which shrinks with `z_sampling_size × x_sampling_size`; features near the significance threshold can flip between seeds. On GPU, TensorFlow can give tiny float differences between runs, which could flip a near-tie pair (`tf.config.experimental.enable_op_determinism()` rules it out); on CPU this doesn't happen.
+
+### Possible next step: exact (all pairs) estimator
+
+To remove the sampling from DEG altogether, P(A>B|Z) can be computed exactly over **every** pair instead of a sample of pairs:
+
+1. Decode every cell of A and of B once under each distinct batch-effect value b in the data (the unique rows of the batch-effect pool), at the median library size.
+2. For each b and each feature, count the pairs (i in A, j in B) with x_A,i(b) > x_B,j(b) by ranking the n_A + n_B decoded values: the Mann–Whitney count U_b = Σ ranks of A − n_A(n_A + 1)/2, with ties counted as neither (like the current strict `>`). This is O((n_A + n_B) log(n_A + n_B)) per feature, without forming the n_A × n_B pairs.
+3. P(A>B|Z) = Σ_b w_b · U_b / (n_A n_B), with w_b the fraction of cells with batch effect b (the same marginal over all cells' batches that the sampling estimates now); P(B>A|Z) likewise with A and B swapped. `Mean(A)`/`Mean(B)` are the batch-weighted means of the decoded values.
+
+It is deterministic (no seed, no Monte Carlo error) and the pair is still decoded with one batch effect. Cost: (n_A + n_B) × (number of distinct batch effects) decodes per comparison, often fewer than the current 2 × `z_sampling_size` × `x_sampling_size` (e.g. 2 clusters of 500 cells and 3 batches: 3,000 decodes vs 10,000). It grows with the number of distinct batch-effect rows, so many or continuous batch covariates would need a cap (e.g. the most frequent rows, or sampling only the batch).
+
+For **HDEG** the exact version needs every recipient cell × every donor cell (× each batch effect) decoded, n_R × n_D × B decodes (500 × 500 × 3 = 750,000), so there the seeded sampling stays; a middle ground is to enumerate the batch effects and sample only the donor cells.
 
 ## Open bugs (strict xfails)
 
@@ -88,7 +108,6 @@ Design points from the 2026-11-21 review (working as written, but easy to misrea
 - **`contrib_*` is unbounded**: when attributions cancel (+0.5 / −0.49), the signed `contrib_*` blows up (`abs_contrib_*` is fine).
 - ✅ (2026-11-21) **Saturated genes** (fixed in [modules](../modules.md)): the ZINB decoder clipped the log-mean at 7 (mean ≤ e⁷ − 1 ≈ 1096), so above it the gradient was 0 (zero attribution) and DEG pairs tied. It is now a soft cap at 15.
 - **Repeated work** (time only): each comparison redoes a full-data pass to build the batch-effect pool; HDEG runs `hierarchical_encode` twice per batch and discards the result.
-- `seed` calls `np.random.seed`, NumPy's global generator, which other code shares.
 - `across_clusters` with a single cluster crashes with numpy's "'a' cannot be empty" (the rest group is empty).
 - `across_clusters` keys results by the raw cluster value, so int labels give int keys despite `Mapping[str, ...]`; `across_clusters_pairwise` uses f-string keys.
 - `compute_differential_attribution(n_steps=0)` silently returns NaN; `n_steps` is not validated.

@@ -4,14 +4,14 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 278 | 4 | 100% | Very high: depends on 7 packages, used by 1 |
+| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 280 | 4 | 100% | Very high: depends on 7 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers, model, modules, utils
 - **Used by:** workflow
 
 | Modules | Report | Tests | Passed | Open bugs |
 |---|---|---|---|---|
-| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 95 | 3 |
+| `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 97 | 3 |
 | `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 57 | 1 |
 | `interactive_visualization`, `enrichment_analysis` | [visualization_enrichment.md](visualization_enrichment.md) | [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) | 126 | 0 |
 

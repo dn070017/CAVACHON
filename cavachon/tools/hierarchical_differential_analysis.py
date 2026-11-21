@@ -114,7 +114,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         batch_size: int = 128,
         libsize: Mapping[str, float] | None = None,
         batch_index: np.ndarray | None = None,
+        rng: np.random.Generator | None = None,
     ) -> np.ndarray:
+        rng = rng if rng is not None else np.random.default_rng()
         modality_names = self.mdata.mod.keys()
         dist_x_z_name = self.model.components.get(component).distribution_names.get(
             modality
@@ -137,7 +139,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                 n_obs_batch = batch[batch_effect_key].shape[0]
 
             first_pool = next(iter(donor_z_pools.values()))
-            indices = np.random.choice(len(first_pool), size=n_obs_batch, replace=True)
+            indices = rng.choice(len(first_pool), size=n_obs_batch, replace=True)
 
             z_substituted = dict(z)
             for name, pool in donor_z_pools.items():
@@ -151,7 +153,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             # the same draw as the original decode of these cells (see
             # DifferentialAnalysis.compute_x_means), so the pair is paired
             if batch_index is None:
-                random_batch_index = self.sample_batch_index(batch_effect, n_obs_batch)
+                random_batch_index = self.sample_batch_index(
+                    batch_effect, n_obs_batch, rng
+                )
             else:
                 random_batch_index = batch_index[n_done : n_done + n_obs_batch]
             n_done += n_obs_batch
@@ -185,7 +189,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         use_cluster: str,
         z_sampling_size: int = 10,
         x_sampling_size: int | None = None,
-        seed: int | None = None,
+        seed: int | None = DifferentialAnalysis.DEFAULT_SEED,
         batch_size: int = 128,
         donor_components: list[str] | None = None,
         desc: str = "",
@@ -223,7 +227,10 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             Recipient cells drawn (with replacement) per round. Defaults to
             ``None``: as many as the recipient group has.
         seed : int | None, optional
-            NumPy random seed. Default ``None``.
+            seed of the generator every draw of the intervention uses
+            (recipient cells, donor cells, batch effects); the same seed
+            gives the same result. The global NumPy state is not touched.
+            Default ``42``; ``None`` for an unseeded run.
         batch_size : int, optional
             Batch size for encoding and decoding. Default ``128``.
         donor_components : list[str] | None, optional
@@ -302,8 +309,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         if recipient_group not in available_groups:
             raise ValueError(f"Unknown recipient group: {recipient_group}")
 
-        if seed is not None:
-            np.random.seed(seed)
+        # one generator for every draw of this intervention (the global
+        # NumPy state is left untouched); seed=None draws fresh entropy
+        rng = np.random.default_rng(seed)
 
         normalized_donor_components = self._normalize_donor_components(
             donor_components, component
@@ -330,13 +338,13 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         x_means_original_list: list[np.ndarray] = []
         for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             recipient_mdata = self.sample_mdata_x(
-                recipient_index, x_sampling_size=x_sampling_size
+                recipient_index, x_sampling_size=x_sampling_size, rng=rng
             )
             recipient_dataloader = self._make_dataloader(recipient_mdata, batch_size)
 
             recipient_dataset = self._require_dataset(recipient_dataloader)
             # both decodes of a recipient cell use one batch effect
-            batch_index = self.sample_batch_index(batch_effect, x_sampling_size)
+            batch_index = self.sample_batch_index(batch_effect, x_sampling_size, rng)
 
             x_means_substituted_list.append(
                 self._compute_substituted_x_means(
@@ -348,6 +356,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     batch_size=batch_size,
                     libsize=libsize,
                     batch_index=batch_index,
+                    rng=rng,
                 )
             )
             x_means_original_list.append(
@@ -407,7 +416,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         donor_components: list[str] | None = None,
         z_sampling_size: int = 10,
         x_sampling_size: int | None = None,
-        seed: int | None = None,
+        seed: int | None = DifferentialAnalysis.DEFAULT_SEED,
         batch_size: int = 128,
         sort_output: bool = True,
         significance_threshold: float = DifferentialAnalysis.SIGNIFICANCE_THRESHOLD,
@@ -437,8 +446,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             Recipient cells drawn per round. Defaults to ``None``: the
             recipient cluster's size.
         seed : int | None, optional
-            NumPy random seed, applied at the start of every intervention.
-            Default ``None``.
+            seed of the sampling, applied at the start of every
+            intervention (see ``between_groups``). Default ``42``;
+            ``None`` for an unseeded run.
         batch_size : int, optional
             Batch size for encoding/decoding. Default ``128``.
 

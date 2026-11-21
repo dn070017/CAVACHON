@@ -168,11 +168,12 @@ def test_sample_mdata_x_draws_from_index_and_keeps_modalities_aligned():
 def test_sample_mdata_x_accepts_list_and_is_seed_deterministic():
     mdata = make_mdata(np.arange(8, dtype=float).reshape(4, 2))
     da = make_analysis(mdata)
-    np.random.seed(1)
-    first = da.sample_mdata_x(["cell0", "cell2"], x_sampling_size=6)["RNA"].X.copy()
-    np.random.seed(1)
-    second = da.sample_mdata_x(["cell0", "cell2"], x_sampling_size=6)["RNA"].X
-    np.testing.assert_array_equal(first, second)
+
+    def sample():
+        rng = np.random.default_rng(1)
+        return da.sample_mdata_x(["cell0", "cell2"], x_sampling_size=6, rng=rng)
+
+    np.testing.assert_array_equal(sample()["RNA"].X, sample()["RNA"].X)
 
 
 def test_sample_mdata_x_empty_index_raises():
@@ -204,12 +205,18 @@ def test_compute_x_means_decodes_with_random_global_batch_effect(reflection):
     dataset = dataset_from(x, np.zeros((3, 1)))
     batch_effect = {"RNA": tf.constant([[0.0], [100.0], [200.0], [300.0]])}
 
-    np.random.seed(3)
-    result = da.compute_x_means(dataset, "comp", "RNA", batch_effect, batch_size=2)
+    result = da.compute_x_means(
+        dataset,
+        "comp",
+        "RNA",
+        batch_effect,
+        batch_size=2,
+        rng=np.random.default_rng(3),
+    )
 
-    np.random.seed(3)
-    idx_1 = np.random.choice(np.arange(4), 2)
-    idx_2 = np.random.choice(np.arange(4), 1)
+    rng = np.random.default_rng(3)
+    idx_1 = rng.choice(4, 2)
+    idx_2 = rng.choice(4, 1)
     expected_be = 100.0 * np.concatenate([idx_1, idx_2]).reshape(-1, 1)
     assert result.shape == (3, 2)
     np.testing.assert_allclose(result, x + expected_be)
@@ -263,7 +270,7 @@ def test_between_two_groups_end_to_end_statistics():
     assert (result[MODALITY] == "RNA").all()
     assert (result["ZSamplingSize"] == 2).all()
     assert (result["XSamplingSize"] == 5).all()
-    assert result["RandomSeed"].isna().all()
+    assert (result["RandomSeed"] == 42).all()  # the default seed
     assert (result["SignificanceThreshold"] == 3.2).all()
     # g2 is equal in both groups (both K ~ -16): not significant
     assert list(result[SIGNIFICANT]) == [True, True, False]
@@ -281,9 +288,9 @@ def test_between_two_groups_dataloader_arguments_and_sample_counts(monkeypatch):
     calls = []
     real_sample = da.sample_mdata_x
 
-    def spy(index, x_sampling_size):
+    def spy(index, x_sampling_size, rng):
         calls.append((list(index), x_sampling_size))
-        return real_sample(index=index, x_sampling_size=x_sampling_size)
+        return real_sample(index=index, x_sampling_size=x_sampling_size, rng=rng)
 
     monkeypatch.setattr(da, "sample_mdata_x", spy)
     da.between_two_groups(
@@ -536,7 +543,7 @@ def test_across_clusters_pairwise_calls_every_pair(monkeypatch):
     assert first["z_sampling_size"] == 2 and first["x_sampling_size"] == 9
     assert first["batch_size"] == 8 and first["sort_output"] is False
     assert first["component"] == "comp" and first["modality"] == "RNA"
-    assert first["use_cluster"] == "cluster" and first["seed"] is None
+    assert first["use_cluster"] == "cluster" and first["seed"] == 42
     last = spy.call_args_list[2].kwargs
     assert list(last["group_b_index"]) == ["cell3", "cell4", "cell5"]
 
@@ -586,7 +593,7 @@ def test_across_clusters_one_vs_rest(monkeypatch):
     assert all(c["group_b_label"] == "others" for c in calls)
     assert [c["group_a_label"] for c in calls] == ["a", "b", "c"]
     assert all(c["use_cluster"] == "cluster" for c in calls)
-    assert all(c["seed"] is None for c in calls)
+    assert all(c["seed"] == 42 for c in calls)
     assert calls[0]["batch_size"] == 16
 
 
@@ -716,10 +723,8 @@ def test_compute_x_means_uses_the_given_batch_index_across_batches():
 
 def test_sample_batch_index_draws_from_the_pool():
     pool = {"RNA": tf.zeros((4, 1)), "ATAC": tf.zeros((4, 1))}
-    np.random.seed(1)
-    index = DifferentialAnalysis.sample_batch_index(pool, 6)
-    np.random.seed(1)
-    np.testing.assert_array_equal(index, np.random.choice(4, 6))
+    index = DifferentialAnalysis.sample_batch_index(pool, 6, np.random.default_rng(1))
+    np.testing.assert_array_equal(index, np.random.default_rng(1).choice(4, 6))
 
 
 def test_between_two_groups_decodes_each_pair_with_one_batch_effect():
@@ -764,3 +769,26 @@ def test_across_clusters_pairwise_skips_missing_labels():
         "comp", "RNA", "cluster", z_sampling_size=1, x_sampling_size=2
     )
     assert list(results) == ["a/b"]
+
+
+def test_between_two_groups_seed_reproduces_and_leaves_global_state():
+    # a local generator per comparison: the same seed gives the same table,
+    # whatever else used NumPy's global generator, which stays untouched
+    X = np.random.default_rng(0).poisson(3, size=(8, 3)).astype(np.float32)
+    mdata = make_mdata(X, batch=[0, 1] * 4)
+
+    def run():
+        return make_analysis(mdata).between_two_groups(
+            [f"cell{i}" for i in range(4)],
+            [f"cell{i}" for i in range(4, 8)],
+            "comp",
+            "RNA",
+            z_sampling_size=2,
+            x_sampling_size=6,
+        )
+
+    state = np.random.get_state()[1].copy()
+    first = run()
+    np.testing.assert_array_equal(np.random.get_state()[1], state)
+    np.random.rand(100)
+    pd.testing.assert_frame_equal(first, run())
