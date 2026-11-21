@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ⏸️ Reviewed, deferred | [`test/model`](../../test/model) | 106 | 0 | 100% | Very high: depends on 7 packages, used by 2 |
+| ⏸️ Reviewed, deferred | [`test/model`](../../test/model) | 112 | 0 | 100% | Very high: depends on 7 packages, used by 2 |
 
 - **Depends on:** config, dataloader, environment, layers, losses, modules, utils
 - **Used by:** tools, workflow
@@ -29,6 +29,9 @@
 
 ## Fixed
 
+- ✅ (2026-11-21) **`Model.evaluate` and `fit(validation_data=...)` work.** Model had no `test_step`, so Keras's default failed with "y_true and y_pred have different structures". `train_step` is split into `_prepare_loss_inputs` and `_evaluate_losses` (each loss evaluated once, not twice), shared by the new `test_step`; the new `predict_step` applies `select_inputs` (also for datasets). All three follow the Keras step API (batches unpacked with `unpack_x_y_sample_weight`, dict of losses returned), as in `Component`. **Training is unchanged:** the seeded 7-phase e2e run gives identical losses, priors, alpha and sampler flags.
+- ✅ (2026-11-21) **Explicit library size for `decode`.** `Model.library_size(batch)` / `Component.library_size(batch)` compute it exactly as in training (after the preprocessor's transforms, e.g. the row sum of log1p counts, not the raw count total), and `decode(..., libsize=...)` accepts it per modality, so decoding new z_hat (e.g. generation with a typical library size) needs no data matrix. Without `libsize` it is computed from the matrices as before, and if neither is given a clear ValueError names the key (the decoder used to fall back to 1 silently). Modalities whose decoder does not scale by the library size (`Component.requires_library_size`, e.g. Bernoulli) no longer need their matrix at all. Checked on a real model: decoding with `library_size(...)` and no matrices equals decoding from the data.
+- ✅ (2026-11-21) `Model.decode` documents that the batch needs each modality's matrix as well as its batch effect (the preprocessor runs again for the library size), and a missing matrix now raises a clear ValueError naming the key instead of a Keras error about `None`.
 - ✅ (2026-11-21) **The legacy z_hat density loss is off by default.** It was replaced by the z_hat GMM KL, and the scheduler always set its weight to 0, but `Model.compile` created it with weight 1.0, so direct `Model` users trained with it. Its weight Variable now starts at 0. The loss object is kept (switched off) because the scheduler checks for it when deciding where the z_hat prior's k-means runs; training through the scheduler is unchanged (identical e2e run).
 - ✅ (2026-11-21) **MD1: a component compiled with only the standard KL now trains it.** `train_step` fed the KL inputs under the standard *and* GMM names only when both losses existed; otherwise it always used the GMM name, a leftover of the old "one KL per phase" design. With only the standard KL compiled, its inputs went to a key no loss used, so the component trained as an autoencoder without KL, silently. Every compiled KL loss is now fed. (The scheduler always compiles both, so its training was not affected; checked on a real model that the standard KL is reported and is part of the total.)
 - ✅ (2026-11-21) **MD5: `predict` collects `x_parameters` only for modalities with `save_x`.** The flag was set per component and never reset, so once one modality had `save_x`, the following ones in `n_vars` order were collected too (memory only; what was written to `.obsm` was already right).
@@ -44,8 +47,7 @@
 
 ## Worth a look
 
+- `Model.compile` reuses existing losses on recompile and ignores new weights for them; the scheduler relies on this. Documented in its docstring; `Component.compile` rebuilds instead (see [modules](modules.md)).
 - `save_z_hat` in `predict` is built from `save_z` and never used; dead code.
 - In `encode`/`decode`, the config is passed as a plain `model_dump()` dict, so the parent lookups always come back `None`; parent inputs are skipped only by accident.
 - Missing modality keys (`distribution_names.get`, `n_vars.get`) pass `None` along and fail far from the cause.
-- Recompiling reuses the existing losses, so new weights for existing losses are ignored. The scheduler relies on this.
-- The losses are evaluated twice per training step, once for the loss and once for the metrics.
