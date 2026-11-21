@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bugs affecting results | [`test/tools`](../../../test/tools) | 266 | 1 | 100% | Very high: depends on 7 packages, used by 1 |
+| ✅ No open bugs | [`test/tools`](../../../test/tools) | 269 | 0 | 100% | Very high: depends on 7 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers, model, modules, utils
 - **Used by:** workflow
@@ -12,7 +12,7 @@
 | Modules | Report | Tests | Passed | Open bugs |
 |---|---|---|---|---|
 | `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 86 | 0 |
-| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 54 | 1 |
+| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 57 | 0 |
 | `interactive_visualization`, `enrichment_analysis` | [visualization_enrichment.md](visualization_enrichment.md) | [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) | 126 | 0 |
 
 ## Mocking
@@ -24,9 +24,7 @@
 
 ## Bugs affecting results
 
-| # | Module | Issue |
-|---|---|---|
-| [T1](cluster_attribution.md#t1) | attribution_analysis | Integrated gradients carry an extra factor of alpha; every attribution is shrunk. |
+None. T1–T6 are fixed; see each module's page.
 
 ## Typing
 

@@ -81,20 +81,20 @@ def test_attribution_target_uses_sampled_z(attr_fakes):
     )
 
 
-def test_attribution_target_replaces_and_scales_z_variable(attr_fakes):
+def test_attribution_target_replaces_z_variable(attr_fakes):
     analysis, _, _ = single_component_setup(attr_fakes)
     batch = {"rna_matrix": tf.constant(X)}
     z_var = tf.constant([[1.0, 2.0], [0.0, -1.0], [3.0, 0.5]])
     out = analysis.compute_attribution_target_batch(
-        batch, "c", "rna", "c", z_variable=z_var, alpha=0.5
+        batch, "c", "rna", "c", z_variable=z_var
     )
-    np.testing.assert_allclose(out.numpy(), 0.5 * z_var.numpy() @ DEC_A, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), z_var.numpy() @ DEC_A, rtol=1e-6)
 
 
-def two_component_setup(attr_fakes):
+def two_component_setup(attr_fakes, decoder_fn=linear_decoder):
     mdata = make_mdata(n_obs=3, n_vars=N_VARS)
-    parent = FakeComponentNetwork(ENC_W, linear_decoder)
-    child = FakeComponentNetwork(2 * ENC_W, linear_decoder, parents=["p"])
+    parent = FakeComponentNetwork(ENC_W, decoder_fn)
+    child = FakeComponentNetwork(2 * ENC_W, decoder_fn, parents=["p"])
     configs = [
         SimpleNamespace(name="p", modality_names=["rna"]),
         SimpleNamespace(name="c", modality_names=["rna"]),
@@ -109,7 +109,7 @@ def test_attribution_target_propagates_conditionals(attr_fakes):
     batch = {"rna_matrix": tf.constant(X)}
     z_var = tf.constant(np.ones((3, 2), np.float32))
     out = analysis.compute_attribution_target_batch(
-        batch, "c", "rna", "p", z_variable=z_var, alpha=1.0
+        batch, "c", "rna", "p", z_variable=z_var
     )
     # child z_hat = child z + parent z_hat (= z_variable)
     expected = (X @ (2 * ENC_W) + 1.0) @ DEC_A
@@ -176,16 +176,42 @@ def test_integrated_gradient_linear_decoder_is_proportional_to_z_times_weight(
     np.testing.assert_allclose(ig[~mask], 0.0, atol=1e-6)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: gradient is taken w.r.t. z_variable of f(alpha * z), adding an "
-    "extra alpha factor; completeness sum_d IG = f(z) - f(0) fails (0.45x for steps=10)",
-)
+# regression: the gradient was taken w.r.t. z of f(alpha * z), adding an extra
+# alpha factor; completeness sum_d IG = f(z) - f(0) failed (0.45x for steps=10)
 def test_integrated_gradient_completeness_linear_decoder(attr_fakes):
     analysis, _, _ = single_component_setup(attr_fakes)
     ig = analysis.compute_integrated_gradient("c", "rna", "c", steps=10).numpy()
     z = X @ ENC_W
     np.testing.assert_allclose(ig.sum(axis=1), z @ DEC_A, rtol=1e-4, atol=1e-5)
+
+
+def test_integrated_gradient_completeness_nonlinear_decoder(attr_fakes):
+    # f = z**2 @ A: the left Riemann sum gives (steps - 1) / steps of
+    # f(z) - f(0) (with the extra alpha it was about 2/3)
+    analysis, _, _ = single_component_setup(
+        attr_fakes, decoder_fn=lambda z: tf.square(z) @ tf.constant(DEC_A)
+    )
+    steps = 50
+    ig = analysis.compute_integrated_gradient("c", "rna", "c", steps=steps).numpy()
+    z = X @ ENC_W
+    expected = (steps - 1) / steps * (z**2 @ DEC_A)
+    np.testing.assert_allclose(ig.sum(axis=1), expected, rtol=1e-4, atol=1e-5)
+
+
+def test_integrated_gradient_baseline_zeroes_only_with_respect_to(attr_fakes):
+    # f = (z_c + z_p)**2 @ A, attributed to the parent: the child keeps its
+    # z, so sum_d IG = sum_alpha 2 (z_c + alpha z_p) z_p / steps
+    #                = 2 z_c z_p + (steps - 1) / steps * z_p**2
+    # (-> f(z) - f(z_c, 0)); scaling z_c by alpha too gave z_c z_p + ...
+    analysis, _, _ = two_component_setup(
+        attr_fakes, decoder_fn=lambda z: tf.square(z) @ tf.constant(DEC_A)
+    )
+    steps = 10
+    ig = analysis.compute_integrated_gradient("c", "rna", "p", steps=steps).numpy()
+    z_p = X @ ENC_W
+    z_c = X @ (2 * ENC_W)
+    expected = (2 * z_c * z_p + (steps - 1) / steps * z_p**2) @ DEC_A
+    np.testing.assert_allclose(ig.sum(axis=1), expected, rtol=1e-4, atol=1e-5)
 
 
 def test_integrated_gradient_zero_latent_gives_zero(attr_fakes):

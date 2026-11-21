@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1804 passed, 14 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1807 passed, 13 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 198 | 4 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 266 | 1 | 100% |
+| [tools](packages/tools/README.md) | ✅ | 🔴 Very high | 7 | 1 | 269 | 0 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1804** | **14** | |
+| **Total** | | | | | **1807** | **13** | |
 
 **Status**
 - ✅ No open bugs.
@@ -78,11 +78,7 @@ High fan-in packages are where a bug spreads furthest: environment (11), utils (
 
 ## Needs attention
 
-Open bugs that silently change results on a normal run:
-
-| # | Package | Issue |
-|---|---|---|
-| [T1](packages/tools/cluster_attribution.md#t1) | tools | Integrated gradients in `AttributionAnalysis` carry an extra factor of alpha, so every attribution score is shrunk. |
+Open bugs that silently change results on a normal run: none. The last one, T1 (integrated gradients in `AttributionAnalysis`), is [fixed](packages/tools/cluster_attribution.md#t1).
 
 ## Layout
 

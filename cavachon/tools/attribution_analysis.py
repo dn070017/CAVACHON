@@ -92,6 +92,13 @@ class AttributionAnalysis:
     ) -> np.ndarray:
         """Compute the integrated gradients of ∂rho_m/∂z_m.
 
+        For every cell, z of ``with_respect_to`` moves along the straight
+        path from 0 (the baseline) to its z, while the z of every other
+        component stays at its own value. The gradient is taken at each
+        point alpha * z of the path (left Riemann sum over ``steps``),
+        so the attributions of a cell sum to f(z) - f(z with z of
+        ``with_respect_to`` set to 0).
+
         Parameters
         ----------
         component: str
@@ -139,14 +146,15 @@ class AttributionAnalysis:
             desc=progress_message,
         ):
             outputs = self.model(batch, training=False)
+            z = outputs[f"{with_respect_to}_{Constants.MODEL_OUTPUTS_Z}"]
             unintegrated_gradients_batch = None
             for alpha in tqdm([x / steps for x in range(steps)]):
                 with tf.GradientTape(
                     watch_accessed_variables=False, persistent=True
                 ) as tape:
-                    z_variable = tf.Variable(
-                        outputs[f"{with_respect_to}_{Constants.MODEL_OUTPUTS_Z}"]
-                    )
+                    # the point on the path is the watched input, so the
+                    # gradient is f'(alpha * z), not alpha * f'(alpha * z)
+                    z_variable = tf.constant(alpha * z)
                     tape.watch(z_variable)
 
                     attribution_target = self.compute_attribution_target_batch(
@@ -155,7 +163,6 @@ class AttributionAnalysis:
                         modality=modality,
                         with_respect_to=with_respect_to,
                         z_variable=z_variable,
-                        alpha=alpha,
                     )
 
                     gradients_tmp = []
@@ -170,9 +177,7 @@ class AttributionAnalysis:
                         gradients_tmp.append(gradients_j_feature)
 
                     gradients = tf.stack(gradients_tmp, axis=-1)
-                    scaled_gradients = (
-                        1 / steps * tf.expand_dims(z_variable, -1) * gradients
-                    )
+                    scaled_gradients = 1 / steps * tf.expand_dims(z, -1) * gradients
 
                     if unintegrated_gradients_batch is None:
                         unintegrated_gradients_batch = scaled_gradients
@@ -191,7 +196,6 @@ class AttributionAnalysis:
         modality: str,
         with_respect_to: str,
         z_variable: Union[tf.Tensor, tf.Variable, None] = None,
-        alpha: float = 1.0,
     ) -> np.ndarray:
         """Compute the means of generative data in each batch with
         selected indices.
@@ -214,11 +218,9 @@ class AttributionAnalysis:
             representation of which component.
 
         z_variable: Union[tf.Tensor, tf.Variable, None], optional
-            replace z with provided z_variable. Use the original z if
+            replace z of ``with_respect_to`` with provided z_variable;
+            the other components keep their z. Use the original z if
             provided with None. Defaults to None.
-
-        alpha: float, optional
-            scaling factor of z. Defaults to 1.0.
 
         Returns
         -------
@@ -259,10 +261,10 @@ class AttributionAnalysis:
                 training=False,
             )
             if component_name == with_respect_to and z_variable is not None:
-                z = alpha * z_variable
+                z = z_variable
             else:
                 z_sampler = MultivariateNormalDiagSampler()
-                z = alpha * z_sampler(z_parameters, training=False)
+                z = z_sampler(z_parameters, training=False)
 
             z_hat = component_network.hierarchical_encode(
                 component_inputs, z, training=False
