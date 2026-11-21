@@ -1,6 +1,6 @@
 import gc
 import warnings
-from typing import Dict, List, Mapping, Optional, Sequence, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import muon as mu
 import numpy as np
@@ -24,6 +24,11 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
     dimensions, and normalized so that the signed contributions sum to one
     when multiple components are selected in ``with_respect_to``. With a
     single component, raw attributions are reported instead.
+
+    The decoder is evaluated at the same reference as the differential
+    analyses (see ``compute_reference_batch``): averaged over the batch
+    effects of all cells and at their median library size, so the result
+    doesn't depend on any one cell.
 
     """
 
@@ -91,21 +96,75 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
         gc.collect()
         return means
 
+    def compute_reference_batch(
+        self, component: str, batch_size: int = 128
+    ) -> Tuple[Dict[str, tf.Tensor], np.ndarray, Dict[str, float]]:
+        """Decoding inputs the attributions are evaluated at, the same
+        reference as the differential analyses: the batch effects of all
+        cells and their median library size (see
+        ``compute_decoding_reference``).
+
+        The reference batch has one row per distinct batch effect among
+        all cells (the batch-effect tensors of every modality together),
+        weighted by the fraction of cells that have it. Integrated
+        gradients are linear in the explained function, so attributing
+        the weighted mean of the decoded rows gives the batch-averaged
+        attribution exactly, without sampling.
+
+        Parameters
+        ----------
+        component : str
+            the decoded component (its modalities' library size).
+
+        batch_size : int, optional
+            batch size used for the pass over all cells. Defaults to 128.
+
+        Returns
+        -------
+        Tuple[Dict[str, tf.Tensor], np.ndarray, Dict[str, float]]
+            the reference batch (``{modality}_batch_effect`` of each
+            modality, one row per distinct batch effect), the weight of
+            each row (summing to 1) and the median library size keyed by
+            modality (only the modalities that scale by it).
+        """
+        batch_effect, libsize = self.compute_decoding_reference(component, batch_size)
+        modality_names = sorted(batch_effect.keys())
+        n_obs = batch_effect[modality_names[0]].shape[0]
+        rows = np.concatenate(
+            [
+                np.asarray(batch_effect[name]).reshape(n_obs, -1)
+                for name in modality_names
+            ],
+            axis=1,
+        )
+        _, first_index, counts = np.unique(
+            rows, axis=0, return_index=True, return_counts=True
+        )
+        reference_batch = {
+            f"{name}_{Constants.TENSOR_NAME_BATCH}": tf.gather(
+                batch_effect[name], first_index, axis=0
+            )
+            for name in modality_names
+        }
+        return reference_batch, counts / counts.sum(), libsize
+
     def compute_differential_attribution_target_batch(
         self,
         batch: Mapping[str, tf.Tensor],
         component: str,
         modality: str,
         z_dict: Mapping[str, tf.Tensor],
+        libsize: Optional[Mapping[str, float]] = None,
+        weights: Optional[np.ndarray] = None,
     ) -> tf.Tensor:
         """Decode the expected expression using the provided ``z`` dict.
 
         Parameters
         ----------
         batch : Mapping[str, tf.Tensor]
-            A batch used for conditional inputs, batch effects and library
-            size. The modality data itself is only used for preprocessor
-            outputs such as library size.
+            A batch used for conditional inputs and batch effects (see
+            ``compute_reference_batch``). Its modality matrices are only
+            needed for the library size when ``libsize`` is not given.
 
         component : str
             Name of the component whose modality is being decoded.
@@ -114,19 +173,37 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             Name of the modality being decoded.
 
         z_dict : Mapping[str, tf.Tensor]
-            Component-keyed ``z`` tensors.
+            Component-keyed ``z`` tensors. A single row is used for every
+            row of ``batch``.
+
+        libsize : Mapping[str, float], optional
+            library size every row is decoded at, keyed by modality.
+            Defaults to None: computed from the matrices in ``batch``.
+
+        weights : np.ndarray, optional
+            weight of each row of ``batch``. When given, the weighted
+            mean over the rows is returned. Defaults to None.
 
         Returns
         -------
         tf.Tensor
             Mean of the generative distribution, shape ``(batch_size,
-            n_features)``.
+            n_features)``, or ``(1, n_features)`` with ``weights``.
 
         """
+        n_rows = int(next(iter(batch.values())).shape[0])
+        z_dict = {
+            name: tf.repeat(z, n_rows, axis=0) if z.shape[0] == 1 else z
+            for name, z in z_dict.items()
+        }
         hier_outputs = self.model.hierarchical_encode(batch, z_dict, training=False)
         z_hat = hier_outputs[Constants.MODEL_OUTPUTS_Z_HAT]
         decode_outputs = self.model.decode(
-            batch, z_hat, components=[component], training=False
+            batch,
+            z_hat,
+            components=[component],
+            training=False,
+            libsize=self.constant_libsize(libsize, n_rows),
         )
         x_parameters = decode_outputs[Constants.MODEL_OUTPUTS_X_PARAMS].get(
             f"{component}_{modality}_{Constants.MODEL_OUTPUTS_X_PARAMS}"
@@ -138,7 +215,11 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             dist_x_z_name, "distributions", "Distribution"
         )
         dist_x_z = dist_x_z_class.from_parameterizer_output(x_parameters)
-        return dist_x_z.mean()
+        mean = dist_x_z.mean()
+        if weights is None:
+            return mean
+        weights_tensor = tf.constant(weights.reshape(-1, 1), dtype=mean.dtype)
+        return tf.reduce_sum(weights_tensor * mean, axis=0, keepdims=True)
 
     def compute_differential_attribution(
         self,
@@ -229,35 +310,16 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
             raise ValueError(f"DEG features not found in modality: {missing}")
         feature_indices = tf.constant(feature_indices, dtype=tf.int32)
 
-        adata_dict = dict()
-        with warnings.catch_warnings():
-            warnings.simplefilter(action="ignore", category=FutureWarning)
-            warnings.simplefilter(action="ignore", category=UserWarning)
-            for mod, adata in self.mdata.mod.items():
-                adata_dict[mod] = adata.copy()
-
-        mdata_subset = mu.MuData(adata_dict)
-
         z_baseline = self.compute_group_latent_mean(
             group_b_index, batch_size=batch_size
         )
         z_target = self.compute_group_latent_mean(group_a_index, batch_size=batch_size)
 
-        # Representative batch for decoder conditional inputs.
-        representative_dataloader = DataLoader(
-            mdata_subset,
-            batch_size=1,
-            batch_effect_colnames=self.batch_effect_colnames,
-            distribution_names=self.distribution_names,
-            batch_effect_encoders=self.batch_effect_encoders,
+        # decode at every distinct batch effect (weighted average) and the
+        # median library size of all cells, as the differential analyses
+        reference_batch, weights, libsize = self.compute_reference_batch(
+            component, batch_size
         )
-        representative_batch = None
-        for batch in representative_dataloader:
-            representative_batch = batch
-            break
-        assert representative_batch is not None
-        del mdata_subset
-        gc.collect()
 
         delta_z = {
             comp_name: z_target[comp_name] - z_baseline[comp_name]
@@ -273,14 +335,14 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
         f_baseline = tf.gather(
             self.compute_differential_attribution_target_batch(
-                representative_batch, component, modality, z_dict_baseline
+                reference_batch, component, modality, z_dict_baseline, libsize, weights
             ),
             feature_indices,
             axis=-1,
         )
         f_target = tf.gather(
             self.compute_differential_attribution_target_batch(
-                representative_batch, component, modality, z_dict_target
+                reference_batch, component, modality, z_dict_target, libsize, weights
             ),
             feature_indices,
             axis=-1,
@@ -321,7 +383,12 @@ class DifferentialAttributionAnalysis(DifferentialAnalysis):
 
                 target = tf.gather(
                     self.compute_differential_attribution_target_batch(
-                        representative_batch, component, modality, z_dict_step
+                        reference_batch,
+                        component,
+                        modality,
+                        z_dict_step,
+                        libsize,
+                        weights,
                     ),
                     feature_indices,
                     axis=-1,

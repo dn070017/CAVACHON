@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 97 passed, 3 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 100 passed, 2 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -63,13 +63,7 @@ For **HDEG** the exact version needs every recipient cell × every donor cell (�
 
 ## Open bugs (strict xfails)
 
-Found by the 2026-11-21 review of the differential and attribution tools. T13 and T14 are fixed (see below); T15 still needs a decision on the batch effect to decode with.
-
-### T15
-
-`differential_attribution_analysis.py:248-261` — **differential attribution is computed at one arbitrary cell's batch effect and library size.** The "representative batch" is the first cell of the whole dataset (`batch_size=1`, first batch), which may belong to neither group.
-- Failing input: the same data with the cells in reverse order → different `Expected(A)` / `Expected(B)` / attributions.
-- **Impact: yes**: `Delta`, `Expected(A/B)` and every `attr_*` scale with that cell's library size and carry its batch effect.
+Found by the 2026-11-21 review of the differential and attribution tools. T13, T14 and T15 are fixed (see below).
 
 ### T17
 
@@ -83,6 +77,10 @@ Found by the 2026-11-21 review of the differential and attribution tools. T13 an
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t15"></a>**T15** (`compute_differential_attribution`): the decoder's other inputs came from a "representative batch", the first cell of the whole dataset (`batch_size=1`, first batch), which may belong to neither group. `Expected(A/B)`, `Delta` and every `attr_*` scaled with that cell's library size and carried its batch effect, and changed with the cell order.
+  - The attribution is now evaluated at **the same reference as DEG/HDEG**: the median library size of all cells, and the batch effects of all cells. `compute_reference_batch` builds one row per distinct batch effect (all modalities' batch-effect tensors together) with the fraction of cells that have it as its weight; `compute_differential_attribution_target_batch` takes `libsize` and `weights`, decodes the same z on every row and returns the weighted mean.
+  - Integrated gradients are linear in the explained function, so attributing the weighted mean of the rows is exactly the batch-averaged attribution: deterministic (no sampling), and the attributions still sum to `Delta` (up to the Riemann sum), now the batch-averaged `Delta`. Cost: one decode per distinct batch effect per step.
+  - The copy of the whole MuData that fed the representative loader is gone.
 - ✅ (2026-11-21) <a id="t14"></a>**T14** (HDEG pairing): the substituted (A) and original (B) decodes of a recipient cell each drew their own random batch effect, so P(A>B|Z) mixed the substitution effect with batch-effect noise (a substitution with no effect gave P > 0 instead of ties). Now one random batch effect per compared pair, drawn from all cells, is used by both arms (option chosen over the recipient's own batch, so DEG and HDEG share one reference: all cells' batches and median library size):
   - `DifferentialAnalysis.sample_batch_index(batch_effect, n_obs)` draws the pool indices; `compute_x_means` and `_compute_substituted_x_means` take `batch_index` (default `None`: drawn per batch, as before) and `between_groups` passes one draw per round to both.
   - **DEG too:** `between_two_groups` passes one draw per round to both groups, so the i-th sampled cells of A and B (the compared pair) share a batch effect. The batches are still marginalized over all cells; only the noise between the arms is gone (same latent + pure batch effect → every pair ties).

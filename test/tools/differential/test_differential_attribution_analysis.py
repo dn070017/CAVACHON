@@ -281,17 +281,48 @@ def test_existing_logfc_is_kept():
     assert result.loc["g0", "LogFC"] == 42.0
 
 
-def test_representative_batch_is_first_cell_with_batch_size_one():
+def test_compute_reference_batch_weights_distinct_batch_effects():
+    # batch effects 0.25 (1 cell) and 9 (4 cells)
+    mdata = make_mdata(X, batch=[9, 0.25, 9, 9, 9])
+    daa, _ = make_daa(mdata=mdata)
+    reference, weights, libsize = daa.compute_reference_batch("a", batch_size=2)
+    np.testing.assert_allclose(
+        np.asarray(reference[f"RNA_{Constants.TENSOR_NAME_BATCH}"]).ravel(), [0.25, 9]
+    )
+    np.testing.assert_allclose(weights, [0.2, 0.8])
+    assert libsize == {}  # the fake decoder doesn't scale by the library size
+
+
+def test_expected_values_average_over_the_batch_effects_of_all_cells():
+    # regression (T15): the decoder took the batch effect of the first cell
     mdata = make_mdata(X, batch=[0.25, 9, 9, 9, 9])
     daa, _ = make_daa(mdata=mdata)
     result = daa.compute_differential_attribution(
         deg(), "a", "RNA", A_IDX, B_IDX, ["a", "b"], n_steps=1
     )
     _, _, _, s0 = expected_terms()
-    np.testing.assert_allclose(result["Expected(B)"], s0 + 0.25, atol=1e-5)
-    representative = [dl for dl in FakeDataLoader.instances if dl.batch_size == 1]
-    assert len(representative) == 1
-    assert representative[0].mdata.n_obs == mdata.n_obs
+    np.testing.assert_allclose(
+        result["Expected(B)"], s0 + 0.2 * 0.25 + 0.8 * 9, atol=1e-5
+    )
+
+
+def test_attribution_decodes_at_the_median_libsize():
+    # library sizes 6, 8, 3, 2, 4 -> median 4; batch effect 0
+    model = FakeModel(E, W, libsize_scaling=True)
+    daa = DifferentialAttributionAnalysis(make_mdata(X), model)
+    result = daa.compute_differential_attribution(
+        deg(), "a", "RNA", A_IDX, B_IDX, ["a", "b"], n_steps=3
+    )
+    zA, zB, d, s0 = expected_terms()
+    np.testing.assert_allclose(result["Expected(B)"], 4 * s0, rtol=1e-5)
+    np.testing.assert_allclose(
+        result["Expected(A)"], 4 * (s0 + d["a"] + d["b"]), rtol=1e-5
+    )
+    # linear model: the attributions are exact at libsize 4
+    np.testing.assert_allclose(result["attr_a"], 4 * d["a"], rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(result["attr_b"], 4 * d["b"], rtol=1e-5, atol=1e-5)
+    for libsize in model.decode_libsizes:
+        np.testing.assert_allclose(np.asarray(libsize["RNA"]), 4.0)
 
 
 # --------------------------------------------------------------------------
@@ -374,11 +405,8 @@ def test_from_deg_file_end_to_end(read_csv):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T15 the decoder's batch effect and library size come from the "
-    "first cell of the whole dataset, so the result depends on the cell order",
-)
+# regression: T15 the decoder's batch effect and library size came from the
+# first cell of the whole dataset, so the result depended on the cell order
 def test_differential_attribution_does_not_depend_on_cell_order():
     batch = [0.0, 1.0, 2.0, 3.0, 4.0]
     mdata = make_mdata(X, batch=batch)
