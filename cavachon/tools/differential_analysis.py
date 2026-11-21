@@ -72,6 +72,7 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         keep_only_significant: bool = False,
         sort_output: bool = True,
+        seed: Optional[int] = None,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between every groups of
         samples.
@@ -101,6 +102,10 @@ class DifferentialAnalysis:
         keep_only_significant: bool, optional
             keep only the significantly differentially expressed
             entity. Default to False.
+
+        seed: Optional[int], optional
+            NumPy random seed, applied at the start of every comparison.
+            Defaults to None.
 
         Returns
         -------
@@ -137,6 +142,7 @@ class DifferentialAnalysis:
                 group_a_label=str(cluster_a),
                 group_b_label=str(cluster_b),
                 use_cluster=use_cluster,
+                seed=seed,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -157,6 +163,7 @@ class DifferentialAnalysis:
         batch_size: int = 128,
         keep_only_significant: bool = False,
         sort_output: bool = True,
+        seed: Optional[int] = None,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between one specific group and
         the rest of the samples.
@@ -186,6 +193,10 @@ class DifferentialAnalysis:
         keep_only_significant: bool, optional
             keep only the significantly differentially expressed
             entity. Default to False.
+
+        seed: Optional[int], optional
+            NumPy random seed, applied at the start of every comparison.
+            Defaults to None.
 
         Returns
         -------
@@ -220,6 +231,7 @@ class DifferentialAnalysis:
                 group_a_label=str(cluster),
                 group_b_label="others",
                 use_cluster=use_cluster,
+                seed=seed,
             )
             if keep_only_significant:
                 deg = deg.loc[
@@ -244,6 +256,7 @@ class DifferentialAnalysis:
         group_a_label: Optional[str] = None,
         group_b_label: Optional[str] = None,
         use_cluster: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -293,17 +306,25 @@ class DifferentialAnalysis:
             the obs column the group labels come from. If provided, a
             ``UseCluster`` column is added to the result.
 
+        seed: Optional[int], optional
+            NumPy random seed, applied before sampling. Defaults to None.
+
         Returns
         -------
         pd.DataFrame
             analysis result for differential analysis. The DataFrame
-            contains the original 6 columns, then the parameters of the
-            run: ``Component``, ``Modality``, ``ZSamplingSize`` and
-            ``XSamplingSize``, plus ``GroupA``, ``GroupB`` and
-            ``UseCluster`` when provided. The parameters let a table read
-            back from disk be matched to the analysis that produced it.
+            contains the original 6 columns, ``GroupA`` and ``GroupB``
+            when labels are provided, then the parameters of the run (see
+            ``record_run_parameters``): ``Component``, ``Modality``,
+            ``UseCluster`` (when provided), ``ZSamplingSize``,
+            ``XSamplingSize`` and ``RandomSeed``. The parameters let a
+            table read back from disk be matched to the analysis that
+            produced it.
 
         """
+        if seed is not None:
+            np.random.seed(seed)
+
         x_means_a_list: List[np.ndarray] = []
         x_means_b_list: List[np.ndarray] = []
 
@@ -381,18 +402,44 @@ class DifferentialAnalysis:
             sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
             result = result.loc[sort_key.sort_values(ascending=False).index]
 
-        result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
-        result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
-        result["ZSamplingSize"] = z_sampling_size
-        result["XSamplingSize"] = x_sampling_size
         if group_a_label is not None:
             result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_A_COLUMN] = group_a_label
         if group_b_label is not None:
             result[Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN] = group_b_label
-        if use_cluster is not None:
-            result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] = use_cluster
+        self.record_run_parameters(
+            result,
+            component=component,
+            modality=modality,
+            use_cluster=use_cluster,
+            z_sampling_size=z_sampling_size,
+            x_sampling_size=x_sampling_size,
+            seed=seed,
+        )
 
         return result
+
+    @staticmethod
+    def record_run_parameters(
+        result: pd.DataFrame,
+        component: str,
+        modality: str,
+        use_cluster: Optional[str],
+        z_sampling_size: int,
+        x_sampling_size: int,
+        seed: Optional[int],
+    ) -> None:
+        """Record the parameters of a DEG/HDEG run on every row of its
+        result (in place), with the same columns for both analyses:
+        ``Component``, ``Modality``, ``UseCluster`` (skipped when None),
+        ``ZSamplingSize``, ``XSamplingSize`` and ``RandomSeed`` (empty
+        when None)."""
+        result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
+        result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
+        if use_cluster is not None:
+            result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] = use_cluster
+        result[Constants.DIFFERENTIAL_ANALYSIS_Z_SAMPLING_SIZE_COLUMN] = z_sampling_size
+        result[Constants.DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN] = x_sampling_size
+        result[Constants.DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN] = seed
 
     def sample_mdata_x(
         self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500

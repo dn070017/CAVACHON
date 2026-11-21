@@ -129,8 +129,28 @@ def test_hierarchical_defaults():
         modality="RNA", component="RNA", donor_components=["a b"]
     )
     assert h.donor_components == ["a_b"]
-    assert h.n_samples == 10 and h.seed is None and h.batch_size == 128
+    assert h.z_sampling_size == 10 and h.seed is None and h.batch_size == 128
+    assert h.x_sampling_size is None
+    assert (h.donor_group, h.recipient_group) == ("", "")
     assert AnalysisHierarchicalDifferentialAnalysisConfig().donor_components is None
+
+
+def test_hierarchical_n_samples_is_deprecated_alias():
+    with pytest.warns(DeprecationWarning, match="use z_sampling_size"):
+        h = AnalysisHierarchicalDifferentialAnalysisConfig(n_samples=3)
+    assert h.z_sampling_size == 3
+    assert "n_samples" not in (h.__pydantic_extra__ or {})
+    # the new name wins when both are given
+    with pytest.warns(DeprecationWarning):
+        both = AnalysisHierarchicalDifferentialAnalysisConfig(
+            n_samples=3, z_sampling_size=7
+        )
+    assert both.z_sampling_size == 7
+
+
+def test_differential_analysis_seed_defaults_to_none():
+    assert AnalysisDifferentialAnalysisConfig().seed is None
+    assert AnalysisDifferentialAnalysisConfig(seed=4).seed == 4
 
 
 # regression: hierarchical DA use_cluster defaults to cluster_<component>

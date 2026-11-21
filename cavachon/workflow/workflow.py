@@ -512,6 +512,7 @@ class Workflow:
                     group_a_label=analysis_config.group_a,
                     group_b_label=analysis_config.group_b,
                     use_cluster=use_cluster,
+                    seed=analysis_config.seed,
                 )
                 if analysis_config.keep_only_significant:
                     result = result.loc[
@@ -535,6 +536,7 @@ class Workflow:
                     batch_size=analysis_config.batch_size,
                     keep_only_significant=analysis_config.keep_only_significant,
                     sort_output=analysis_config.sort_output,
+                    seed=analysis_config.seed,
                 )
                 # GroupA/GroupB are set by the analysis (labels may contain
                 # '/', so they are not parsed back from the "A/B" keys).
@@ -574,15 +576,16 @@ class Workflow:
             donor_components_str = (
                 "_".join(donor_components) if donor_components else "all"
             )
-            if analysis_config.donor_cluster and analysis_config.recipient_cluster:
+            if analysis_config.donor_group and analysis_config.recipient_group:
                 # Single-pair mode: explicit donor -> recipient
-                result = analysis.between_clusters(
-                    donor_cluster=analysis_config.donor_cluster,
-                    recipient_cluster=analysis_config.recipient_cluster,
+                result = analysis.between_groups(
+                    donor_group=analysis_config.donor_group,
+                    recipient_group=analysis_config.recipient_group,
                     component=analysis_config.component,
                     modality=analysis_config.modality,
                     use_cluster=analysis_config.use_cluster,
-                    n_samples=analysis_config.n_samples,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
                     seed=analysis_config.seed,
                     batch_size=analysis_config.batch_size,
                     donor_components=analysis_config.donor_components,
@@ -594,9 +597,9 @@ class Workflow:
                     analysis_config.component,
                     "substitute",
                     donor_components_str,
-                    analysis_config.donor_cluster,
+                    analysis_config.donor_group,
                     "to",
-                    analysis_config.recipient_cluster,
+                    analysis_config.recipient_group,
                 )
                 filename = f"{outdir}/{'_'.join(target).lower().replace(' ', '_').replace('/', '_')}.tsv"
                 result.to_csv(filename, sep="\t")
@@ -607,7 +610,8 @@ class Workflow:
                     modality=analysis_config.modality,
                     use_cluster=analysis_config.use_cluster,
                     donor_components=analysis_config.donor_components,
-                    n_samples=analysis_config.n_samples,
+                    z_sampling_size=analysis_config.z_sampling_size,
+                    x_sampling_size=analysis_config.x_sampling_size,
                     seed=analysis_config.seed,
                     batch_size=analysis_config.batch_size,
                     sort_output=analysis_config.sort_output,
@@ -722,12 +726,12 @@ class Workflow:
                 else:
                     group_a = str(
                         deg_table[
-                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN
+                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_GROUP_COLUMN
                         ].iloc[0]
                     )
                     group_b = str(
                         deg_table[
-                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
+                            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_GROUP_COLUMN
                         ].iloc[0]
                     )
 

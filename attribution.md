@@ -67,7 +67,8 @@ Given a DEG or HDEG table (output of `DifferentialAnalysis` or `HierarchicalDiff
 ### Group definitions
 
 - **DEG tables** must contain the columns `GroupA` and `GroupB` (written by `DifferentialAnalysis.between_two_groups`).
-- **HDEG tables** contain `DonorCluster` and `RecipientCluster`.
+- **HDEG tables** contain `DonorGroup` and `RecipientGroup`.
+- Both record the analysis that produced them (`Component`, `Modality`, `UseCluster`); the workflow only attributes tables whose values match the attribution entry.
 
 Cells are selected from `mdata[modality].obs[use_cluster]` using these group labels.
 

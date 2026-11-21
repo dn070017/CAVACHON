@@ -59,13 +59,13 @@ analysis = HierarchicalDifferentialAnalysis(
     batch_effect_encoders=workflow.dataloader.batch_effect_encoders,
 )
 
-result = analysis.between_clusters(
-    donor_cluster=donor_label,
-    recipient_cluster=recipient_label,
+result = analysis.between_groups(
+    donor_group=donor_label,
+    recipient_group=recipient_label,
     component=component,
     modality=modality,
     use_cluster=cluster_key,
-    n_samples=2,
+    z_sampling_size=2,
     seed=42,
     donor_components=donor_components,
     batch_size=batch_size,

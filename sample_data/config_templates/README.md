@@ -86,7 +86,7 @@ The template also includes an `analysis:` block with common post-training analys
 - **Visualize embedding**: make t-SNE/UMAP plots colored by annotations or clusters.
 - **Differential analysis**: find marker genes between clusters. By default runs all pairwise comparisons; set `group_a` and `group_b` to compare a single pair.
 - **Conditional attribution scores**: see which parent latent dimensions drive a child's predictions.
-- **Hierarchical differential analysis**: compare gene expression across integrated clusters while controlling for donor components. By default runs all pairwise interventions; set `donor_cluster` and `recipient_cluster` to run a single pair.
+- **Hierarchical differential analysis**: compare gene expression across integrated clusters while controlling for donor components. By default runs all pairwise interventions; set `donor_group` and `recipient_group` to run a single pair.
 
 Each entry is optional — remove the ones you do not need. The default values are sensible for a first run.
 
@@ -122,6 +122,8 @@ differential_analysis:
 |---|---|
 | `use_cluster` | Column in `.obs` that defines cluster labels. Defaults to `cluster_{component}`. |
 | `group_a` / `group_b` | Cluster labels for single-pair mode. Leave empty for pairwise. |
+| `z_sampling_size` / `x_sampling_size` | Sampling rounds (default `5`) / cells drawn from each group per round (default `1000`). |
+| `seed` | Random seed. |
 | `keep_only_significant` | Filter to rows where `|K| >= 3.2` (default `false`). |
 | `sort_output` | Sort by `max(|K(A>B|Z)|, |K(B>A|Z)|)` descending (default `true`). |
 
@@ -152,18 +154,20 @@ hierarchical_differential_analysis:
   - modality: RNA
     component: RNA
     use_cluster: cell_type
-    donor_cluster: "CD4 Naive"
-    recipient_cluster: "CD8 Naive"
+    donor_group: "CD4 Naive"
+    recipient_group: "CD8 Naive"
     donor_components:
       - ATAC
 ```
 
 | Field | Description |
 |---|---|
-| `use_cluster` | Column in `.obs` that defines cluster labels. |
-| `donor_cluster` / `recipient_cluster` | Cluster labels for single-pair mode. Leave empty for pairwise. |
+| `use_cluster` | Column in `.obs` that holds the group labels. |
+| `donor_group` / `recipient_group` | Group labels for single-pair mode. Leave empty for pairwise. |
 | `donor_components` | Parent components to substitute. Defaults to all parents if omitted. |
-| `n_samples` | Number of substituted samples per cell (default `10`). |
+| `z_sampling_size` | Number of sampling rounds (default `10`; `n_samples` is the deprecated name). |
+| `x_sampling_size` | Recipient cells drawn per round (default: the recipient group's size). |
+| `seed` | Random seed. |
 | `sort_output` | Sort by `max(|K(A>B|Z)|, |K(B>A|Z)|)` descending (default `true`). |
 
 ### Output files
@@ -181,6 +185,8 @@ rna_from_rna_substitute_atac_cd4_naive_to_cd8_naive.tsv
 ```
 
 When `donor_components` is omitted, the filename uses `all` in place of the component list.
+
+Both tables record the run on every row: `Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize` and `RandomSeed`, plus the groups compared (`GroupA`/`GroupB` for DEG, `DonorGroup`/`RecipientGroup` for HDEG). Differential attribution uses these columns to pick the tables of its component, modality and `use_cluster`.
 
 ## Tips
 

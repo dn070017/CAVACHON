@@ -35,12 +35,12 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             raise ValueError("Failed to create dataset for differential analysis.")
         return dataset
 
-    def _get_cluster_mdata(
-        self, cluster: str, use_cluster: str, modality: str
+    def _get_group_mdata(
+        self, group: str, use_cluster: str, modality: str
     ) -> mu.MuData:
-        cluster_index = (
+        group_index = (
             self.mdata[modality]
-            .obs[self.mdata[modality].obs[use_cluster] == cluster]
+            .obs[self.mdata[modality].obs[use_cluster] == group]
             .index
         )
 
@@ -49,9 +49,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             warnings.simplefilter(action="ignore", category=FutureWarning)
             warnings.simplefilter(action="ignore", category=UserWarning)
             for mod, adata in self.mdata.mod.items():
-                adata_cluster = adata[cluster_index].copy()
-                adata_cluster.obs_names_make_unique()
-                adata_dict[mod] = adata_cluster
+                adata_group = adata[group_index].copy()
+                adata_group.obs_names_make_unique()
+                adata_dict[mod] = adata_group
 
         return mu.MuData(adata_dict)
 
@@ -183,34 +183,36 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         return np.vstack(x_means)
 
-    def between_clusters(
+    def between_groups(
         self,
-        donor_cluster: str,
-        recipient_cluster: str,
+        donor_group: str,
+        recipient_group: str,
         component: str,
         modality: str,
         use_cluster: str,
-        n_samples: int = 10,
+        z_sampling_size: int = 10,
+        x_sampling_size: int | None = None,
         seed: int | None = None,
         batch_size: int = 128,
         donor_components: list[str] | None = None,
         desc: str = "",
         sort_output: bool = True,
     ) -> pd.DataFrame:
-        """Compute differential expression between donor and recipient clusters.
+        """Compute differential expression between donor and recipient groups.
 
-        Performs latent substitution: samples ``z`` from the donor cluster for each
+        Performs latent substitution: samples ``z`` from the donor group for each
         component in ``donor_components``, substitutes them into recipient-cell
         encodings, and compares the resulting decoded expression against the
         unmodified recipient expression.
 
         Parameters
         ----------
-        donor_cluster : str
-            Cluster label from which latent representations are drawn.
-        recipient_cluster : str
-            Cluster label whose cells provide recipient encodings and baseline
-            expression.
+        donor_group : str
+            Label (in ``obs[use_cluster]``) of the group from which latent
+            representations are drawn.
+        recipient_group : str
+            Label (in ``obs[use_cluster]``) of the group whose cells provide
+            recipient encodings and baseline expression.
         component : str
             **DEG target**: model component whose output distribution is decoded and
             compared. Controls distribution lookup and ``model.decode(components=
@@ -220,16 +222,19 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             **DEG target modality**: omics layer within ``component`` whose mean
             expression is compared (e.g. ``"RNA"``).
         use_cluster : str
-            Column in ``mdata[modality].obs`` containing cluster labels.
-        n_samples : int, optional
+            Column in ``mdata[modality].obs`` containing the group labels.
+        z_sampling_size : int, optional
             Monte-Carlo sampling rounds. Default ``10``.
+        x_sampling_size : int | None, optional
+            Recipient cells drawn (with replacement) per round. Defaults to
+            ``None``: as many as the recipient group has.
         seed : int | None, optional
             NumPy random seed. Default ``None``.
         batch_size : int, optional
             Batch size for encoding and decoding. Default ``128``.
         donor_components : list[str] | None, optional
             Names of model components whose ``z`` latent vectors are replaced by
-            samples drawn from the donor cluster. Duplicates are removed preserving
+            samples drawn from the donor group. Duplicates are removed preserving
             order. Defaults to ``[component]`` when ``None``, reproducing the
             original single-component substitution behaviour.
 
@@ -243,32 +248,52 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         Returns
         -------
         pd.DataFrame
-            Bayesian-factor table with columns: ``InterventionType``,
-            ``DonorCluster``, ``RecipientCluster``, ``SamplingStrategy``,
-            ``RandomSeed``, ``MeanDelta(Substituted-Original)``,
-            ``DonorComponents`` (comma-separated sorted component names),
-            and the parameters of the run: ``Component``, ``Modality``,
-            ``UseCluster`` and ``NSamples``. The parameters let a table
-            read back from disk be matched to the analysis that produced
-            it.
+            One row per feature of ``modality``. In each of the
+            ``z_sampling_size`` rounds, ``x_sampling_size`` recipient cells
+            are drawn; every drawn cell is decoded twice: **A** with the
+            ``z`` of ``donor_components`` replaced by the ``z`` of a random
+            donor cell, and **B** unchanged (each decode with a batch
+            effect drawn at random from all cells). Over these
+            (round, cell) pairs:
+
+            - ``Mean(A)`` / ``Mean(B)``: mean of the decoded means of A /
+              B, i.e. the expected expression of the recipient group with
+              / without the donor's latent;
+            - ``P(A>B|Z)``: fraction of pairs in which A > B (the same
+              cell, so the comparison is paired); ``P(B>A|Z)`` likewise.
+              Ties count for neither, so they may sum to less than 1;
+            - ``K(A>B|Z)``: log Bayes factor
+              ``log(P(A>B|Z) + 1e-7) - log(1 - P(A>B|Z) + 1e-7)``, natural
+              log; ``|K| >= 3.2`` is the usual significance threshold.
+              ``K(B>A|Z)`` likewise;
+            - ``MeanDelta(Substituted-Original)``: ``Mean(A) - Mean(B)``.
+
+            Then the intervention: ``InterventionType``, ``DonorGroup``,
+            ``RecipientGroup``, ``SamplingStrategy``, ``DonorComponents``
+            (comma-separated sorted component names); and the parameters of
+            the run, as in ``DifferentialAnalysis.between_two_groups``:
+            ``Component``, ``Modality``, ``UseCluster``,
+            ``ZSamplingSize``, ``XSamplingSize`` (the number actually
+            drawn) and ``RandomSeed``. The parameters let a table read back
+            from disk be matched to the analysis that produced it.
 
         Raises
         ------
         ValueError
-            If clusters are unknown/empty or ``donor_components`` contains unknown
+            If groups are unknown/empty or ``donor_components`` contains unknown
             names or resolves to an empty list.
         """
         obs = self.mdata[modality].obs
-        cluster_labels = obs[use_cluster]
-        if hasattr(cluster_labels, "cat"):
-            available_clusters = cluster_labels.cat.categories
+        group_labels = obs[use_cluster]
+        if hasattr(group_labels, "cat"):
+            available_groups = group_labels.cat.categories
         else:
-            available_clusters = pd.Index(cluster_labels.unique())
+            available_groups = pd.Index(group_labels.unique())
 
-        if donor_cluster not in available_clusters:
-            raise ValueError(f"Unknown donor cluster: {donor_cluster}")
-        if recipient_cluster not in available_clusters:
-            raise ValueError(f"Unknown recipient cluster: {recipient_cluster}")
+        if donor_group not in available_groups:
+            raise ValueError(f"Unknown donor group: {donor_group}")
+        if recipient_group not in available_groups:
+            raise ValueError(f"Unknown recipient group: {recipient_group}")
 
         if seed is not None:
             np.random.seed(seed)
@@ -277,26 +302,28 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             donor_components, component
         )
 
-        recipient_index = obs[obs[use_cluster] == recipient_cluster].index
+        recipient_index = obs[obs[use_cluster] == recipient_group].index
 
         if len(recipient_index) == 0:
-            raise ValueError(f"Recipient cluster '{recipient_cluster}' is empty.")
+            raise ValueError(f"Recipient group '{recipient_group}' is empty.")
+        if x_sampling_size is None:
+            x_sampling_size = len(recipient_index)
 
-        donor_mdata = self._get_cluster_mdata(donor_cluster, use_cluster, modality)
+        donor_mdata = self._get_group_mdata(donor_group, use_cluster, modality)
         donor_z_pools = self._encode_z_pool(
             donor_mdata, normalized_donor_components, batch_size
         )
 
         if all(len(v) == 0 for v in donor_z_pools.values()):
-            raise ValueError(f"Donor cluster '{donor_cluster}' is empty.")
+            raise ValueError(f"Donor group '{donor_group}' is empty.")
 
         batch_effect = self._build_batch_effect(batch_size)
 
         x_means_substituted_list: list[np.ndarray] = []
         x_means_original_list: list[np.ndarray] = []
-        for _ in tqdm(range(n_samples), desc=desc, leave=False):
+        for _ in tqdm(range(z_sampling_size), desc=desc, leave=False):
             recipient_mdata = self.sample_mdata_x(
-                recipient_index, x_sampling_size=len(recipient_index)
+                recipient_index, x_sampling_size=x_sampling_size
             )
             recipient_dataloader = self._make_dataloader(recipient_mdata, batch_size)
 
@@ -329,23 +356,27 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         result = self.compute_bayesian_factor(
             x_means_substituted, x_means_original, var_index
         )
-        result["InterventionType"] = "donor_pool_z_substitution"
-        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN] = (
-            donor_cluster
-        )
-        result[
-            Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
-        ] = recipient_cluster
-        result["SamplingStrategy"] = "donor_pool"
-        result["RandomSeed"] = seed
         result["MeanDelta(Substituted-Original)"] = (
             result["Mean(A)"] - result["Mean(B)"]
         )
+        result["InterventionType"] = "donor_pool_z_substitution"
+        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_GROUP_COLUMN] = (
+            donor_group
+        )
+        result[Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_GROUP_COLUMN] = (
+            recipient_group
+        )
+        result["SamplingStrategy"] = "donor_pool"
         result["DonorComponents"] = ",".join(sorted(normalized_donor_components))
-        result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
-        result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
-        result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] = use_cluster
-        result["NSamples"] = n_samples
+        self.record_run_parameters(
+            result,
+            component=component,
+            modality=modality,
+            use_cluster=use_cluster,
+            z_sampling_size=z_sampling_size,
+            x_sampling_size=x_sampling_size,
+            seed=seed,
+        )
 
         if sort_output:
             sort_key = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1)
@@ -359,7 +390,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         modality: str,
         use_cluster: str,
         donor_components: list[str] | None = None,
-        n_samples: int = 10,
+        z_sampling_size: int = 10,
+        x_sampling_size: int | None = None,
         seed: int | None = None,
         batch_size: int = 128,
         sort_output: bool = True,
@@ -368,7 +400,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
 
         For each unordered pair of clusters (A, B), runs two interventions:
         ``A -> B`` (substitute A's z into B) and ``B -> A`` (substitute B's
-        z into A), using ``between_clusters``. The ``donor_components``
+        z into A), using ``between_groups``. The ``donor_components``
         parameter controls which model components' z latent vectors are
         substituted.
 
@@ -383,10 +415,14 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         donor_components : list[str] | None, optional
             Model components whose z vectors are replaced by donor samples.
             Defaults to ``[component]``.
-        n_samples : int, optional
+        z_sampling_size : int, optional
             Monte-Carlo sampling rounds per intervention. Default ``10``.
+        x_sampling_size : int | None, optional
+            Recipient cells drawn per round. Defaults to ``None``: the
+            recipient cluster's size.
         seed : int | None, optional
-            NumPy random seed for reproducibility. Default ``None``.
+            NumPy random seed, applied at the start of every intervention.
+            Default ``None``.
         batch_size : int, optional
             Batch size for encoding/decoding. Default ``128``.
 
@@ -399,7 +435,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         Mapping[str, pd.DataFrame]
             Keys are ``"ClusterA->ClusterB"`` and ``"ClusterB->ClusterA"``.
             Values are Bayesian-factor tables with intervention metadata
-            (same columns as ``between_clusters``).
+            (same columns as ``between_groups``).
         """
         obs = self.mdata[modality].obs
         unique_clusters = obs[use_cluster].unique()
@@ -409,36 +445,21 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             combinations(unique_clusters, r=2),
             desc="Across clusters pairwise",
         ):
-            # Direction A -> B
-            key_ab = f"{cluster_a}->{cluster_b}"
-            results[key_ab] = self.between_clusters(
-                donor_cluster=cluster_a,
-                recipient_cluster=cluster_b,
-                component=component,
-                modality=modality,
-                use_cluster=use_cluster,
-                donor_components=donor_components,
-                n_samples=n_samples,
-                seed=seed,
-                batch_size=batch_size,
-                desc=f"{cluster_a}->{cluster_b}",
-                sort_output=sort_output,
-            )
-
-            # Direction B -> A
-            key_ba = f"{cluster_b}->{cluster_a}"
-            results[key_ba] = self.between_clusters(
-                donor_cluster=cluster_b,
-                recipient_cluster=cluster_a,
-                component=component,
-                modality=modality,
-                use_cluster=use_cluster,
-                donor_components=donor_components,
-                n_samples=n_samples,
-                seed=seed,
-                batch_size=batch_size,
-                desc=f"{cluster_b}->{cluster_a}",
-                sort_output=sort_output,
-            )
+            for donor, recipient in ((cluster_a, cluster_b), (cluster_b, cluster_a)):
+                key = f"{donor}->{recipient}"
+                results[key] = self.between_groups(
+                    donor_group=donor,
+                    recipient_group=recipient,
+                    component=component,
+                    modality=modality,
+                    use_cluster=use_cluster,
+                    donor_components=donor_components,
+                    z_sampling_size=z_sampling_size,
+                    x_sampling_size=x_sampling_size,
+                    seed=seed,
+                    batch_size=batch_size,
+                    desc=key,
+                    sort_output=sort_output,
+                )
 
         return results

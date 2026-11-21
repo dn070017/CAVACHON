@@ -251,12 +251,17 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
   * required: `False`.
   * defaults: `5`
   * type: `int`
-  * description: number of latent samples to draw per cell for the DEG test.
+  * description: number of sampling rounds.
 * `x_sampling_size`:
   * required: `False`.
   * defaults: `1000`
   * type: `int`
-  * description: number of decoded samples are drawn per latent sample.
+  * description: cells drawn (with replacement) from each group per round.
+* `seed`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `int | None`
+  * description: random seed for reproducibility.
 * `batch_size`:
   * required: `False`.
   * defaults: `128`
@@ -278,10 +283,12 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
 ## Hierarchical Differential Analysis
 The config for hierarchical differential analysis.
 
-Two modes are supported based on whether `donor_cluster` and `recipient_cluster` are provided:
+Two modes are supported based on whether `donor_group` and `recipient_group` are provided:
 
-- **Pairwise mode** (default): `donor_cluster` and `recipient_cluster` are both empty. Runs interventions between every pair of clusters automatically.
-- **Single-pair mode**: `donor_cluster` and `recipient_cluster` are both specified. Runs the intervention for that one pair only.
+- **Pairwise mode** (default): `donor_group` and `recipient_group` are both empty. Runs interventions between every pair of clusters automatically.
+- **Single-pair mode**: `donor_group` and `recipient_group` are both specified. Runs the intervention for that one pair only.
+
+The sampling parameters are the same as in [Differential Analysis](#differential-analysis).
 
 * `modality`:
   * required: `True`
@@ -295,27 +302,32 @@ Two modes are supported based on whether `donor_cluster` and `recipient_cluster`
   * required: `False`.
   * defaults: `""`
   * type: `str`
-  * description: cluster column used to define donor and recipient groups.
-* `donor_cluster`:
+  * description: column in `.obs` holding the group labels. Defaults to `cluster_<component>`.
+* `donor_group`:
   * required: `False`.
   * defaults: `""`
   * type: `str`
-  * description: cluster label of the donor group. When set together with `recipient_cluster`, runs single-pair mode. Leave empty for pairwise mode.
-* `recipient_cluster`:
+  * description: label of the donor group in `use_cluster`. When set together with `recipient_group`, runs single-pair mode. Leave empty for pairwise mode.
+* `recipient_group`:
   * required: `False`.
   * defaults: `""`
   * type: `str`
-  * description: cluster label of the recipient group. When set together with `donor_cluster`, runs single-pair mode. Leave empty for pairwise mode.
+  * description: label of the recipient group in `use_cluster`. When set together with `donor_group`, runs single-pair mode. Leave empty for pairwise mode.
 * `donor_components`:
   * required: `False`.
   * defaults: `None`
   * type: `List[str] | None`
-  * description: parent components whose latent values are substituted to control for hierarchy. Defaults to all `conditioned_on_z_hat` parents.
-* `n_samples`:
+  * description: components whose latent values are substituted by the donor's. Defaults to `[component]`.
+* `z_sampling_size`:
   * required: `False`.
   * defaults: `10`
   * type: `int`
-  * description: number of substituted samples per cell.
+  * description: number of sampling rounds. (`n_samples` is accepted as a deprecated name.)
+* `x_sampling_size`:
+  * required: `False`.
+  * defaults: `None`
+  * type: `int | None`
+  * description: recipient cells drawn (with replacement) per round. `None` draws as many as the recipient group has.
 * `seed`:
   * required: `False`.
   * defaults: `None`
@@ -331,57 +343,6 @@ Two modes are supported based on whether `donor_cluster` and `recipient_cluster`
   * defaults: `True`
   * type: `bool`
   * description: sort results by the maximum of the absolute Bayesian factors `K(A>B|Z)` and `K(B>A|Z)` in descending order.
-* `keep_only_significant`:
-  * required: `False`.
-  * defaults: `False`
-  * type: `bool`
-  * description: whether to filter the output to significant results only.
-
-[back to top](#config-hierarchy)
-&nbsp;
-## Hierarchical Differential Analysis
-The config for hierarchical differential analysis.
-* `modality`:
-  * required: `True`
-  * type: `str`
-  * description: which modality of the outputs of the component to used.
-* `component`:
-  * required: `True`
-  * type: `str`
-  * description: the outputs of which component to used.
-* `use_cluster`:
-  * required: `False`.
-  * defaults: `""`
-  * type: `str`
-  * description: cluster column used to define donor and recipient groups.
-* `donor_cluster`:
-  * required: `True`
-  * type: `str`
-  * description: cluster label of the donor group.
-* `recipient_cluster`:
-  * required: `True`
-  * type: `str`
-  * description: cluster label of the recipient group.
-* `donor_components`:
-  * required: `False`.
-  * defaults: `None`
-  * type: `List[str] | None`
-  * description: parent components whose latent values are substituted to control for hierarchy. Defaults to all `conditioned_on_z_hat` parents.
-* `n_samples`:
-  * required: `False`.
-  * defaults: `10`
-  * type: `int`
-  * description: number of substituted samples per cell.
-* `seed`:
-  * required: `False`.
-  * defaults: `None`
-  * type: `int | None`
-  * description: random seed for reproducibility.
-* `batch_size`:
-  * required: `False`.
-  * defaults: `128`
-  * type: `int`
-  * description: batch size used during sampling.
 
 [back to top](#config-hierarchy)
 &nbsp;

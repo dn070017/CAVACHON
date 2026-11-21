@@ -84,6 +84,6 @@ analysis:
       use_cluster: cluster_RNA_integrated
       donor_components:
         - ATAC
-      n_samples: 10
+      z_sampling_size: 10
       seed: 42
       batch_size: 128

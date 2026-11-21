@@ -37,6 +37,7 @@ def deg_cfg(**overrides):
         group_b="",
         z_sampling_size=3,
         x_sampling_size=50,
+        seed=5,
         batch_size=12,
         keep_only_significant=False,
         sort_output=True,
@@ -107,6 +108,7 @@ def test_deg_pairwise_mode(deps, to_csv_calls):
         batch_size=12,
         keep_only_significant=True,
         sort_output=False,
+        seed=5,
     )
     analysis.between_two_groups.assert_not_called()
     assert list(table[GROUP_A]) == ["a"] * 3
@@ -152,6 +154,7 @@ def test_deg_single_pair_mode(deps, to_csv_calls):
         group_a_label="a",
         group_b_label="c",
         use_cluster="cluster_comp",
+        seed=5,
     )
     deps.DifferentialAnalysis.return_value.across_clusters_pairwise.assert_not_called()
     # keyed by (modality, component, use_cluster) like the pairwise mode
@@ -290,10 +293,11 @@ def hdeg_cfg(**overrides):
         modality="RNA",
         component="Child Comp",
         use_cluster="cluster_child",
-        donor_cluster="",
-        recipient_cluster="",
+        donor_group="",
+        recipient_group="",
         donor_components=None,
-        n_samples=4,
+        z_sampling_size=4,
+        x_sampling_size=None,
         seed=7,
         batch_size=21,
         sort_output=False,
@@ -328,21 +332,22 @@ def test_hdeg_constructs_analysis(deps, makedirs):
 def test_hdeg_single_pair_mode(deps, to_csv_calls):
     table = deg_table()
     analysis = deps.HierarchicalDifferentialAnalysis.return_value
-    analysis.between_clusters.return_value = table
+    analysis.between_groups.return_value = table
     cfg = hdeg_cfg(
-        donor_cluster="Cluster 001",
-        recipient_cluster="T/NK",
+        donor_group="Cluster 001",
+        recipient_group="T/NK",
         donor_components=["p1", "p2"],
     )
     hdeg_workflow([cfg]).perform_hierarchical_differential_analysis()
 
-    analysis.between_clusters.assert_called_once_with(
-        donor_cluster="Cluster 001",
-        recipient_cluster="T/NK",
+    analysis.between_groups.assert_called_once_with(
+        donor_group="Cluster 001",
+        recipient_group="T/NK",
         component="Child Comp",
         modality="RNA",
         use_cluster="cluster_child",
-        n_samples=4,
+        z_sampling_size=4,
+        x_sampling_size=None,
         seed=7,
         batch_size=21,
         donor_components=["p1", "p2"],
@@ -372,12 +377,13 @@ def test_hdeg_pairwise_mode(deps, to_csv_calls):
         modality="RNA",
         use_cluster="cluster_child",
         donor_components=None,
-        n_samples=4,
+        z_sampling_size=4,
+        x_sampling_size=None,
         seed=7,
         batch_size=21,
         sort_output=False,
     )
-    analysis.between_clusters.assert_not_called()
+    analysis.between_groups.assert_not_called()
     prefix = (
         "/out/hierarchical_differential_analysis/rna_from_child_comp_substitute_all_"
     )
@@ -391,7 +397,7 @@ def test_hdeg_pairwise_when_only_donor_given(deps):
     analysis = deps.HierarchicalDifferentialAnalysis.return_value
     analysis.across_clusters_pairwise.return_value = {}
     hdeg_workflow(
-        [hdeg_cfg(donor_cluster="a")]
+        [hdeg_cfg(donor_group="a")]
     ).perform_hierarchical_differential_analysis()
-    analysis.between_clusters.assert_not_called()
+    analysis.between_groups.assert_not_called()
     analysis.across_clusters_pairwise.assert_called_once()

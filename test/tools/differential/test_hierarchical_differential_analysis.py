@@ -28,8 +28,8 @@ from test.tools.differential.conftest import (
     make_mdata,
 )
 
-DONOR_COL = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_CLUSTER_COLUMN
-RECIPIENT_COL = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_CLUSTER_COLUMN
+DONOR_COL = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_DONOR_GROUP_COLUMN
+RECIPIENT_COL = Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_RECIPIENT_GROUP_COLUMN
 
 
 def make_hda(mdata, model=None, **kwargs):
@@ -100,19 +100,19 @@ def test_require_dataset():
     assert hda._require_dataset(MagicMock(dataset=sentinel)) is sentinel
 
 
-def test_get_cluster_mdata_subsets_every_modality():
+def test_get_group_mdata_subsets_every_modality():
     X = np.arange(4, dtype=float).reshape(-1, 1) * np.ones((1, 2))
     mdata = make_mdata(X, clusters=["x", "y", "x", "y"], atac=X[:, :1] * 10)
     hda = make_hda(mdata)
-    sub = hda._get_cluster_mdata("y", "cluster", "RNA")
+    sub = hda._get_group_mdata("y", "cluster", "RNA")
     assert set(sub.mod) == {"RNA", "ATAC"}
     assert list(sub["RNA"].obs_names) == ["cell1", "cell3"]
     np.testing.assert_array_equal(sub["ATAC"].X[:, 0], [10, 30])
 
 
-def test_get_cluster_mdata_unknown_cluster_is_empty():
+def test_get_group_mdata_unknown_cluster_is_empty():
     hda = make_hda(donor_recipient_mdata())
-    assert hda._get_cluster_mdata("zzz", "cluster", "RNA")["RNA"].n_obs == 0
+    assert hda._get_group_mdata("zzz", "cluster", "RNA")["RNA"].n_obs == 0
 
 
 def test_normalize_donor_components():
@@ -139,7 +139,7 @@ def test_encode_z_pool_stacks_batches_per_component():
 
 def test_encode_z_pool_empty_mdata():
     hda = make_hda(donor_recipient_mdata())
-    empty = hda._get_cluster_mdata("zzz", "cluster", "RNA")
+    empty = hda._get_group_mdata("zzz", "cluster", "RNA")
     pools = hda._encode_z_pool(empty, ["a", "b"], batch_size=4)
     assert pools["a"].shape == (0, 0) and pools["b"].shape == (0, 0)
 
@@ -199,14 +199,14 @@ def test_compute_substituted_x_means_keeps_non_donor_components():
 
 
 # --------------------------------------------------------------------------
-# between_clusters
+# between_groups
 # --------------------------------------------------------------------------
 
 
-def test_between_clusters_substitution_statistics():
+def test_between_groups_substitution_statistics():
     hda = make_hda(donor_recipient_mdata())
-    result = hda.between_clusters(
-        "d", "r", "a", "RNA", "cluster", n_samples=2, seed=3, sort_output=False
+    result = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=2, seed=3, sort_output=False
     )
     assert list(result.index) == ["g0", "g1", "g2"]
     np.testing.assert_allclose(result["Mean(A)"], [5, 0, 1])  # substituted
@@ -226,45 +226,57 @@ def test_between_clusters_substitution_statistics():
     assert (
         result[Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN] == "cluster"
     ).all()
-    assert (result["NSamples"] == 2).all()
+    # same sampling columns as DEG; XSamplingSize is the recipient size
+    assert (result["ZSamplingSize"] == 2).all()
+    assert (result["XSamplingSize"] == 2).all()
 
 
-def test_between_clusters_substituting_non_decoded_component_is_noop():
+def test_between_groups_substituting_non_decoded_component_is_noop():
     hda = make_hda(donor_recipient_mdata())
-    result = hda.between_clusters(
-        "d", "r", "a", "RNA", "cluster", n_samples=1, donor_components=["b"]
+    result = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=1, donor_components=["b"]
     )
     np.testing.assert_allclose(result["MeanDelta(Substituted-Original)"], 0)
     assert (result["DonorComponents"] == "b").all()
 
 
-def test_between_clusters_donor_components_column_is_sorted():
+def test_between_groups_donor_components_column_is_sorted():
     hda = make_hda(donor_recipient_mdata())
-    result = hda.between_clusters(
-        "d", "r", "a", "RNA", "cluster", n_samples=1, donor_components=["b", "a", "b"]
+    result = hda.between_groups(
+        "d",
+        "r",
+        "a",
+        "RNA",
+        "cluster",
+        z_sampling_size=1,
+        donor_components=["b", "a", "b"],
     )
     assert (result["DonorComponents"] == "a,b").all()
 
 
-def test_between_clusters_sorts_by_max_abs_bayes_factor():
+def test_between_groups_sorts_by_max_abs_bayes_factor():
     hda = make_hda(donor_recipient_mdata())
-    result = hda.between_clusters("d", "r", "a", "RNA", "cluster", n_samples=1)
+    result = hda.between_groups("d", "r", "a", "RNA", "cluster", z_sampling_size=1)
     k = result[["K(A>B|Z)", "K(B>A|Z)"]].abs().max(axis=1).to_numpy()
     assert (np.diff(k) <= 0).all()
 
 
-def test_between_clusters_seed_is_reproducible(monkeypatch):
+def test_between_groups_seed_is_reproducible(monkeypatch):
     # random per-row noise so the random choices matter
     X = np.random.default_rng(0).random((8, 3))
     mdata = make_mdata(X, clusters=["d"] * 4 + ["r"] * 4)
     hda = make_hda(mdata)
-    first = hda.between_clusters("d", "r", "a", "RNA", "cluster", n_samples=2, seed=7)
+    first = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=2, seed=7
+    )
     np.random.seed(123)
-    second = hda.between_clusters("d", "r", "a", "RNA", "cluster", n_samples=2, seed=7)
+    second = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=2, seed=7
+    )
     pd.testing.assert_frame_equal(first, second)
 
 
-def test_between_clusters_uses_recipient_size_per_sample(monkeypatch):
+def test_between_groups_uses_recipient_size_per_sample(monkeypatch):
     hda = make_hda(donor_recipient_mdata())
     sizes = []
     real = hda.sample_mdata_x
@@ -274,43 +286,81 @@ def test_between_clusters_uses_recipient_size_per_sample(monkeypatch):
         return real(index, x_sampling_size=x_sampling_size)
 
     monkeypatch.setattr(hda, "sample_mdata_x", spy)
-    hda.between_clusters("d", "r", "a", "RNA", "cluster", n_samples=3, batch_size=5)
+    hda.between_groups("d", "r", "a", "RNA", "cluster", z_sampling_size=3, batch_size=5)
     assert sizes == [(["cell3", "cell4"], 2)] * 3
     assert all(dl.batch_size == 5 for dl in FakeDataLoader.instances)
 
 
+def test_between_groups_x_sampling_size(monkeypatch):
+    hda = make_hda(donor_recipient_mdata())
+    sizes = []
+    real = hda.sample_mdata_x
+
+    def spy(index, x_sampling_size):
+        sizes.append(x_sampling_size)
+        return real(index, x_sampling_size=x_sampling_size)
+
+    monkeypatch.setattr(hda, "sample_mdata_x", spy)
+    result = hda.between_groups(
+        "d", "r", "a", "RNA", "cluster", z_sampling_size=2, x_sampling_size=7
+    )
+    assert sizes == [7, 7]
+    assert (result["XSamplingSize"] == 7).all()
+
+
+def test_run_parameter_columns_match_differential_analysis(monkeypatch):
+    # DEG and HDEG record the run with the same columns, in the same order
+    mdata = donor_recipient_mdata()
+    hdeg = make_hda(mdata).between_groups("d", "r", "a", "RNA", "cluster", seed=1)
+    da = DifferentialAnalysis(mdata, identity_model(3))
+    monkeypatch.setattr(da, "compute_x_means", lambda **kw: np.zeros((1, 3)))
+    deg = da.between_two_groups(
+        ["cell0"], ["cell3"], "a", "RNA", use_cluster="cluster", seed=1
+    )
+    run_columns = [
+        Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_Z_SAMPLING_SIZE_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN,
+    ]
+    assert list(hdeg.columns[-6:]) == run_columns
+    assert list(deg.columns[-6:]) == run_columns
+
+
 @pytest.mark.parametrize(
     "donor, recipient, match",
-    [("x", "r", "Unknown donor cluster"), ("d", "x", "Unknown recipient cluster")],
+    [("x", "r", "Unknown donor group"), ("d", "x", "Unknown recipient group")],
 )
-def test_between_clusters_unknown_cluster_raises(donor, recipient, match):
+def test_between_groups_unknown_cluster_raises(donor, recipient, match):
     hda = make_hda(donor_recipient_mdata())
     with pytest.raises(ValueError, match=match):
-        hda.between_clusters(donor, recipient, "a", "RNA", "cluster")
+        hda.between_groups(donor, recipient, "a", "RNA", "cluster")
 
 
-def test_between_clusters_empty_recipient_category_raises():
+def test_between_groups_empty_recipient_category_raises():
     hda = make_hda(donor_recipient_mdata(categorical=True, extra_categories=("e",)))
-    with pytest.raises(ValueError, match="Recipient cluster 'e' is empty"):
-        hda.between_clusters("d", "e", "a", "RNA", "cluster")
+    with pytest.raises(ValueError, match="Recipient group 'e' is empty"):
+        hda.between_groups("d", "e", "a", "RNA", "cluster")
 
 
-def test_between_clusters_empty_donor_category_raises():
+def test_between_groups_empty_donor_category_raises():
     hda = make_hda(donor_recipient_mdata(categorical=True, extra_categories=("e",)))
-    with pytest.raises(ValueError, match="Donor cluster 'e' is empty"):
-        hda.between_clusters("e", "r", "a", "RNA", "cluster")
+    with pytest.raises(ValueError, match="Donor group 'e' is empty"):
+        hda.between_groups("e", "r", "a", "RNA", "cluster")
 
 
-def test_between_clusters_unknown_donor_component_raises():
+def test_between_groups_unknown_donor_component_raises():
     hda = make_hda(donor_recipient_mdata())
     with pytest.raises(ValueError, match="Unknown donor component"):
-        hda.between_clusters("d", "r", "a", "RNA", "cluster", donor_components=["zzz"])
+        hda.between_groups("d", "r", "a", "RNA", "cluster", donor_components=["zzz"])
 
 
-def test_between_clusters_missing_cluster_column_raises():
+def test_between_groups_missing_cluster_column_raises():
     hda = make_hda(donor_recipient_mdata())
     with pytest.raises(KeyError):
-        hda.between_clusters("d", "r", "a", "RNA", "nope")
+        hda.between_groups("d", "r", "a", "RNA", "nope")
 
 
 # --------------------------------------------------------------------------
@@ -322,16 +372,16 @@ def test_across_clusters_pairwise_runs_both_directions(monkeypatch):
     mdata = make_mdata(np.zeros((3, 2)), clusters=["x", "y", "z"])
     hda = make_hda(mdata)
     spy = MagicMock(
-        side_effect=lambda **kw: f"{kw['donor_cluster']}>{kw['recipient_cluster']}"
+        side_effect=lambda **kw: f"{kw['donor_group']}>{kw['recipient_group']}"
     )
-    monkeypatch.setattr(hda, "between_clusters", spy)
+    monkeypatch.setattr(hda, "between_groups", spy)
 
     results = hda.across_clusters_pairwise(
         "a",
         "RNA",
         "cluster",
         donor_components=["b"],
-        n_samples=4,
+        z_sampling_size=4,
         seed=9,
         batch_size=16,
         sort_output=False,
@@ -340,13 +390,14 @@ def test_across_clusters_pairwise_runs_both_directions(monkeypatch):
     assert results["y->x"] == "y>x"
     kw = spy.call_args_list[0].kwargs
     assert kw == dict(
-        donor_cluster="x",
-        recipient_cluster="y",
+        donor_group="x",
+        recipient_group="y",
         component="a",
         modality="RNA",
         use_cluster="cluster",
         donor_components=["b"],
-        n_samples=4,
+        z_sampling_size=4,
+        x_sampling_size=None,
         seed=9,
         batch_size=16,
         desc="x->y",
@@ -361,7 +412,9 @@ def test_across_clusters_pairwise_single_cluster_is_empty():
 
 def test_across_clusters_pairwise_end_to_end():
     hda = make_hda(donor_recipient_mdata())
-    results = hda.across_clusters_pairwise("a", "RNA", "cluster", n_samples=1, seed=0)
+    results = hda.across_clusters_pairwise(
+        "a", "RNA", "cluster", z_sampling_size=1, seed=0
+    )
     np.testing.assert_allclose(
         results["d->r"].loc[["g0", "g1", "g2"], "MeanDelta(Substituted-Original)"],
         [5, -5, 0],

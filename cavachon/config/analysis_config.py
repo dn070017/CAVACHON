@@ -1,4 +1,5 @@
-from typing import List, Literal, Optional
+import warnings
+from typing import Any, List, Literal, Optional
 
 from pydantic import field_validator, model_validator
 
@@ -113,6 +114,7 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
     group_b: str = ""
     z_sampling_size: int = 5
     x_sampling_size: int = 1000
+    seed: Optional[int] = None
     batch_size: int = 128
     keep_only_significant: bool = False
     sort_output: bool = True
@@ -127,27 +129,47 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
 class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     """Hierarchical differential expression analysis configuration.
 
-    Two modes are supported based on whether ``donor_cluster`` and
-    ``recipient_cluster`` are provided:
+    Two modes are supported based on whether ``donor_group`` and
+    ``recipient_group`` are provided:
 
-    - **Pairwise mode** (default): both ``donor_cluster`` and
-      ``recipient_cluster`` are empty. The workflow calls
+    - **Pairwise mode** (default): both ``donor_group`` and
+      ``recipient_group`` are empty. The workflow calls
       ``across_clusters_pairwise``, running interventions between every
       pair of clusters automatically.
-    - **Single-pair mode**: both ``donor_cluster`` and
-      ``recipient_cluster`` are specified. The workflow calls
-      ``between_clusters`` for that one pair only.
+    - **Single-pair mode**: both ``donor_group`` and
+      ``recipient_group`` are specified. The workflow calls
+      ``between_groups`` for that one pair only.
+
+    The sampling parameters match the differential analysis:
+    ``z_sampling_size`` sampling rounds, ``x_sampling_size`` recipient
+    cells drawn per round (None: as many as the recipient group has) and
+    ``seed``. ``n_samples`` is the deprecated name of
+    ``z_sampling_size``.
 
     """
 
     use_cluster: str = ""
-    donor_cluster: str = ""
-    recipient_cluster: str = ""
+    donor_group: str = ""
+    recipient_group: str = ""
     donor_components: Optional[List[TensorflowCompatibleStr]] = None
-    n_samples: int = 10
+    z_sampling_size: int = 10
+    x_sampling_size: Optional[int] = None
     seed: Optional[int] = None
     batch_size: int = 128
     sort_output: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _rename_n_samples(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "n_samples" in data:
+            warnings.warn(
+                "n_samples is deprecated; use z_sampling_size.",
+                DeprecationWarning,
+            )
+            data = dict(data)
+            n_samples = data.pop("n_samples")
+            data.setdefault("z_sampling_size", n_samples)
+        return data
 
     @model_validator(mode="after")
     def _default_use_cluster(
