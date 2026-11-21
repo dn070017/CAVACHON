@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🔴 Open bug affecting results | [`test/workflow`](../../test/workflow) | 89 | 1 | 100% | Very high: depends on 10 packages, used by 1 |
+| ✅ No open bugs | [`test/workflow`](../../test/workflow) | 99 | 0 | 100% | Very high: depends on 10 packages, used by 1 |
 
 - **Depends on:** config, dataloader, environment, filter, io, modality, model, scheduler, tools, utils
 - **Used by:** app
@@ -14,12 +14,13 @@
 
 ## Open bugs (strict xfails)
 
-| # | Location | Issue | Impact |
-|---|---|---|---|
-| W1 | `workflow.py:625-635` | **Differential attribution uses every DEG/HDEG table in the folder**, including tables from other components and modalities, and runs them through its own component and `use_cluster`. | **Yes**: silently wrong attribution output when 2+ DEG/HDEG entries for different components exist |
+None.
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="w1"></a>**W1** (`perform_differential_attribution_analysis`): differential attribution used every DEG/HDEG table in the folder, including tables from other components, modalities and cluster annotations, and ran them through its own component and `use_cluster` (silently wrong attribution). The DEG/HDEG tables now record the analysis that produced them (`Component`, `Modality`, `UseCluster`; see [tools: differential](tools/differential.md#provenance-columns)), and the workflow attributes only the tables whose values match the entry (`Workflow.is_table_from_analysis`, compared as strings since a TSV read-back may parse names as numbers).
+  - Tables written before this change have no provenance columns. They are **skipped with a RuntimeWarning** telling how many, instead of being guessed from the filename (lowercased, and without `use_cluster`). Rerun the differential analysis to attribute them.
+  - When no table matches, the entry is skipped with a message naming the component, modality and `use_cluster`.
 - ✅ (2026-11-21) **W2** (`perform_differential_analysis`, `perform_differential_attribution_analysis`): group labels (from the config or `str()`-ed from DEG tables) were compared to the raw obs column, so integer-coded annotations gave empty groups. The obs column is now compared as strings. Zero-padded labels (`"01"` vs `1`) still don't match, since a TSV read-back loses the padding.
 - ✅ (2026-11-21) **W7** (`visualize_embedding`): a `color_by` of the form `<obsm_key>/<index>` put a `/` in the embedding filename. It is replaced with `_`, as in the other output names.
 - ✅ **M5** (`workflow.py:242-251`): positional arguments to `SequentialTrainingScheduler` were swapped (`batch_effect_colnames` ↔ `distribution_names`). They are passed by keyword now.

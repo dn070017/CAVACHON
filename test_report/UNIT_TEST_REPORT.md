@@ -1,8 +1,8 @@
 # Unit Test Report
 
-Updated: 2026-11-16 · Branch: `feature/attribution_analysis`
+Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1743 passed, 28 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1753 passed, 27 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -26,8 +26,8 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 198 | 4 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
 | [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
-| [workflow](packages/workflow.md) | 🔴 | 🔴 Very high | 10 | 1 | 89 | 1 | 100% |
-| **Total** | | | | | **1743** | **28** | |
+| [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 99 | 0 | 100% |
+| **Total** | | | | | **1753** | **27** | |
 
 **Status**
 - ✅ No open bugs.
@@ -88,7 +88,6 @@ Open bugs that silently change results on a normal run:
 | [T4](packages/tools/differential.md#t4) | tools | `keep_only_significant` keeps features with no difference at all. |
 | [T9](packages/tools/visualization_enrichment.md#t9) | tools | `attribution_score` overwrites its own figures when there are 2+ `with_respect_to`. |
 | [T12](packages/tools/visualization_enrichment.md#t12) | tools | `EnrichmentAnalysis.run()` filters the gene ranking with the gene-set threshold. Needs the author's call. |
-| [W1](packages/workflow.md#open-bugs-strict-xfails) | workflow | Differential attribution uses every DEG/HDEG table in the folder, including other components'. |
 
 ## Layout
 

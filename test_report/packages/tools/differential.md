@@ -13,6 +13,17 @@ Tests: [`test/tools/differential`](../../../test/tools/differential) — 74 pass
 - Hierarchical donor substitution: the same donor cell is used for every donor component, and other components are untouched.
 - `DifferentialAttributionAnalysis` integrated gradients: exact for a linear model, completeness holds, a closed-form left-Riemann value for a quadratic link, and signed/absolute contributions each sum to 1 (0 instead of NaN when nothing changes).
 
+## Provenance columns
+
+(2026-11-21) Every DEG/HDEG table records the analysis that produced it, on every row, so a table read back from disk can be matched to its analysis (used by the workflow's differential attribution, see [W1](../workflow.md#w1)):
+
+| Table | Columns added |
+|---|---|
+| DEG (`between_two_groups`, and both `across_clusters*`) | `Component`, `Modality`, `ZSamplingSize`, `XSamplingSize`, and `UseCluster` when given (new optional `use_cluster` argument; the `across_clusters*` methods pass it) |
+| HDEG (`between_clusters`, `across_clusters_pairwise`) | `Component`, `Modality`, `UseCluster`, `NSamples` (next to the existing `RandomSeed` and `DonorComponents`) |
+
+The column names of `Component`, `Modality` and `UseCluster` are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN`. Extra columns don't affect the consumers: attribution and enrichment read only their ranking column and the group columns. Checked with real DEG/HDEG tables written to disk and read back through `EnrichmentAnalysis.find_deg_tables`.
+
 ## Open bugs (strict xfails)
 
 ### T4
