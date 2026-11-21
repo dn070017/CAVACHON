@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1793 passed, 17 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1804 passed, 14 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 198 | 4 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 255 | 4 | 100% |
+| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 266 | 1 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1793** | **17** | |
+| **Total** | | | | | **1804** | **14** | |
 
 **Status**
 - ✅ No open bugs.
@@ -83,8 +83,6 @@ Open bugs that silently change results on a normal run:
 | # | Package | Issue |
 |---|---|---|
 | [T1](packages/tools/cluster_attribution.md#t1) | tools | Integrated gradients in `AttributionAnalysis` carry an extra factor of alpha, so every attribution score is shrunk. |
-| [T2](packages/tools/cluster_attribution.md#t2) | tools | Child z_hat cluster variance drops cross terms in `_recombine_gmm_parameters`. |
-| [T3](packages/tools/cluster_attribution.md#t3) | tools | Cluster labels can stop matching their `obsm` columns when a prior component wins no cells. |
 
 ## Layout
 

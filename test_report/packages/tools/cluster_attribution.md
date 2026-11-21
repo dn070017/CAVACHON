@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `cluster_analysis.py`, `attribution_analysis.py`
-Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) — 43 passed, 4 open bugs.
+Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) — 54 passed, 1 open bug.
 
 **Mocked:**
 - cluster_analysis: `DataLoader` (MagicMock); the two distribution classes are fakes built on real tfp `MultivariateNormalDiag` / `MixtureSameFamily` that record their inputs.
@@ -13,6 +13,7 @@ Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attributio
 - GMM parameter extraction, Bhattacharyya distance, moment-matched merging (including transitive chains and the agglomerative `max_k` cap).
 - Cluster posteriors: rows logsumexp to 0, match the analytic sigmoid(2z) for two 1-D clusters, and don't depend on batch size.
 - z vs z_hat priors, including the root fallback.
+- Integrated z_hat clusters: means, marginal variances and weights of every (parent, child) combination, the encoder called on the cluster means in inference mode; parent z_hat GMMs for root, learned-prior and nested (recursive) parents; E[scale²] over the sigma points for an input-dependent scale.
 - KNN proportions and enrichment scores, contingency table, classification metrics.
 - Attribution target: parent → child conditional propagation, stopping at the requested component; `selected_variables` order; batch-size invariance.
 
@@ -25,25 +26,11 @@ Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attributio
 - Fix: take the gradient at the point alpha·z (e.g. make the interpolated point the watched variable). `DifferentialAttributionAnalysis` does this correctly.
 - **Impact: yes**: every attribution score is shrunk, nonlinearly for nonlinear decoders.
 
-### T2
-
-`cluster_analysis.py:486` — `_recombine_gmm_parameters` computes the child variance as `(W_r**2) @ (W_child**2)` instead of `(W_r @ W_child)**2`, dropping the cross terms of the composed linear map.
-- Failing input: W_r=[[1,1]], W_child=[[1],[1]], child σ²=1, no parents → 2, expected 4.
-- **Impact: yes**: wrong z_hat cluster covariances for child components.
-
-### T3
-
-`cluster_analysis.py:546-566` — `_remove_small_clusters`: if a cluster is never the argmax and nothing is removed, its logpy_z column stays, but labels are renumbered 0..k, so `obs` labels and `obsm` columns disagree. Empty columns are dropped only when some other cluster is removed.
-- Failing input: rows [[.9,.05,.05]×2, [.05,.05,.9]×2], `min_n_obs=1` → labels [0,0,1,1], argmax of the returned logpy_z [0,0,2,2].
-- **Impact: yes**, when a prior component wins no cells.
-
-### T6
-
-`attribution_analysis.py:183` — `compute_attribution_target_batch` returns `None` for a component not in `model.component_configs`; `compute_integrated_gradient` then fails with an unclear AttributeError on `.shape`. Marked with `# type: ignore[return]`.
-- **Impact:** only on a typo in the component name.
-
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t2"></a>**T2** (`_recombine_gmm_parameters`): the child variance was `(W_r**2) @ (W_child**2)` instead of `(W_r @ W_child)**2`, dropping the cross terms of the composed map (W_r=[[1,1]], W_child=[[1],[1]], σ²=1 gave 2, not 4). The weights are no longer sliced by hand: the hierarchical encoder is run on the cluster means of every (parent, child) combination, so the model gives the z_hat loc, and the Jacobian of the loc carries the prior variances into z_hat. Each cluster gets the **marginal** variance `(J²)ᵀσ²_x + E[scale_diag²]`, the spread of z_hat over the cells of that cluster (the model's scale_diag alone is the per-cell conditional and would make the clusters far too tight). This also picks up the loc bias and the progressive scaler, which the hand-written version ignored. The z_hat scale_diag depends on the input once its weight is trained (`initialize_scale_diag` only sets its start), so `E[scale_diag²]` is taken over the 2d sigma points `μ ± √(d·σ²) eᵢ` (unscented transform; exact when scale² is at most quadratic, and when it is constant); the scale at the cluster mean alone underestimated the variance by up to ~50%. Checked against a real `HierarchicalEncoder` with a trained-like (random) scale weight by Monte Carlo: means and variances agree within 1% for every combination. `compute_integrated_cluster_log_probability` now raises a ValueError when the component does not set `reparameterize_z_hat` (z_hat is then not a distribution) or has `conditioned_on_z` parents (not supported); `Component.reparameterize_z_hat` stores the flag. The parents now enter with their **z_hat** GMM (`_z_hat_gmm_parameters`): the z prior for a root (z_hat is z), the learned z_hat prior with `learn_z_hat_priors`, otherwise their own integrated GMM, built recursively through their parents and merged. Before, every parent used its z prior, which only held for root parents.
+- ✅ (2026-11-21) <a id="t3"></a>**T3** (`_remove_small_clusters`): a cluster that no cell picked kept its logpy_z column when nothing else was removed, while the labels were renumbered, so `obs` labels and `obsm` columns disagreed. Columns of empty clusters are now dropped at the end as well.
+- ✅ (2026-11-21) <a id="t6"></a>**T6** (`compute_attribution_target_batch`): an unknown component fell through the loop and returned `None`, and `compute_integrated_gradient` then failed with an unclear AttributeError. It now raises `KeyError("'name' is not a component of the model.")`; the `# type: ignore[return]` is gone.
 - ✅ (2026-11-21) **T5**: the `None` defaults of `batch_effect_colnames` / `distribution_names` crashed `DataLoader`; they are now passed as empty mappings. See [differential](differential.md#t5).
 
 ## Worth a look
@@ -52,4 +39,4 @@ Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attributio
 - `compute_attribution_target_batch` scales **every** component's z by alpha, not only `with_respect_to`, so the IG baseline is "all latents zero".
 - `compute_integrated_gradient` / `compute_attribution_target_batch` are annotated `np.ndarray` but return `tf.Tensor`.
 - `compute_neighbors_with_same_annotations` writes `obsm["z_custom"]` into the user's MuData; with a single cluster the enrichment score divides by zero.
-- `compute_contingency_matrix` docstring says "var" but the code uses obs; the F1 score adds 1e-3 to its denominator; `_recombine_gmm_parameters` uses the parents' z prior for their z_hat, which only holds for root parents.
+- `compute_contingency_matrix` docstring says "var" but the code uses obs; the F1 score adds 1e-3 to its denominator.

@@ -18,6 +18,7 @@ from cavachon.distributions.mixture_multivariate_normal_diag_distribution import
 from cavachon.distributions.multivariate_normal_diag_distribution import (
     MultivariateNormalDiagDistribution,
 )
+from cavachon.environment.constants import Constants
 
 
 class ClusterAnalysis:
@@ -461,81 +462,108 @@ class ClusterAnalysis:
     def _recombine_gmm_parameters(child_params, parent_params, hierarchical_encoder):
         """Recombine child and parent GMM parameters through hierarchical encoder.
 
-        Computes the integrated GMM parameters in z_hat space by projecting
-        parent and child GMM parameters through the learned hierarchical encoder
-        weights.
+        Computes the integrated GMM in z_hat space, with one cluster for
+        every combination of parent and child clusters. The inputs x of
+        the hierarchical encoder (child z, then the parents' z_hat in the
+        order of ``conditioned_on_z_hat``) follow the cluster Gaussian
+        N(mu_x, sigma2_x) of the combination, and each cluster is the
+        Gaussian with the marginal mean and variance of z_hat::
+
+            mu_zhat     = loc(mu_x)
+            sigma2_zhat = (J**2) @ sigma2_x + E[scale_diag(x)**2]
+
+        loc is a linear map of x when ``reparameterize_z_hat``, so the
+        mean and the first term (J, its Jacobian) are exact. scale_diag
+        can depend on x; E[scale_diag**2] is taken over the 2d sigma
+        points mu_x ± sqrt(d * sigma2_x) e_i (unscented transform,
+        weights 1/(2d)), exact when scale_diag**2 is at most quadratic
+        in x.
 
         Parameters
         ----------
         child_params : dict
             Child component GMM parameters (from _extract_gmm_parameters).
         parent_params : list of dict
-            Parent component GMM parameters (from _extract_gmm_parameters).
+            GMM parameters of the parents' z_hat (from
+            _z_hat_gmm_parameters), in the order of
+            ``conditioned_on_z_hat``.
         hierarchical_encoder : HierarchicalEncoder
-            The hierarchical encoder with r_network and b_network.
+            The hierarchical encoder of the child component.
 
         Returns
         -------
         tuple
             (mu_zhat, sigma2_zhat, pi_zhat) for the integrated GMM.
         """
-        r_weights = hierarchical_encoder.r_network.get_weights()
-        b_weights = hierarchical_encoder.b_network.get_weights()
-        W_r = r_weights[0]
-        # b_network is the z_hat parameterizer: [loc_weight, loc_bias, ...]
-        W_b = b_weights[0]
-
-        parent_dims = [p["D"] for p in parent_params]
-        W_parent_parts = []
-        offset = 0
-        for dim in parent_dims:
-            W_parent_parts.append(W_b[offset : offset + dim, :])
-            offset += dim
-        W_child_raw = W_b[offset:, :]
-        W_child_effective = W_r @ W_child_raw
-        W_child_effective_sigma2 = (W_r**2) @ (W_child_raw**2)
-
-        # constant shift of the loc from the biases of r and b
-        mu_offset = b_weights[1].reshape(-1)
-        if len(r_weights) > 1:
-            mu_offset = mu_offset + r_weights[1] @ W_child_raw
-
         cluster_ranges = [range(p["K"]) for p in parent_params] + [
             range(child_params["K"])
         ]
-        n_clusters = np.prod([len(r) for r in cluster_ranges], dtype=int)
-        D_out = W_b.shape[1]
+        combinations = list(product(*cluster_ranges))
+        # inputs of the encoder: child z first, then the parents' z_hat
+        mu_x = np.array(
+            [
+                np.concatenate(
+                    [child_params["mu"][c[-1]]]
+                    + [p["mu"][c[i]] for i, p in enumerate(parent_params)]
+                )
+                for c in combinations
+            ]
+        )
+        sigma2_x = np.array(
+            [
+                np.concatenate(
+                    [child_params["sigma2"][c[-1]]]
+                    + [p["sigma2"][c[i]] for i, p in enumerate(parent_params)]
+                )
+                for c in combinations
+            ]
+        )
+        pi_zhat = np.array([child_params["pi"][c[-1]] for c in combinations])
+        for i, p_params in enumerate(parent_params):
+            pi_zhat = pi_zhat * np.array([p_params["pi"][c[i]] for c in combinations])
+        z_dims = child_params["D"]
 
-        mu_zhat = np.zeros((n_clusters, D_out))
-        sigma2_zhat = np.zeros((n_clusters, D_out))
-        pi_zhat = np.zeros(n_clusters)
-
-        for idx, indices in enumerate(product(*cluster_ranges)):
-            parent_idx = indices[:-1]
-            child_idx = indices[-1]
-
-            for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
-                mu_zhat[idx] += W_p.T @ p_params["mu"][p_idx]
-            mu_zhat[idx] += W_child_effective.T @ child_params["mu"][child_idx]
-            mu_zhat[idx] += mu_offset
-
-            for p_idx, W_p, p_params in zip(parent_idx, W_parent_parts, parent_params):
-                sigma2_zhat[idx] += (W_p**2).T @ p_params["sigma2"][p_idx]
-            sigma2_zhat[idx] += (
-                W_child_effective_sigma2.T @ child_params["sigma2"][child_idx]
+        x = tf.convert_to_tensor(mu_x, tf.float32)
+        with tf.GradientTape() as tape:
+            tape.watch(x)
+            z_hat_parameters = ClusterAnalysis._encode_hierarchically(
+                hierarchical_encoder, x, z_dims
             )
+            n_dims = z_hat_parameters.shape[-1] // 2
+            loc = z_hat_parameters[:, :n_dims]
+        jacobian = tape.batch_jacobian(loc, x).numpy()
+        sigma2_loc = np.einsum("nij,nj->ni", jacobian**2, sigma2_x)
 
-            pi_zhat[idx] = child_params["pi"][child_idx]
-            for p_idx, p_params in zip(parent_idx, parent_params):
-                pi_zhat[idx] *= p_params["pi"][p_idx]
+        # sigma points: (n, 2d, d) -> one batch through the encoder
+        n_combinations, d = mu_x.shape
+        offsets = np.sqrt(d * sigma2_x)[:, :, None] * np.eye(d)[None]
+        sigma_points = np.concatenate(
+            [mu_x[:, None] + offsets, mu_x[:, None] - offsets], axis=1
+        )
+        scale_diag = ClusterAnalysis._encode_hierarchically(
+            hierarchical_encoder,
+            tf.convert_to_tensor(sigma_points.reshape(-1, d), tf.float32),
+            z_dims,
+        )[:, n_dims:].numpy()
+        expected_scale2 = (scale_diag**2).reshape(n_combinations, 2 * d, -1).mean(1)
 
-        return mu_zhat, sigma2_zhat, pi_zhat
+        return loc.numpy(), sigma2_loc + expected_scale2, pi_zhat
+
+    @staticmethod
+    def _encode_hierarchically(hierarchical_encoder, x, z_dims):
+        """z_hat parameters from the hierarchical encoder for inputs x
+        laid out as [z, z_hat_conditional] (z: first ``z_dims``)."""
+        inputs = {Constants.MODEL_OUTPUTS_Z: x[:, :z_dims]}
+        if x.shape[-1] > z_dims:
+            inputs[Constants.MODULE_INPUTS_CONDITIONED_Z_HAT] = x[:, z_dims:]
+        return hierarchical_encoder(inputs, training=False)
 
     @staticmethod
     def _remove_small_clusters(logpy_z, cluster, min_n_obs):
         """Iteratively remove clusters with fewer than ``min_n_obs``
         observations and re-assign their members to the remaining clusters.
-        Remaps cluster indices to be contiguous after removal.
+        Clusters without observations are removed too, and the cluster
+        indices are remapped to be contiguous.
 
         Parameters
         ----------
@@ -569,9 +597,11 @@ class ClusterAnalysis:
             temp_series = pd.Series(cluster_labels)
             _keep = temp_series.value_counts()
 
+        # drop the clusters no observation is assigned to as well, so the
+        # columns of logpy_z match the contiguous labels
         unique_clusters = np.unique(cluster)
-        remap = {old: new for new, old in enumerate(unique_clusters)}
-        cluster_final = np.array([remap[c] for c in cluster])
+        logpy_z = logpy_z[:, unique_clusters]
+        cluster_final = np.searchsorted(unique_clusters, cluster)
         final_labels = [f"Cluster {x:03d}" for x in cluster_final]
         return logpy_z, cluster_final, final_labels
 
@@ -616,6 +646,109 @@ class ClusterAnalysis:
         ]
         return labels
 
+    def _integrated_gmm_parameters(
+        self,
+        component: str,
+        bc_threshold: float = 0.8,
+        max_k: Optional[int] = 100,
+    ):
+        """Integrated GMM in z_hat space of a hierarchical component:
+        its z prior and the z_hat GMMs of its ``conditioned_on_z_hat``
+        parents passed through its hierarchical encoder (see
+        ``_recombine_gmm_parameters``).
+
+        Parameters
+        ----------
+        component : str
+            name of the hierarchical component.
+        bc_threshold : float, optional
+            Bhattacharyya merge threshold for parents whose z_hat GMM is
+            integrated too. Defaults to 0.8.
+        max_k : int, optional
+            cap on the number of clusters of those parents. Defaults to
+            100.
+
+        Returns
+        -------
+        tuple
+            (mu_zhat, sigma2_zhat, pi_zhat), before merging.
+
+        Raises
+        ------
+        ValueError
+            if ``component`` has no ``conditioned_on_z_hat`` parents, has
+            ``conditioned_on_z`` parents, or does not use
+            ``reparameterize_z_hat``.
+        """
+        comp = self.model.components[component]
+        if not comp.conditioned_on_z_hat:
+            raise ValueError(
+                f"Component '{component}' has no conditioned_on_z_hat parents. "
+                "Integrated clustering requires hierarchical components."
+            )
+        if not comp.reparameterize_z_hat:
+            raise ValueError(
+                f"Component '{component}' does not set reparameterize_z_hat, so "
+                "z_hat is not a distribution and has no integrated clusters."
+            )
+        if comp.conditioned_on_z:
+            raise ValueError(
+                f"Component '{component}' has conditioned_on_z parents, which "
+                "integrated clustering does not support."
+            )
+
+        parent_params = [
+            self._z_hat_gmm_parameters(parent_name, bc_threshold, max_k)
+            for parent_name in comp.conditioned_on_z_hat
+        ]
+        child_params = self._extract_gmm_parameters(comp.z_prior_parameterizer)
+        return self._recombine_gmm_parameters(
+            child_params, parent_params, comp.hierarchical_encoder
+        )
+
+    def _z_hat_gmm_parameters(
+        self,
+        component: str,
+        bc_threshold: float = 0.8,
+        max_k: Optional[int] = 100,
+    ):
+        """GMM of the z_hat of a component, as its children receive it
+        through ``conditioned_on_z_hat``.
+
+        - root component: z_hat is z, so its z prior.
+        - learned z_hat prior (``learn_z_hat_priors``): that prior.
+        - otherwise: its integrated GMM (``_integrated_gmm_parameters``,
+          recursively through its own parents), merged with
+          ``_merge_similar_gmm_components``.
+
+        Parameters
+        ----------
+        component : str
+            name of the component.
+        bc_threshold : float, optional
+            Bhattacharyya merge threshold of an integrated GMM. Defaults
+            to 0.8.
+        max_k : int, optional
+            cap on the number of clusters of an integrated GMM. Defaults
+            to 100.
+
+        Returns
+        -------
+        dict
+            same keys as ``_extract_gmm_parameters``.
+        """
+        comp = self.model.components[component]
+        if comp.is_root:
+            return self._extract_gmm_parameters(comp.z_prior_parameterizer)
+        if comp.z_hat_prior_parameterizer is not None:
+            return self._extract_gmm_parameters(comp.z_hat_prior_parameterizer)
+
+        mu, sigma2, pi = self._integrated_gmm_parameters(component, bc_threshold, max_k)
+        mu, sigma2, pi = self._merge_similar_gmm_components(
+            mu, sigma2, pi, bc_threshold, max_k
+        )
+        return {"pi": pi, "mu": mu, "sigma2": sigma2, "K": len(pi), "D": mu.shape[1]}
+
     def compute_integrated_cluster_log_probability(
         self,
         modality: str,
@@ -630,15 +763,18 @@ class ClusterAnalysis:
         each *integrated* cluster in z_hat space for a hierarchical
         component.
 
-        This is the legacy analytical/post-hoc z_hat route that recombines
-        parent/child priors through hierarchical encoder weights.
+        This is the analytical/post-hoc z_hat route, for components
+        without a learned z_hat prior. It needs ``reparameterize_z_hat``
+        (z_hat is a distribution whose loc is a linear map of z and the
+        parents' z_hat).
 
         Unlike ``compute_cluster_log_probability`` (which clusters in
-        ``z`` space of a single component), this method projects the
-        GMM parameters of every parent component **and** the child
-        component through the learned hierarchical-encoder weights
-        (``r_network`` and ``b_network``) to build a joint Gaussian
-        mixture in z_hat space.  Samples are then scored against that
+        ``z`` space of a single component), this method passes the GMM
+        clusters of every parent component **and** the child component
+        through the hierarchical encoder to build a joint Gaussian
+        mixture in z_hat space (see ``_recombine_gmm_parameters``). The
+        parents enter with their z_hat GMM (see
+        ``_z_hat_gmm_parameters``). Samples are then scored against that
         joint mixture.
 
         Similar integrated clusters are merged using Bhattacharyya
@@ -683,29 +819,13 @@ class ClusterAnalysis:
         Raises
         ------
         ValueError
-            if ``component`` has no ``conditioned_on_z_hat`` parents.
+            if ``component`` (or a parent whose z_hat GMM is integrated
+            too) has no ``conditioned_on_z_hat`` parents, has
+            ``conditioned_on_z`` parents, or does not use
+            ``reparameterize_z_hat``.
         """
-        comp = self.model.components[component]
-        parent_names = comp.conditioned_on_z_hat
-
-        if not parent_names:
-            raise ValueError(
-                f"Component '{component}' has no conditioned_on_z_hat parents. "
-                "Integrated clustering requires hierarchical components."
-            )
-
-        parent_params = []
-        for parent_name in parent_names:
-            parent_parameterizer = self.model.components[
-                parent_name
-            ].z_prior_parameterizer
-            parent_params.append(self._extract_gmm_parameters(parent_parameterizer))
-
-        child_parameterizer = comp.z_prior_parameterizer
-        child_params = self._extract_gmm_parameters(child_parameterizer)
-
-        mu_zhat, sigma2_zhat, pi_zhat = self._recombine_gmm_parameters(
-            child_params, parent_params, comp.hierarchical_encoder
+        mu_zhat, sigma2_zhat, pi_zhat = self._integrated_gmm_parameters(
+            component, bc_threshold, max_k
         )
 
         n_initial = len(pi_zhat)

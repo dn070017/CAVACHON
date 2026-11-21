@@ -187,6 +187,8 @@ class Component(tf.keras.Model):
         self.conditioned_on_z_hat = conditioned_on_z_hat
         # target weight of the z_hat GMM KL divergence (see compile)
         self.z_hat_kl_weight = kwargs.get("z_hat_kl_weight")
+        # whether z_hat is a distribution (r_network without bias)
+        self.reparameterize_z_hat = kwargs.get("reparameterize_z_hat", True)
         if "trainable" in kwargs:
             self.trainable = kwargs["trainable"]
 

@@ -130,14 +130,10 @@ def test_attribution_target_stops_at_requested_component(attr_fakes):
     assert child.hier_calls == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: unknown component falls through the loop and returns None "
-    "instead of raising",
-)
+# regression: an unknown component fell through the loop and returned None
 def test_attribution_target_unknown_component_raises(attr_fakes):
     analysis, _, _ = single_component_setup(attr_fakes)
-    with pytest.raises((ValueError, KeyError)):
+    with pytest.raises(KeyError, match="'missing' is not a component"):
         analysis.compute_attribution_target_batch(
             {"rna_matrix": tf.constant(X)}, "missing", "rna", "c"
         )

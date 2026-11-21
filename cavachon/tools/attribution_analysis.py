@@ -184,9 +184,7 @@ class AttributionAnalysis:
 
         return integrated_gradients
 
-    # BUG: falls through and returns None when `component` is not in
-    # self.model.component_configs.
-    def compute_attribution_target_batch(  # type: ignore[return]
+    def compute_attribution_target_batch(
         self,
         batch: Mapping[str, tf.Tensor],
         component: str,
@@ -228,6 +226,11 @@ class AttributionAnalysis:
             the means of the generative data distribution, where index
             i specify the samples, index j specify the means of the
             data distribution of the variables.
+
+        Raises
+        ------
+        KeyError
+            if ``component`` is not a component of the model.
 
         """
         z_conditional: Dict[str, tf.Tensor] = dict()
@@ -279,3 +282,5 @@ class AttributionAnalysis:
                 attribution_target = decoder.compute_attribution_target(decoder_inputs)
 
                 return attribution_target
+
+        raise KeyError(f"'{component}' is not a component of the model.")

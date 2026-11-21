@@ -211,13 +211,8 @@ def test_remove_small_clusters_all_small_keeps_everything():
     assert labels == ["Cluster 000", "Cluster 001"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BUG: an empty cluster keeps its logpy_z column when no cluster is "
-        "removed, so the remapped labels no longer index the obsm columns"
-    ),
-)
+# regression: an empty cluster kept its logpy_z column when no cluster was
+# removed, so the remapped labels no longer indexed the obsm columns
 def test_remove_small_clusters_labels_index_logpy_columns_with_empty_cluster():
     # column 1 is never the argmax (empty cluster); nothing is small
     logpy_z = np.log(
@@ -231,6 +226,7 @@ def test_remove_small_clusters_labels_index_logpy_columns_with_empty_cluster():
     )
     np.testing.assert_array_equal(cluster_final, [0, 0, 1, 1])
     np.testing.assert_array_equal(np.argmax(out, axis=1), cluster_final)
+    np.testing.assert_allclose(out, logpy_z[:, [0, 2]])
 
 
 def test_label_small_clusters():
@@ -372,15 +368,33 @@ def test_compute_cluster_log_probability_z_hat_without_prior_raises(cluster_fake
 # ---------------------------------------------------------------------------
 
 
-def make_hier_encoder(r_weights, b_weights):
-    return SimpleNamespace(
-        r_network=SimpleNamespace(
-            get_weights=lambda: [np.asarray(w) for w in r_weights]
-        ),
-        b_network=SimpleNamespace(
-            get_weights=lambda: [np.asarray(w) for w in b_weights]
-        ),
-    )
+class FakeHierarchicalEncoder:
+    """z_hat loc = z @ w_z (@ w_z2) + z_hat_conditional @ w_p + bias, and
+    scale_diag = scale (+ z @ scale_w_z); records the inputs of each call."""
+
+    def __init__(self, w_z, w_p=None, bias=0.0, scale=0.0, w_z2=None, scale_w_z=None):
+        self.scale_w_z = (
+            None if scale_w_z is None else tf.constant(scale_w_z, tf.float32)
+        )
+        self.w_z = tf.constant(w_z, tf.float32)
+        self.w_z2 = None if w_z2 is None else tf.constant(w_z2, tf.float32)
+        self.w_p = None if w_p is None else tf.constant(w_p, tf.float32)
+        self.bias = bias
+        self.scale = scale
+        self.calls = []
+
+    def __call__(self, inputs, training=False):
+        self.calls.append((dict(inputs), training))
+        loc = tf.matmul(inputs["z"], self.w_z)
+        if self.w_z2 is not None:
+            loc = tf.matmul(loc, self.w_z2)
+        if self.w_p is not None:
+            loc += tf.matmul(inputs["z_hat_conditional"], self.w_p)
+        loc += self.bias
+        scale = tf.zeros_like(loc) + self.scale
+        if self.scale_w_z is not None:
+            scale += tf.matmul(inputs["z"], self.scale_w_z)
+        return tf.concat([loc, scale], axis=-1)
 
 
 def gmm(pi, mu, sigma2):
@@ -397,65 +411,185 @@ def gmm(pi, mu, sigma2):
 def test_recombine_gmm_parameters_hand_computed():
     parent = gmm([0.3, 0.7], [[1.0], [-1.0]], [[0.5], [2.0]])
     child = gmm([0.4, 0.6], [[2.0], [3.0]], [[1.0], [0.1]])
-    # z_hat_loc = 3 * parent + 5 * (2 * child + 0.5) + 1
-    encoder = make_hier_encoder(
-        r_weights=[[[2.0]], [0.5]],
-        b_weights=[[[3.0], [5.0]], [1.0], [[0.0], [0.0]], [0.0]],
-    )
+    # z_hat_loc = 3 * parent + 10 * child + 3.5, z_hat scale_diag = 0.5
+    encoder = FakeHierarchicalEncoder(w_z=[[10.0]], w_p=[[3.0]], bias=3.5, scale=0.5)
     mu, s2, pi = ClusterAnalysis._recombine_gmm_parameters(child, [parent], encoder)
 
     exp_mu, exp_s2, exp_pi = [], [], []
     for p in range(2):  # product order: parent outer, child inner
         for c in range(2):
-            exp_mu.append(3 * parent["mu"][p, 0] + 10 * child["mu"][c, 0] + 1 + 2.5)
-            exp_s2.append(9 * parent["sigma2"][p, 0] + 100 * child["sigma2"][c, 0])
+            exp_mu.append(3 * parent["mu"][p, 0] + 10 * child["mu"][c, 0] + 3.5)
+            exp_s2.append(
+                0.25 + 9 * parent["sigma2"][p, 0] + 100 * child["sigma2"][c, 0]
+            )
             exp_pi.append(parent["pi"][p] * child["pi"][c])
-    np.testing.assert_allclose(mu[:, 0], exp_mu)
-    np.testing.assert_allclose(s2[:, 0], exp_s2)
+    np.testing.assert_allclose(mu[:, 0], exp_mu, rtol=1e-6)
+    np.testing.assert_allclose(s2[:, 0], exp_s2, rtol=1e-5)
     np.testing.assert_allclose(pi, exp_pi)
     assert pi.sum() == pytest.approx(1.0)
 
+    # first call: the cluster means, in inference mode
+    inputs, training = encoder.calls[0]
+    assert training is False
+    np.testing.assert_allclose(inputs["z"].numpy()[:, 0], [2.0, 3.0, 2.0, 3.0])
+    np.testing.assert_allclose(
+        inputs["z_hat_conditional"].numpy()[:, 0], [1.0, 1.0, -1.0, -1.0]
+    )
 
-def test_recombine_gmm_parameters_without_r_bias():
+
+def test_recombine_gmm_parameters_without_parents():
     child = gmm([1.0], [[2.0]], [[1.0]])
-    encoder = make_hier_encoder(r_weights=[[[2.0]]], b_weights=[[[5.0]], [1.0]])
+    encoder = FakeHierarchicalEncoder(w_z=[[10.0]], bias=1.0)
     mu, s2, pi = ClusterAnalysis._recombine_gmm_parameters(child, [], encoder)
     np.testing.assert_allclose(mu, [[21.0]])
     np.testing.assert_allclose(s2, [[100.0]])
     np.testing.assert_allclose(pi, [1.0])
+    assert "z_hat_conditional" not in encoder.calls[0][0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: child variance uses (W_r**2) @ (W_b**2) instead of (W_r @ W_b)**2, "
-    "dropping cross terms of the composed linear map",
-)
+# regression: the child variance used (W_r**2) @ (W_b**2) instead of
+# (W_r @ W_b)**2, dropping cross terms of the composed linear map
 def test_recombine_gmm_parameters_child_variance_of_composed_map():
     # z (1-D, var 1) -> r: [z, z] -> b: z + z = 2 z  => var 4
     child = gmm([1.0], [[0.0]], [[1.0]])
-    encoder = make_hier_encoder(
-        r_weights=[[[1.0, 1.0]]], b_weights=[[[1.0], [1.0]], [0.0]]
-    )
+    encoder = FakeHierarchicalEncoder(w_z=[[1.0, 1.0]], w_z2=[[1.0], [1.0]])
     _, s2, _ = ClusterAnalysis._recombine_gmm_parameters(child, [], encoder)
     np.testing.assert_allclose(s2, [[4.0]])
 
 
-def test_compute_integrated_cluster_log_probability_without_parents_raises():
-    comp = SimpleNamespace(conditioned_on_z_hat=[])
+def test_recombine_gmm_parameters_input_dependent_scale():
+    # z ~ N(m, s2) per dim, scale = c + z @ B: E[scale**2] is quadratic, so
+    # the sigma points give it exactly: (c + m @ B)**2 + (B**2).T @ s2
+    child = gmm([1.0], [[1.0, -2.0]], [[0.5, 2.0]])
+    b = np.array([[0.3, 0.1], [-0.2, 0.4]])
+    encoder = FakeHierarchicalEncoder(w_z=np.eye(2), scale=1.5, scale_w_z=b)
+    mu, s2, _ = ClusterAnalysis._recombine_gmm_parameters(child, [], encoder)
+    m, v = child["mu"][0], child["sigma2"][0]
+    expected = v + (1.5 + m @ b) ** 2 + (b**2).T @ v
+    np.testing.assert_allclose(mu, [m], rtol=1e-6)
+    np.testing.assert_allclose(s2, [expected], rtol=1e-5)
+    # sigma points: mu ± sqrt(d * sigma2) along each input dimension
+    sigma_points = encoder.calls[1][0]["z"].numpy()
+    np.testing.assert_allclose(
+        sigma_points,
+        [m + [1.0, 0.0], m + [0.0, 2.0], m - [1.0, 0.0], m - [0.0, 2.0]],
+        rtol=1e-6,
+    )
+
+
+def test_recombine_gmm_parameters_multi_dimensional_marginal():
+    # loc = z @ A, Var = (A**2).T @ sigma2 per output dim
+    a = np.array([[1.0, -2.0], [0.5, 3.0]])
+    child = gmm([1.0], [[1.0, -1.0]], [[2.0, 0.5]])
+    encoder = FakeHierarchicalEncoder(w_z=a, scale=0.1)
+    mu, s2, _ = ClusterAnalysis._recombine_gmm_parameters(child, [], encoder)
+    np.testing.assert_allclose(mu, [child["mu"][0] @ a], rtol=1e-6)
+    np.testing.assert_allclose(s2, [0.01 + (a**2).T @ child["sigma2"][0]], rtol=1e-5)
+
+
+def hierarchical_component(**overrides):
+    attributes = dict(
+        is_root=False,
+        conditioned_on_z=[],
+        conditioned_on_z_hat=["p"],
+        reparameterize_z_hat=True,
+        z_hat_prior_parameterizer=None,
+    )
+    attributes.update(overrides)
+    return SimpleNamespace(**attributes)
+
+
+def root_component(z_prior_parameterizer):
+    return SimpleNamespace(is_root=True, z_prior_parameterizer=z_prior_parameterizer)
+
+
+def test_z_hat_gmm_parameters_of_root_is_z_prior():
+    root = root_component(make_prior([0.0, 0.0], [[-1.0], [1.0]], [[2.0], [3.0]]))
+    analysis = ClusterAnalysis(make_mdata(), SimpleNamespace(components={"p": root}))
+    params = analysis._z_hat_gmm_parameters("p")
+    np.testing.assert_allclose(params["mu"], [[-1.0], [1.0]])
+    np.testing.assert_allclose(params["sigma2"], [[4.0], [9.0]])
+
+
+def test_z_hat_gmm_parameters_uses_learned_z_hat_prior():
+    parent = hierarchical_component(
+        conditioned_on_z_hat=["g"],
+        z_prior_parameterizer=make_prior([0.0], [[100.0]], [[1.0]]),
+        z_hat_prior_parameterizer=make_prior([0.0], [[5.0]], [[0.5]]),
+    )
+    analysis = ClusterAnalysis(make_mdata(), SimpleNamespace(components={"p": parent}))
+    params = analysis._z_hat_gmm_parameters("p")
+    np.testing.assert_allclose(params["mu"], [[5.0]])
+    np.testing.assert_allclose(params["sigma2"], [[0.25]])
+
+
+def test_z_hat_gmm_parameters_integrates_non_root_parent_recursively():
+    # g (root, z_hat = z) -> p (z_hat = 2 z_p + z_hat_g) -> c
+    grandparent = root_component(
+        make_prior([0.0, 0.0], [[-1.0], [1.0]], [[1.0], [1.0]])
+    )
+    parent = hierarchical_component(
+        conditioned_on_z_hat=["g"],
+        z_prior_parameterizer=make_prior([0.0], [[3.0]], [[0.5]]),
+        hierarchical_encoder=FakeHierarchicalEncoder(w_z=[[2.0]], w_p=[[1.0]]),
+    )
+    analysis = ClusterAnalysis(
+        make_mdata(), SimpleNamespace(components={"g": grandparent, "p": parent})
+    )
+    params = analysis._z_hat_gmm_parameters("p")
+    # loc 2 * 3 + (-1 | 1); var 4 * 0.25 + 1
+    np.testing.assert_allclose(params["mu"], [[5.0], [7.0]], rtol=1e-6)
+    np.testing.assert_allclose(params["sigma2"], [[2.0], [2.0]], rtol=1e-6)
+    np.testing.assert_allclose(params["pi"], [0.5, 0.5], rtol=1e-6)
+    assert (params["K"], params["D"]) == (2, 1)
+
+
+def test_integrated_gmm_parameters_feed_parent_z_hat_gmm():
+    # the child encoder receives the parent's z_hat clusters, not its z prior
+    parent = hierarchical_component(
+        conditioned_on_z_hat=["g"],
+        z_prior_parameterizer=make_prior([0.0], [[100.0]], [[1.0]]),
+        z_hat_prior_parameterizer=make_prior([0.0], [[5.0]], [[0.5]]),
+    )
+    encoder = FakeHierarchicalEncoder(w_z=[[1.0]], w_p=[[1.0]])
+    child = hierarchical_component(
+        z_prior_parameterizer=make_prior([0.0], [[1.0]], [[1.0]]),
+        hierarchical_encoder=encoder,
+    )
+    analysis = ClusterAnalysis(
+        make_mdata(), SimpleNamespace(components={"p": parent, "c": child})
+    )
+    mu, s2, _ = analysis._integrated_gmm_parameters("c")
+    np.testing.assert_allclose(
+        encoder.calls[0][0]["z_hat_conditional"].numpy(), [[5.0]]
+    )
+    np.testing.assert_allclose(mu, [[6.0]])
+    np.testing.assert_allclose(s2, [[1.25]])
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"conditioned_on_z_hat": []}, "no conditioned_on_z_hat parents"),
+        ({"reparameterize_z_hat": False}, "reparameterize_z_hat"),
+        ({"conditioned_on_z": ["q"]}, "conditioned_on_z parents"),
+    ],
+)
+def test_compute_integrated_cluster_log_probability_unsupported_raises(
+    overrides, match
+):
+    comp = hierarchical_component(**overrides)
     analysis = ClusterAnalysis(make_mdata(), SimpleNamespace(components={"c": comp}))
-    with pytest.raises(ValueError, match="no conditioned_on_z_hat parents"):
+    with pytest.raises(ValueError, match=match):
         analysis.compute_integrated_cluster_log_probability("rna", "c")
 
 
 def test_compute_integrated_cluster_log_probability_end_to_end(cluster_fakes):
     # parent: one cluster at 0; child: clusters at -1 / +1; identity maps
-    parent = SimpleNamespace(z_prior_parameterizer=make_prior([0.0], [[0.0]], [[1e-3]]))
-    child = SimpleNamespace(
-        conditioned_on_z_hat=["p"],
+    parent = root_component(make_prior([0.0], [[0.0]], [[1e-3]]))
+    child = hierarchical_component(
         z_prior_parameterizer=make_prior(**PRIOR_1D),
-        hierarchical_encoder=make_hier_encoder(
-            r_weights=[[[1.0]]], b_weights=[[[1.0], [1.0]], [0.0]]
-        ),
+        hierarchical_encoder=FakeHierarchicalEncoder(w_z=[[1.0]], w_p=[[1.0]]),
     )
     mdata = make_mdata(n_obs=6)
     mdata.mod["rna"].obsm["z_hat_c"] = Z_1D

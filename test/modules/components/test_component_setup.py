@@ -254,11 +254,13 @@ def test_make_hierarchical_encoder_condition_flags(fakes, z_dims, z_hat_dims, fl
 def test_make_use_bias_is_not_reparameterize_z_hat(fakes, reparam, use_bias):
     c = make_component(z_dims=2, reparameterize_z_hat=reparam)
     assert c.hierarchical_encoder.use_bias is use_bias
+    assert c.reparameterize_z_hat is reparam
 
 
 def test_make_default_reparameterize_gives_no_bias(fakes):
     c = make_component(z_dims=2)
     assert c.hierarchical_encoder.use_bias is False
+    assert c.reparameterize_z_hat is True
 
 
 def test_make_with_real_hierarchical_encoder_use_bias(
