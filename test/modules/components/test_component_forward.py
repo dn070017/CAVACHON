@@ -328,16 +328,74 @@ def test_decode_uses_given_z_hat(fakes):
     np.testing.assert_allclose(out["atac_x_parameters"].numpy(), expected, rtol=1e-5)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: decode() needs the modality matrices too (preprocessor rerun) "
-    "but validates/documents only batch-effect keys",
-)
 def test_decode_with_documented_keys_only(fakes):
+    # regression: decode() needs the modality matrices too (preprocessor
+    # rerun) but validated and documented only the batch-effect keys
     c = make_component()
     batch = make_batch()
     only_batch_effect = {k: v for k, v in batch.items() if k.endswith("batch_effect")}
-    try:
+    with pytest.raises(ValueError, match="matrix"):
         c.decode(only_batch_effect, tf.zeros((BATCH, N_LATENT)))
-    except ValueError as e:  # a clear validation error naming the key is fine
-        assert "matrix" in str(e)
+
+
+def test_decode_rejects_none_entries(fakes):
+    # Model.decode passes a missing modality matrix as None
+    c = make_component()
+    batch = dict(make_batch(), rna_matrix=None)
+    with pytest.raises(ValueError, match="rna_matrix"):
+        c.decode(batch, tf.zeros((BATCH, N_LATENT)))
+
+
+def test_library_size_only_for_modalities_that_scale_by_it(fakes):
+    c = make_component()
+    batch = make_batch()
+    libsize = c.library_size(batch)
+    assert set(libsize) == {"rna"}  # atac's decoder does not use it
+    np.testing.assert_allclose(
+        libsize["rna"].numpy(), batch["rna_matrix"].numpy().sum(-1, keepdims=True)
+    )
+    assert c.requires_library_size("rna") and not c.requires_library_size("atac")
+
+
+def test_library_size_needs_the_matrices(fakes):
+    c = make_component()
+    batch = {k: v for k, v in make_batch().items() if not k.startswith("rna_matrix")}
+    with pytest.raises(ValueError, match="rna_matrix"):
+        c.library_size(batch)
+
+
+def test_decode_with_explicit_libsize_needs_no_matrix(fakes):
+    c = make_component()
+    batch = make_batch()
+    only_batch_effect = {k: v for k, v in batch.items() if k.endswith("batch_effect")}
+    z_hat = tf.ones((BATCH, N_LATENT))
+    from_data = c.decode(batch, z_hat)
+    given = c.decode(only_batch_effect, z_hat, libsize=c.library_size(batch))
+    for key in from_data:
+        np.testing.assert_allclose(given[key].numpy(), from_data[key].numpy())
+    # the given value is the one used (the fake decoder multiplies by it)
+    doubled = c.decode(
+        only_batch_effect, z_hat, libsize={"rna": 2 * c.library_size(batch)["rna"]}
+    )
+    np.testing.assert_allclose(
+        doubled["rna_x_parameters"].numpy(), 2 * from_data["rna_x_parameters"].numpy()
+    )
+
+
+def test_decode_modalities_without_libsize_need_no_matrix(fakes):
+    c = make_component(modalities=["atac"])
+    batch = make_batch(modalities=["atac"])
+    only_batch_effect = {k: v for k, v in batch.items() if k.endswith("batch_effect")}
+    out = c.decode(only_batch_effect, tf.ones((BATCH, N_LATENT)))
+    assert set(out) == {"atac_x_parameters"}
+
+
+def test_library_size_ignores_other_batch_entries(fakes):
+    # a raw batch can carry other modalities and the batch effects; only
+    # this component's matrices may reach the preprocessor
+    c = make_component(modalities=["rna"])
+    batch = make_batch(modalities=["rna"])
+    full = dict(make_batch(), other_matrix=tf.zeros((BATCH, 9)))
+    np.testing.assert_allclose(
+        c.library_size(full)["rna"].numpy(), c.library_size(batch)["rna"].numpy()
+    )

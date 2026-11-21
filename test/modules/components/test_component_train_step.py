@@ -6,8 +6,7 @@ Mocked (see conftest.py): all losses are fakes with per-sample value
 `weight * (value + coef * mean(y_pred))` (GMM KL 5, standard KL 3, NLL 7,
 z_hat density 11 by default); ProgressiveScaler, ToDense, samplers and
 priors are fakes patched into cavachon.modules.components.component. The
-optimizer is real Keras SGD. `metrics_shim` replaces Keras' own deprecated
-`compiled_metrics` property, which otherwise crashes train_step (xfail).
+optimizer is real Keras SGD.
 """
 
 import warnings
@@ -40,12 +39,9 @@ def _train(c, batch):
 # ---------------------------------------------------------------------------
 # Keras 3 compatibility
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: train_step calls self.compiled_metrics.update_state(y_true, "
-    "y_pred); on Keras 3 that feeds the y_pred dict to the loss Mean -> ValueError",
-)
 def test_train_step_runs_on_keras3_without_patching(fakes):
+    # regression: train_step called self.compiled_metrics.update_state(y_true,
+    # y_pred), which raises on Keras 3 (Model.train_step never used it)
     c = make_component(name="c")
     _compile(c)
     logs = _train(c, make_batch())
@@ -55,7 +51,7 @@ def test_train_step_runs_on_keras3_without_patching(fakes):
 # ---------------------------------------------------------------------------
 # aggregation and weighting
 # ---------------------------------------------------------------------------
-def test_default_loss_is_sum_of_gmm_and_nll(fakes, metrics_shim):
+def test_default_loss_is_sum_of_gmm_and_nll(fakes):
     c = make_component(name="c")
     _compile(c)
     logs = _train(c, make_batch())
@@ -69,7 +65,7 @@ def test_default_loss_is_sum_of_gmm_and_nll(fakes, metrics_shim):
     )
 
 
-def test_weights_applied_once_and_metrics_unweighted(fakes, metrics_shim):
+def test_weights_applied_once_and_metrics_unweighted(fakes):
     c = make_component(name="c")
     _compile(
         c,
@@ -83,12 +79,12 @@ def test_weights_applied_once_and_metrics_unweighted(fakes, metrics_shim):
     assert logs[GMM] == pytest.approx(5.0)
     assert logs[NLL_RNA] == pytest.approx(7.0)
     assert logs[NLL_ATAC] == pytest.approx(7.0)
-    # each loss evaluated exactly twice: once for the loss, once for its metric
+    # each loss is evaluated once, for both the total and its metric
     for loss_fn in c.loss.values():
-        assert len(loss_fn.calls) == 2
+        assert len(loss_fn.calls) == 1
 
 
-def test_z_hat_density_weight_variable_and_metric(fakes, metrics_shim):
+def test_z_hat_density_weight_variable_and_metric(fakes):
     c = make_component(name="c", z_dims=2, learn_z_hat_priors=True)
     _compile(c)
     var = c._z_hat_density_weights["c"]
@@ -100,20 +96,27 @@ def test_z_hat_density_weight_variable_and_metric(fakes, metrics_shim):
     assert c.loss["c_z_hat_gmm_density"].weight is var
 
 
-def test_results_are_stable_across_calls(fakes, metrics_shim):
+def test_results_are_stable_across_calls(fakes):
     c = make_component(name="c", z_dims=2, learn_z_hat_priors=True)
     _compile(c)
     batch = make_batch(z_dims=2)
     first = _train(c, batch)
     second = _train(c, batch)
     assert first == pytest.approx(second)
-    assert set(first) == {"loss", GMM, "c_z_hat_gmm_density", NLL_RNA, NLL_ATAC}
+    assert set(first) == {
+        "loss",
+        GMM,
+        "c_z_hat_gmm_density",
+        "z_hat_gmm_kl_divergence",
+        NLL_RNA,
+        NLL_ATAC,
+    }
 
 
 # ---------------------------------------------------------------------------
 # wiring of y_true / y_pred
 # ---------------------------------------------------------------------------
-def test_loss_inputs_root(fakes, metrics_shim):
+def test_loss_inputs_root(fakes):
     c = make_component(name="c")
     _compile(c, standard_kl_weights={"c": 1.0}, gmm_kl_weights={"c": 1.0})
     batch = make_batch()
@@ -134,7 +137,7 @@ def test_loss_inputs_root(fakes, metrics_shim):
     assert fakes.ToDense.calls == ["rna_matrix", "atac_matrix"]
 
 
-def test_loss_inputs_child_kl_on_z_density_on_z_hat(fakes, metrics_shim):
+def test_loss_inputs_child_kl_on_z_density_on_z_hat(fakes):
     c = make_component(name="c", z_dims=2, z_hat_dims=2, learn_z_hat_priors=True)
     _compile(c)
     batch = make_batch(z_dims=2, z_hat_dims=2)
@@ -156,16 +159,7 @@ def test_loss_inputs_child_kl_on_z_density_on_z_hat(fakes, metrics_shim):
     assert not np.allclose(d_true.numpy(), out["z_prior_parameters"].numpy())
 
 
-def test_compiled_metrics_receive_loss_keyed_dicts(fakes, metrics_shim):
-    c = make_component(name="c")
-    _compile(c)
-    _train(c, make_batch())
-    assert len(metrics_shim) == 1
-    y_true, y_pred = metrics_shim[0]
-    assert list(y_true) == list(y_pred) == [GMM, NLL_RNA, NLL_ATAC]
-
-
-def test_standard_kl_only_trains(fakes, metrics_shim):
+def test_standard_kl_only_trains(fakes):
     # regression: with only standard_kl_weights, train_step fed y only
     # under the GMM key, so compute_loss raised KeyError for the standard KL
     c = make_component(name="c")
@@ -190,7 +184,7 @@ def _expected_loss(c, batch, density=False):
 
 
 @pytest.mark.parametrize("child", [False, True])
-def test_sgd_update_matches_gradient_of_total_loss(fakes, metrics_shim, child):
+def test_sgd_update_matches_gradient_of_total_loss(fakes, child):
     for cls in (fakes.GMMKL, fakes.NLL, fakes.Density):
         cls.coef = 1.0
     kw = dict(z_dims=2, learn_z_hat_priors=True) if child else {}
@@ -220,7 +214,7 @@ def test_root_trainable_variables_exclude_unused_modules(fakes):
     )
 
 
-def test_child_trains_hierarchical_encoder_and_z_hat_prior(fakes, metrics_shim):
+def test_child_trains_hierarchical_encoder_and_z_hat_prior(fakes):
     for cls in (fakes.GMMKL, fakes.NLL, fakes.Density):
         cls.coef = 1.0
     c = make_component(name="c", z_dims=2, learn_z_hat_priors=True)
@@ -232,7 +226,7 @@ def test_child_trains_hierarchical_encoder_and_z_hat_prior(fakes, metrics_shim):
     assert not np.allclose(c.hierarchical_encoder.w.numpy(), h_before)
 
 
-def test_frozen_encoder_is_not_updated(fakes, metrics_shim):
+def test_frozen_encoder_is_not_updated(fakes):
     for cls in (fakes.GMMKL, fakes.NLL):
         cls.coef = 1.0
     c = make_component(name="c")
@@ -257,25 +251,34 @@ def test_frozen_component_has_no_trainable_variables(fakes):
 # ---------------------------------------------------------------------------
 # test_step
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: train_step is overridden but test_step is not; Keras' default "
-    "test_step cannot match the loss dict (evaluate()/validation unusable)",
-)
-def test_test_step_reports_same_losses(fakes, metrics_shim):
+def test_test_step_reports_same_losses(fakes):
+    # regression: train_step was overridden but test_step was not, so
+    # Keras' default test_step could not match the loss dict
     c = make_component(name="c")
     _compile(c)
     batch = make_batch()
+    before = [v.numpy().copy() for v in c.trainable_variables]
     logs = c.test_step(batch)
     assert {k: float(v) for k, v in logs.items()} == pytest.approx(
         {"loss": 19.0, GMM: 5.0, NLL_RNA: 7.0, NLL_ATAC: 7.0}
     )
+    # no training
+    for v, b in zip(c.trainable_variables, before):
+        np.testing.assert_array_equal(v.numpy(), b)
+
+
+def test_zero_weight_loss_is_reported_but_not_trained(fakes):
+    c = make_component(name="c")
+    _compile(c, standard_kl_weights={"c": 0.0}, gmm_kl_weights={"c": 1.0})
+    logs = _train(c, make_batch())
+    assert logs[STD] == pytest.approx(3.0)  # unweighted value reported
+    assert logs["loss"] == pytest.approx(5 + 7 + 7)  # not in the total
 
 
 # ---------------------------------------------------------------------------
 # NaN gradients
 # ---------------------------------------------------------------------------
-def test_gradients_pass_through_remove_nan_gradients(fakes, metrics_shim):
+def test_gradients_pass_through_remove_nan_gradients(fakes):
     # regression: Component.train_step applied raw gradients, while
     # Model.train_step drops NaN gradients via TensorUtils
     c = make_component(name="c")
@@ -286,7 +289,7 @@ def test_gradients_pass_through_remove_nan_gradients(fakes, metrics_shim):
     assert len(list(grads)) == len(c.trainable_variables)
 
 
-def test_cleaned_gradients_are_the_ones_applied(fakes, metrics_shim):
+def test_cleaned_gradients_are_the_ones_applied(fakes):
     c = make_component(name="c")
     _compile(c, lr=1.0)
     fakes.TensorUtils.remove_nan_gradients.side_effect = lambda gradients: [
@@ -296,3 +299,40 @@ def test_cleaned_gradients_are_the_ones_applied(fakes, metrics_shim):
     _train(c, make_batch())
     for b, v in zip(before, c.trainable_variables):
         np.testing.assert_array_equal(b, v.numpy())
+
+
+def test_z_hat_gmm_kl_inputs_and_switching_on(fakes):
+    c = make_component(name="c", z_dims=2, learn_z_hat_priors=True)
+    _compile(c)
+    batch = make_batch(z_dims=2)
+    zkl = "z_hat_gmm_kl_divergence"
+    off = _train(c, batch)
+    # pinned to 0: reported, not in the total
+    assert off[zkl] == pytest.approx(5.0)
+    assert off["loss"] == pytest.approx(5 + 7 + 7)
+    y_true, y_pred = c.loss[zkl].calls[0]
+    out = c(batch, training=True)
+    np.testing.assert_allclose(y_true.numpy(), out["z_hat_prior_parameters"].numpy())
+    assert (
+        y_pred.shape[-1] == out["z_hat"].shape[-1] + out["z_hat_parameters"].shape[-1]
+    )
+    # switched on in standalone training with pin_to
+    c._z_hat_gmm_kl_weights["c"].pin_to(1.0)
+    on = _train(c, batch)
+    assert on["loss"] == pytest.approx(5 + 5 + 7 + 7)
+
+
+def test_extra_batch_entries_are_ignored(fakes):
+    # regression: like Model, the batch is restricted to the component's
+    # inputs, so a dataset with other modalities can be used directly
+    c = make_component(name="c", modalities=["rna"])
+    _compile(c)
+    batch = make_batch(modalities=["rna"])
+    full = dict(make_batch(), other_matrix=tf.zeros((4, 9)))
+    assert _train(c, full) == pytest.approx(_train(c, batch))
+    assert {k: float(v) for k, v in c.test_step(full).items()} == pytest.approx(
+        {k: float(v) for k, v in c.test_step(batch).items()}
+    )
+    np.testing.assert_allclose(
+        c.predict_step(full)["z"].numpy(), c.predict_step(batch)["z"].numpy()
+    )

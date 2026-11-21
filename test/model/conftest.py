@@ -214,11 +214,23 @@ class FakeComponent(tf.keras.Model):
         )
         return {Constants.MODEL_OUTPUTS_Z_HAT: z + self.z_hat_offset}
 
-    def decode(self, batch, z_hat, training=False):
+    def decode(self, batch, z_hat, training=False, libsize=None):
         self.recorder.decode_calls.append(
-            {"batch": dict(batch), "z_hat": z_hat, "training": training}
+            {
+                "batch": dict(batch),
+                "z_hat": z_hat,
+                "training": training,
+                "libsize": libsize,
+            }
         )
         return self._x_params(z_hat)
+
+    def library_size(self, batch, training=False):
+        # fake contract: row sum of each modality matrix
+        return {
+            m: tf.reduce_sum(batch[f"{m}_matrix"], axis=-1, keepdims=True)
+            for m in self.modality_names
+        }
 
 
 class FakeComponentFactory:

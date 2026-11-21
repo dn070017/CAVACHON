@@ -1,6 +1,6 @@
 import warnings
 from collections import OrderedDict
-from typing import Any, Dict, List, Mapping, Optional, Union, cast
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 import tensorflow as tf
 
@@ -166,7 +166,12 @@ class Component(tf.keras.Model):
             additional parameters for custom components.
 
         """
-        super().__init__(inputs=inputs, outputs=outputs, name=name)
+        # make() forwards every config field in kwargs; of the ones
+        # tf.keras.Model understands, dtype is passed on here and
+        # trainable is set at the end (setting it pins alpha through
+        # self.hierarchical_encoder, see __setattr__)
+        keras_kwargs = {k: kwargs[k] for k in ("dtype",) if k in kwargs}
+        super().__init__(inputs=inputs, outputs=outputs, name=name, **keras_kwargs)
         self.modality_names = modality_names
         self.preprocessor = preprocessor
         self.distribution_names = distribution_names
@@ -180,6 +185,10 @@ class Component(tf.keras.Model):
         self.decoders = decoders
         self.conditioned_on_z = conditioned_on_z
         self.conditioned_on_z_hat = conditioned_on_z_hat
+        # target weight of the z_hat GMM KL divergence (see compile)
+        self.z_hat_kl_weight = kwargs.get("z_hat_kl_weight")
+        if "trainable" in kwargs:
+            self.trainable = kwargs["trainable"]
 
     @property
     def is_root(self) -> bool:
@@ -1054,6 +1063,7 @@ class Component(tf.keras.Model):
         batch: Mapping[str, tf.Tensor],
         z_hat: tf.Tensor,
         training: bool = False,
+        libsize: Optional[Mapping[str, tf.Tensor]] = None,
     ) -> Mapping[str, tf.Tensor]:
         """Decode a transformed latent sample into modality parameters.
 
@@ -1061,7 +1071,10 @@ class Component(tf.keras.Model):
         ----------
         batch: Mapping[str, tf.Tensor]
             Input tensors. Each modality must provide
-            ``{modality_name}_batch_effect``.
+            ``{modality_name}_batch_effect``. The modality matrices are
+            only needed to compute the library size of modalities whose
+            decoder scales by it (see ``requires_library_size``) when
+            ``libsize`` does not give it.
 
         z_hat: tf.Tensor
             Hierarchically transformed latent tensor to decode.
@@ -1072,6 +1085,13 @@ class Component(tf.keras.Model):
             Whether to run the decoder path in training mode. Defaults
             to False.
 
+        libsize: Mapping[str, tf.Tensor], optional
+            library size of each modality, with shape (batch_size, 1),
+            for decoders that scale by it. Use ``library_size`` to
+            compute it the way training does (e.g. from training data,
+            when decoding new z_hat). Defaults to None: computed from
+            the modality matrices in ``batch``.
+
         Returns
         -------
         Mapping[str, tf.Tensor]
@@ -1081,8 +1101,9 @@ class Component(tf.keras.Model):
         Raises
         ------
         ValueError
-            If a required modality batch-effect key is missing from
-            ``batch``.
+            If a modality batch effect is missing from ``batch``, or a
+            library size is needed but neither ``libsize`` nor the
+            modality matrices in ``batch`` provide it.
 
         ValueError
             If no decoder is registered for a modality name.
@@ -1091,23 +1112,37 @@ class Component(tf.keras.Model):
             If ``z_hat`` does not have rank 2.
         """
         for modality_name in self.modality_names:
-            modality_batch_key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
-            if modality_batch_key not in batch:
-                raise ValueError(
-                    f"Missing required input key '{modality_batch_key}' in batch."
-                )
+            key = f"{modality_name}_{Constants.TENSOR_NAME_BATCH}"
+            # Model.decode passes missing entries as None
+            if batch.get(key) is None:
+                raise ValueError(f"Missing required input key '{key}' in batch.")
 
         tf.debugging.assert_rank(z_hat, 2, message="Expected 'z_hat' to have rank 2.")
-        preprocessor_inputs = Component.prepare_preprocessor_inputs(
-            batch, self.modality_names
-        )
-        preprocessor_outputs = self.preprocessor(preprocessor_inputs, training=training)
+        libsize = dict(libsize or {})
+        missing = [
+            modality_name
+            for modality_name in self.modality_names
+            if self.requires_library_size(modality_name)
+            and modality_name not in libsize
+        ]
+        if missing:
+            computed = self.library_size(batch, training=training)
+            libsize.update({m: computed[m] for m in missing})
 
         outputs = dict()
         for modality_name in self.modality_names:
             decoder = self.decoders.get(modality_name)
             if decoder is None:
                 raise ValueError(f"No decoder found for modality '{modality_name}'.")
+            libsize_key = (
+                f"{modality_name}_{Constants.TENSOR_NAME_X}_"
+                f"{Constants.TENSOR_NAME_LIBSIZE}"
+            )
+            preprocessor_outputs = (
+                {libsize_key: libsize[modality_name]}
+                if self.requires_library_size(modality_name)
+                else {}
+            )
             decoder_inputs = Component.prepare_decoder_inputs(
                 batch, modality_name, z_hat, preprocessor_outputs
             )
@@ -1118,44 +1153,147 @@ class Component(tf.keras.Model):
 
         return outputs
 
+    def requires_library_size(self, modality_name: str) -> bool:
+        """Whether the decoder of a modality scales its outputs by the
+        library size (e.g. IndependentZeroInflatedNegativeBinomial)."""
+        decoder = self.decoders.get(modality_name)
+        x_parameterizer = getattr(decoder, "x_parameterizer", None)
+        return bool(getattr(x_parameterizer, "libsize_scaling", False))
+
+    def library_size(
+        self, batch: Mapping[str, tf.Tensor], training: bool = False
+    ) -> Dict[str, tf.Tensor]:
+        """Library size of each modality whose decoder scales by it,
+        computed by the preprocessor exactly as in training. Note that
+        it is taken after the preprocessor's transforms (e.g. the row
+        sum of log1p counts for modalities that are log-transformed),
+        not the raw count total.
+
+        Parameters
+        ----------
+        batch: Mapping[str, tf.Tensor]
+            Input tensors with the ``{modality_name}_matrix`` of every
+            modality of the component.
+
+        training: bool, optional
+            Whether to run the preprocessor in training mode. Defaults
+            to False.
+
+        Returns
+        -------
+        Dict[str, tf.Tensor]
+            library size, with shape (batch_size, 1), keyed by modality
+            name (only modalities whose decoder needs it).
+
+        Raises
+        ------
+        ValueError
+            If a modality matrix is missing from ``batch``.
+        """
+        for modality_name in self.modality_names:
+            key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            if batch.get(key) is None:
+                raise ValueError(
+                    f"Missing required input key '{key}' in batch: the library "
+                    "size is computed from the modality matrices (or pass it "
+                    "to decode as libsize)."
+                )
+        # only this component's matrices: Keras matches dict inputs by
+        # position, so other entries of a raw batch would be misfed
+        preprocessor_inputs = {
+            f"{m}_{Constants.TENSOR_NAME_X}": batch[f"{m}_{Constants.TENSOR_NAME_X}"]
+            for m in self.modality_names
+        }
+        preprocessor_outputs = self.preprocessor(preprocessor_inputs, training=training)
+        libsize: Dict[str, tf.Tensor] = dict()
+        for modality_name in self.modality_names:
+            key = (
+                f"{modality_name}_{Constants.TENSOR_NAME_X}_"
+                f"{Constants.TENSOR_NAME_LIBSIZE}"
+            )
+            if (
+                self.requires_library_size(modality_name)
+                and key in preprocessor_outputs
+            ):
+                libsize[modality_name] = preprocessor_outputs[key]
+        return libsize
+
     def compile(
         self,
         standard_kl_weights: Optional[Mapping[str, float]] = None,
         gmm_kl_weights: Optional[Mapping[str, float]] = None,
         **kwargs,
     ) -> None:
-        """Compile the model before training. Note that the 'metrics'
-        will be ignored in Model because of the incompatibility with
+        """Compile the component before standalone training, the same way
+        Model.compile does for a single component. Note that the
+        'metrics' will be ignored because of the incompatibility with
         Tensorflow API. The 'loss' will be setup automatically if not
-        provided. All loss weights are backed by tf.Variable objects
-        so callbacks can adjust them at runtime.
+        provided.
 
         Parameters
         ----------
         standard_kl_weights: Mapping[str, float], optional
-            weight for the standard N(0,1) KL divergence loss.
-            A weight > 0 creates the loss. Defaults to None.
+            weight of the standard N(0,1) KL divergence, keyed by the
+            component name. Listed components get the loss. A weight of
+            0 creates the loss switched off: its scale is 1 and its
+            weight is pinned to 0, so it does not affect training but
+            its value is still reported, and it can be switched on
+            later with ``pin_to``. Defaults to None.
 
         gmm_kl_weights: Mapping[str, float], optional
-            weight for the GMM KL divergence loss.
-            A weight > 0 creates the loss. When both are absent,
-            defaults to GMM KL with weight 1.0.
+            weight of the GMM KL divergence, with the same meaning of 0.
+            When both are absent, defaults to GMM KL with weight 1.0.
 
         kwargs: Mapping[str, Any]
             Additional parameters used to compile the model.
+            ``loss_weights`` maps data-loss names
+            (``{modality}_negative_log_data_likelihood``) to weights,
+            with the same meaning of 0; the mapping is not modified,
+            and unknown names emit a warning.
 
+        The loss weights are indexed in ``_standard_kl_weights``,
+        ``_gmm_kl_weights``, ``_data_loss_weights`` and
+        ``_z_hat_gmm_kl_weights`` (the losses' own ProgressiveScaler, so
+        ``pin_to``/``assign`` on them changes the loss) and
+        ``_z_hat_density_weights``.
+
+        A component that learns a z_hat prior (it has parents) also
+        gets, as in Model.compile:
+
+        1. the z_hat GMM KL divergence, with ``z_hat_kl_weight`` as its
+           scale, pinned to 0 at compile. In Model the scheduler
+           switches it on in the z_hat annealing phase; when training
+           the component on its own, switch it on with
+           ``_z_hat_gmm_kl_weights[name].pin_to(z_hat_kl_weight)``.
+        2. the legacy z_hat GMM density loss, switched off (weight 0;
+           see GMMDensityLoss).
+
+        The parents' z / z_hat are inputs of the component, so in
+        standalone training they are fixed values: only this
+        component's networks are trained.
+
+        Recompiling rebuilds every loss from the arguments given, so new
+        weights take effect and the indices point to the new losses
+        (their progress is reset). This differs from Model.compile,
+        which reuses existing losses and ignores the new weights for
+        them (the scheduler relies on that).
         """
         standard_kl_weights = standard_kl_weights or {}
         gmm_kl_weights = gmm_kl_weights or {}
 
         if not hasattr(self, "_standard_kl_weights"):
-            self._standard_kl_weights: Dict[str, tf.Variable] = {}
+            self._standard_kl_weights: Dict[str, Any] = {}
         if not hasattr(self, "_gmm_kl_weights"):
-            self._gmm_kl_weights: Dict[str, tf.Variable] = {}
+            self._gmm_kl_weights: Dict[str, Any] = {}
         if not hasattr(self, "_z_hat_density_weights"):
             self._z_hat_density_weights: Dict[str, tf.Variable] = {}
+        if not hasattr(self, "_data_loss_weights"):
+            self._data_loss_weights: Dict[str, Dict[str, Any]] = {}
+        if not hasattr(self, "_z_hat_gmm_kl_weights"):
+            self._z_hat_gmm_kl_weights: Dict[str, Any] = {}
 
-        loss_weights = kwargs.pop("loss_weights", None) or {}
+        # a copy: entries are consumed below, the caller's mapping is kept
+        loss_weights: Dict[str, float] = dict(kwargs.pop("loss_weights", None) or {})
 
         if "loss" not in kwargs:
             loss: OrderedDict[str, tf.keras.losses.Loss] = OrderedDict()
@@ -1163,50 +1301,29 @@ class Component(tf.keras.Model):
             # Default component name for weight dicts and Variable storage
             comp_name = self.name or "component"
 
-            standard_w = standard_kl_weights.get(comp_name, 0.0)
-            gmm_w = gmm_kl_weights.get(comp_name, 0.0)
             has_standard = comp_name in standard_kl_weights
             has_gmm = comp_name in gmm_kl_weights
-
+            gmm_w = gmm_kl_weights.get(comp_name, 0.0)
             if not has_standard and not has_gmm:
                 has_gmm = True
                 gmm_w = 1.0
 
             if has_standard:
-                if comp_name not in self._standard_kl_weights:
-                    self._standard_kl_weights[comp_name] = tf.Variable(
-                        standard_w,
-                        trainable=False,
-                        dtype=tf.float32,
-                        name=f"{comp_name}_standard_kl_weight",
-                    )
-                else:
-                    self._standard_kl_weights[comp_name].assign(standard_w)
-                loss.setdefault(
-                    Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
-                    StandardKLDivergence(
-                        weight=standard_w,
-                        name=Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
-                    ),
+                standard_w = standard_kl_weights[comp_name]
+                name = Constants.MODEL_LOSS_STANDARD_KL_POSTFIX
+                loss[name] = StandardKLDivergence(
+                    weight=self.initial_loss_scale(standard_w), name=name
                 )
+                self.switch_off_if_zero(loss[name], standard_w)
+                self._standard_kl_weights[comp_name] = loss[name].weight
 
             if has_gmm:
-                if comp_name not in self._gmm_kl_weights:
-                    self._gmm_kl_weights[comp_name] = tf.Variable(
-                        gmm_w,
-                        trainable=False,
-                        dtype=tf.float32,
-                        name=f"{comp_name}_gmm_kl_weight",
-                    )
-                else:
-                    self._gmm_kl_weights[comp_name].assign(gmm_w)
-                loss.setdefault(
-                    Constants.MODEL_LOSS_GMM_KL_POSTFIX,
-                    GMMKLDivergence(
-                        weight=gmm_w,
-                        name=Constants.MODEL_LOSS_GMM_KL_POSTFIX,
-                    ),
+                name = Constants.MODEL_LOSS_GMM_KL_POSTFIX
+                loss[name] = GMMKLDivergence(
+                    weight=self.initial_loss_scale(gmm_w), name=name
                 )
+                self.switch_off_if_zero(loss[name], gmm_w)
+                self._gmm_kl_weights[comp_name] = loss[name].weight
 
             if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
                 loss_name = (
@@ -1225,34 +1342,40 @@ class Component(tf.keras.Model):
                 else:
                     self._z_hat_density_weights[comp_name].assign(0.0)
                 weight_var = self._z_hat_density_weights[comp_name]
-                loss.setdefault(
-                    loss_name,
-                    GMMDensityLoss(weight=weight_var, name=loss_name),
+                loss[loss_name] = GMMDensityLoss(weight=weight_var, name=loss_name)
+
+                # z_hat GMM KL divergence (stochastic z_hat), as in Model:
+                # the scale is the target weight, pinned to 0 until it is
+                # switched on
+                z_hat_kl_weight = (
+                    1.0 if self.z_hat_kl_weight is None else self.z_hat_kl_weight
                 )
+                if z_hat_kl_weight > 0:
+                    name = Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX
+                    loss[name] = GMMKLDivergence(weight=z_hat_kl_weight, name=name)
+                    loss[name].weight.pin_to(0.0)
+                    self._z_hat_gmm_kl_weights[comp_name] = loss[name].weight
 
-            if not hasattr(self, "_data_loss_weights"):
-                self._data_loss_weights: Dict[str, Dict[str, tf.Variable]] = {}
-            if comp_name not in self._data_loss_weights:
-                self._data_loss_weights[comp_name] = {}
-
+            self._data_loss_weights[comp_name] = {}
             for modality_name in self.modality_names:
                 nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                var = tf.Variable(
-                    loss_weights.pop(nldl_name, 1.0),
-                    trainable=False,
-                    dtype=tf.float32,
-                    name=f"{comp_name}_{modality_name}_data_weight",
+                weight = loss_weights.pop(nldl_name, 1.0)
+                loss[nldl_name] = NegativeLogDataLikelihood(
+                    cast(str, self.distribution_names.get(modality_name)),
+                    self.initial_loss_scale(weight),
+                    name=nldl_name,
                 )
-                self._data_loss_weights[comp_name][modality_name] = var
-                loss.setdefault(
-                    nldl_name,
-                    NegativeLogDataLikelihood(
-                        cast(str, self.distribution_names.get(modality_name)),
-                        var,
-                        name=nldl_name,
-                    ),
-                )
+                self.switch_off_if_zero(loss[nldl_name], weight)
+                self._data_loss_weights[comp_name][modality_name] = loss[
+                    nldl_name
+                ].weight
 
+            if loss_weights:
+                warnings.warn(
+                    "loss_weights has no data loss named "
+                    f"{sorted(loss_weights)}; these weights are ignored.",
+                    RuntimeWarning,
+                )
             kwargs.setdefault("loss", loss)
         else:
             message = "".join(
@@ -1275,6 +1398,22 @@ class Component(tf.keras.Model):
 
         super().compile(**kwargs)
 
+    @staticmethod
+    def initial_loss_scale(weight: float) -> float:
+        """Scale a loss is created with: the weight, or 1 for a weight
+        of 0 (the loss is then switched off by ``switch_off_if_zero``,
+        and can be switched on later). Model.compile uses the same rule."""
+        return 1.0 if weight == 0 else float(weight)
+
+    @staticmethod
+    def switch_off_if_zero(loss_fn: Any, weight: float) -> None:
+        """Pin a new loss's weight to 0 when it was requested with
+        weight 0. Its effective weight is then scale * 1e-16, so it
+        does not affect training but its unweighted value can still be
+        reported. Model.compile uses the same rule."""
+        if weight == 0:
+            loss_fn.weight.pin_to(0.0)
+
     def train_step(self, data: Mapping[Any, tf.Tensor]) -> Mapping[str, float]:
         """Training step for one iteration. The trainable variables in
         the Component will be trained once after calling this function.
@@ -1287,83 +1426,164 @@ class Component(tf.keras.Model):
         Returns
         -------
         Mapping[str, float]
-            losses trained in the training iteration, where the keys
-            are the names of the losses.
+            the total loss (``loss``) and the unweighted value of each
+            loss, keyed by loss name.
 
         """
+        x, _, _ = tf.keras.utils.unpack_x_y_sample_weight(data)
         with tf.GradientTape() as tape:
-            results = self(data, training=True)
-            y_true: Dict[str, tf.Tensor] = dict()
-            y_pred: Dict[str, tf.Tensor] = dict()
-            prior_params = results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
+            results = self(self.select_inputs(x), training=True)
+            y_true, y_pred = self._prepare_loss_inputs(x, results)
+            loss, loss_metrics = self._evaluate_losses(y_true, y_pred)
+        gradients = tape.gradient(loss, self.trainable_variables)
+        # same as Model.train_step: NaN gradients are replaced by 0.
+        gradients = TensorUtils.remove_nan_gradients(gradients)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        return loss_metrics
 
-            z_key = Constants.MODEL_OUTPUTS_Z
-            z_params_key = Constants.MODEL_OUTPUTS_Z_PARAMS
-            z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
-                [results.get(z_key), results.get(z_params_key)]
+    def test_step(self, data: Mapping[Any, tf.Tensor]) -> Mapping[str, float]:
+        """Evaluation step (``evaluate`` and ``validation_data`` of
+        ``fit``): the same losses as ``train_step``, without training.
+
+        Parameters
+        ----------
+        data: Mapping[Any, tf.Tensor]
+            input data with structure specified with self.inputs.
+
+        Returns
+        -------
+        Mapping[str, float]
+            the total loss (``loss``) and the unweighted value of each
+            loss, keyed by loss name.
+
+        """
+        x, _, _ = tf.keras.utils.unpack_x_y_sample_weight(data)
+        results = self(self.select_inputs(x), training=False)
+        y_true, y_pred = self._prepare_loss_inputs(x, results)
+        _, loss_metrics = self._evaluate_losses(y_true, y_pred)
+        return loss_metrics
+
+    def predict_step(self, data: Any) -> Any:
+        """Prediction step (``predict``): the outputs of the component,
+        with the batch restricted to its inputs first (see
+        select_inputs)."""
+        x, _, _ = tf.keras.utils.unpack_x_y_sample_weight(data)
+        return self(self.select_inputs(x), training=False)
+
+    def select_inputs(self, data: Any) -> Any:
+        """Keep only the entries of a batch that are inputs of the
+        component, as Model.select_inputs does.
+
+        Keras matches dict inputs by position when the keys do not match
+        the input names, so extra entries (e.g. the matrix of a modality
+        the component does not use) would be fed to the wrong input.
+
+        Parameters
+        ----------
+        data: Any
+            a batch. Only Mapping batches are filtered, other inputs are
+            returned as they are.
+
+        Returns
+        -------
+        Any
+            the batch restricted to the input names of the component.
+
+        """
+        inputs = self.input
+        if isinstance(data, Mapping) and isinstance(inputs, Mapping):
+            return {key: data[key] for key in inputs}
+        return data
+
+    def _prepare_loss_inputs(
+        self, data: Mapping[Any, tf.Tensor], results: Mapping[str, tf.Tensor]
+    ) -> Tuple[Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
+        """y_true and y_pred of every compiled loss, keyed by loss name."""
+        y_true: Dict[str, tf.Tensor] = dict()
+        y_pred: Dict[str, tf.Tensor] = dict()
+        prior_params = results.get(Constants.MODEL_OUTPUTS_Z_PRIOR_PARAMS)
+        z_concat = tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+            [
+                results.get(Constants.MODEL_OUTPUTS_Z),
+                results.get(Constants.MODEL_OUTPUTS_Z_PARAMS),
+            ]
+        )
+
+        # feed every KL loss that is compiled (standard, GMM or both)
+        for kl_name in (
+            Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
+            Constants.MODEL_LOSS_GMM_KL_POSTFIX,
+        ):
+            if kl_name in self.loss:
+                y_true.setdefault(kl_name, prior_params)
+                y_pred.setdefault(kl_name, z_concat)
+
+        if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
+            z_hat_prior_params = results.get(Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS)
+            z_hat = results.get(Constants.MODEL_OUTPUTS_Z_HAT)
+            if z_hat_prior_params is not None and z_hat is not None:
+                loss_name = (
+                    f"{self.name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
+                )
+                y_true.setdefault(loss_name, z_hat_prior_params)
+                y_pred.setdefault(loss_name, z_hat)
+
+        z_hat_kl_name = Constants.MODEL_LOSS_Z_HAT_GMM_KL_POSTFIX
+        if z_hat_kl_name in self.loss:
+            y_true.setdefault(
+                z_hat_kl_name, results.get(Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS)
+            )
+            y_pred.setdefault(
+                z_hat_kl_name,
+                tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1))(
+                    [
+                        results.get(Constants.MODEL_OUTPUTS_Z_HAT),
+                        results.get(Constants.MODEL_OUTPUTS_Z_HAT_PARAMS),
+                    ]
+                ),
             )
 
-            # feed every KL loss that is compiled (standard, GMM or both)
-            for kl_name in (
-                Constants.MODEL_LOSS_STANDARD_KL_POSTFIX,
-                Constants.MODEL_LOSS_GMM_KL_POSTFIX,
-            ):
-                if kl_name in self.loss:
-                    y_true.setdefault(kl_name, prior_params)
-                    y_pred.setdefault(kl_name, z_concat)
+        for modality_name in self.modality_names:
+            nldl_name = f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
+            modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
+            data = ToDense(modality_key)(data)
+            y_true.setdefault(nldl_name, data.get(modality_key))
+            y_pred.setdefault(
+                nldl_name,
+                results.get(f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"),
+            )
+        return y_true, y_pred
 
-            if self.learn_z_hat_priors and self.z_hat_prior_parameterizer is not None:
-                z_hat_prior_params = results.get(
-                    Constants.MODEL_OUTPUTS_Z_HAT_PRIOR_PARAMS
-                )
-                z_hat = results.get(Constants.MODEL_OUTPUTS_Z_HAT)
-                if z_hat_prior_params is not None and z_hat is not None:
-                    loss_name = (
-                        f"{self.name}_{Constants.MODEL_LOSS_Z_HAT_GMM_DENSITY_POSTFIX}"
-                    )
-                    y_true.setdefault(loss_name, z_hat_prior_params)
-                    y_pred.setdefault(loss_name, z_hat)
+    def _evaluate_losses(
+        self, y_true: Mapping[str, tf.Tensor], y_pred: Mapping[str, tf.Tensor]
+    ) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        """Evaluate every compiled loss once. Returns the total loss
+        (weighted losses plus regularization losses) and the metrics:
+        the total and each loss's unweighted value (weighted value
+        divided by its weight, 0 for a weight of exactly 0), as in
+        Model.train_step."""
+        weighted: Dict[str, tf.Tensor] = dict()
+        for key in y_true:
+            loss_fn = self.loss.get(key)
+            if loss_fn is not None:
+                weighted[key] = loss_fn(y_true[key], y_pred[key])
 
-            for modality_name in self.modality_names:
-                negative_log_data_likelihood_name = (
-                    f"{modality_name}_{Constants.MODEL_LOSS_DATA_POSTFIX}"
-                )
-                modality_key = f"{modality_name}_{Constants.TENSOR_NAME_X}"
-                data = ToDense(modality_key)(data)
-                y_true.setdefault(
-                    negative_log_data_likelihood_name, data.get(modality_key)
-                )
-                y_pred.setdefault(
-                    negative_log_data_likelihood_name,
-                    results.get(f"{modality_name}_{Constants.MODEL_OUTPUTS_X_PARAMS}"),
-                )
+        loss = tf.add_n(list(weighted.values()))
+        if self.losses:
+            loss += tf.add_n(self.losses)
 
-            loss = self.compute_loss(x=None, y=y_true, y_pred=y_pred)
-            gradients = tape.gradient(loss, self.trainable_variables)
-            # same as Model.train_step: NaN gradients are replaced by 0.
-            gradients = TensorUtils.remove_nan_gradients(gradients)
-            self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-            self.compiled_metrics.update_state(y_true, y_pred)
-
-            loss_metrics = {"loss": loss}
-            for key in y_true:
-                loss_fn = self.loss.get(key)
-                if loss_fn:
-                    if hasattr(loss_fn, "weight"):
-                        if isinstance(loss_fn.weight, ProgressiveScaler):
-                            weighted_loss = loss_fn(y_true[key], y_pred[key])
-                            weight_scalar = loss_fn.weight(tf.ones(()))
-                            loss_metrics[key] = weighted_loss / weight_scalar
-                        else:
-                            orig_w = loss_fn.weight
-                            loss_fn.weight = tf.constant(1.0, dtype=tf.float32)
-                            raw = loss_fn(y_true[key], y_pred[key])
-                            loss_fn.weight = orig_w
-                            loss_metrics[key] = raw
-                    else:
-                        loss_metrics[key] = loss_fn(y_true[key], y_pred[key])
-
-        return loss_metrics
+        loss_metrics: Dict[str, tf.Tensor] = {"loss": loss}
+        for key, value in weighted.items():
+            weight = getattr(self.loss[key], "weight", None)
+            if isinstance(weight, ProgressiveScaler):
+                # a weight pinned to 0 is scale * 1e-16, so this recovers
+                # the unweighted loss
+                loss_metrics[key] = tf.math.divide_no_nan(value, weight(tf.ones(())))
+            elif isinstance(weight, tf.Variable):
+                loss_metrics[key] = tf.math.divide_no_nan(value, weight)
+            else:
+                loss_metrics[key] = value
+        return loss, loss_metrics
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Overwrite __setattr__ function, so that every time setting

@@ -61,9 +61,10 @@ def test_standard_and_gmm_weights(fakes):
     assert c.loss[STD].weight.scale == 0.5
     assert c.loss[STD].name == STD
     assert c.loss[GMM].weight.scale == 2.0
-    assert float(c._standard_kl_weights["c"]) == 0.5
-    assert float(c._gmm_kl_weights["c"]) == 2.0
-    assert c._standard_kl_weights["c"].trainable is False
+    # the indices are the losses' own weights, so changing them changes
+    # the losses (as in Model)
+    assert c._standard_kl_weights["c"] is c.loss[STD].weight
+    assert c._gmm_kl_weights["c"] is c.loss[GMM].weight
 
 
 def test_standard_only_does_not_add_default_gmm(fakes):
@@ -75,25 +76,24 @@ def test_standard_only_does_not_add_default_gmm(fakes):
 def test_data_weights_from_loss_weights_not_forwarded_to_keras(fakes):
     c = make_component(name="c")
     _compile(c, loss_weights={NLL_RNA: 2.5})
-    assert c.loss[NLL_RNA].weight_arg is c._data_loss_weights["c"]["rna"]
-    assert float(c._data_loss_weights["c"]["rna"]) == 2.5
-    assert float(c._data_loss_weights["c"]["atac"]) == 1.0
+    assert c.loss[NLL_RNA].weight_arg == 2.5
+    assert c._data_loss_weights["c"]["rna"] is c.loss[NLL_RNA].weight
     assert c.loss[NLL_RNA].weight.scale == 2.5
+    assert c.loss[NLL_ATAC].weight.scale == 1.0
     # Keras must not re-apply them on top (they are popped)
     assert c._compile_loss._user_loss_weights is None
 
 
-def test_recompile_reuses_kl_weight_variables(fakes):
+def test_recompile_applies_new_weights(fakes):
+    # Component rebuilds its losses on every compile (unlike Model, which
+    # reuses existing ones); the indices follow the new losses
     c = make_component(name="c")
     _compile(c, gmm_kl_weights={"c": 2.0}, standard_kl_weights={"c": 0.1})
-    gmm_var = c._gmm_kl_weights["c"]
-    std_var = c._standard_kl_weights["c"]
     _compile(c, gmm_kl_weights={"c": 4.0}, standard_kl_weights={"c": 0.3})
-    assert c._gmm_kl_weights["c"] is gmm_var
-    assert c._standard_kl_weights["c"] is std_var
-    assert float(gmm_var) == 4.0
-    assert float(std_var) == pytest.approx(0.3)
     assert c.loss[GMM].weight.scale == 4.0
+    assert c.loss[STD].weight.scale == pytest.approx(0.3)
+    assert c._gmm_kl_weights["c"] is c.loss[GMM].weight
+    assert c._standard_kl_weights["c"] is c.loss[STD].weight
 
 
 def test_z_hat_density_loss_only_for_child_learning_priors(fakes):
@@ -108,7 +108,7 @@ def test_z_hat_density_loss_only_for_child_learning_priors(fakes):
     child = make_component(name="child", z_dims=2, learn_z_hat_priors=True)
     _compile(child)
     key = "child_z_hat_gmm_density"
-    assert list(child.loss) == [GMM, key, NLL_RNA, NLL_ATAC]
+    assert list(child.loss) == [GMM, key, "z_hat_gmm_kl_divergence", NLL_RNA, NLL_ATAC]
     density = child.loss[key]
     assert density.name == key
     assert density.weight is child._z_hat_density_weights["child"]
@@ -154,55 +154,70 @@ def test_compile_does_not_mutate_caller_dicts(fakes):
     assert sw == {"c": 1.0}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: compile() pops entries from the caller's loss_weights dict; "
-    "recompiling with the same dict silently resets data weights to 1.0",
-)
 def test_compile_keeps_caller_loss_weights(fakes):
+    # regression: compile() popped entries from the caller's loss_weights
     c = make_component(name="c")
     lw = {NLL_RNA: 2.0}
     _compile(c, loss_weights=lw)
     _compile(c, loss_weights=lw)
     assert lw == {NLL_RNA: 2.0}
-    assert float(c._data_loss_weights["c"]["rna"]) == 2.0
+    assert c._data_loss_weights["c"]["rna"].scale == 2.0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _gmm/_standard_kl_weights are standalone tf.Variables never "
-    "passed to the KL losses; changing them has no effect",
-)
 def test_kl_weight_index_is_tied_to_the_loss_weight(fakes):
-    """compile() says weights are backed by tf.Variables 'so callbacks can
-    adjust them at runtime'; Model.compile indexes loss.weight itself."""
+    """regression: the indices were standalone Variables never passed to the
+    losses. They are now the losses' own weights, as in Model.compile."""
     c = make_component(name="c")
     _compile(c, standard_kl_weights={"c": 1.0}, gmm_kl_weights={"c": 1.0})
     c._gmm_kl_weights["c"].assign(0.25)
     c._standard_kl_weights["c"].assign(0.5)
-    assert c.loss[GMM].weight.scale == pytest.approx(0.25)
-    assert c.loss[STD].weight.scale == pytest.approx(0.5)
+    one = tf.ones(())
+    assert float(c.loss[GMM].weight(one)) == pytest.approx(0.25)
+    assert float(c.loss[STD].weight(one)) == pytest.approx(0.5)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _data_loss_weights Variable is snapshotted by "
-    "NegativeLogDataLikelihood(float(weight)); assigning it is a no-op",
-)
 def test_data_weight_index_is_tied_to_the_loss_weight(fakes):
+    # regression: the data-loss Variable was copied with float() by the loss
     c = make_component(name="c")
     _compile(c)
     c._data_loss_weights["c"]["rna"].assign(0.0)
     y = tf.ones((4, 6))
-    assert float(c.loss[NLL_RNA](y, y)) == 0.0
+    # switched off: scale * 1e-16, so the unweighted value can still be
+    # recovered for the metric
+    assert float(c.loss[NLL_RNA](y, y)) == pytest.approx(7e-16)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: docstring says 'A weight > 0 creates the loss' but a 0 "
-    "weight still creates it (and its metric becomes 0/0 = NaN)",
-)
-def test_zero_weight_does_not_create_standard_kl(fakes):
+def test_zero_weight_creates_the_loss_switched_off(fakes):
+    # regression: a weight of 0 created the loss with scale 0 (never
+    # switchable, metric 0 / 0). It is now created with scale 1 and pinned
+    # to 0, as in Model.compile.
     c = make_component(name="c")
     _compile(c, standard_kl_weights={"c": 0.0}, gmm_kl_weights={"c": 1.0})
-    assert STD not in c.loss
+    assert c.loss[STD].weight.scale == 1.0
+    assert c.loss[STD].weight.pins == [0.0]
+    assert c.loss[GMM].weight.pins == []
+
+
+def test_z_hat_gmm_kl_for_child_learning_priors(fakes):
+    # as in Model.compile: scale = z_hat_kl_weight, pinned to 0 at compile
+    child = make_component(
+        name="c", z_dims=2, learn_z_hat_priors=True, z_hat_kl_weight=2.5
+    )
+    _compile(child)
+    zkl = child.loss["z_hat_gmm_kl_divergence"]
+    assert zkl.weight.scale == 2.5 and zkl.weight.pins == [0.0]
+    assert child._z_hat_gmm_kl_weights["c"] is zkl.weight
+
+    default = make_component(name="d", z_dims=2, learn_z_hat_priors=True)
+    _compile(default)
+    assert default.loss["z_hat_gmm_kl_divergence"].weight.scale == 1.0
+
+    off = make_component(
+        name="e", z_dims=2, learn_z_hat_priors=True, z_hat_kl_weight=0.0
+    )
+    _compile(off)
+    assert "z_hat_gmm_kl_divergence" not in off.loss  # as in Model
+
+    root = make_component(name="r", learn_z_hat_priors=True)
+    _compile(root)
+    assert "z_hat_gmm_kl_divergence" not in root.loss

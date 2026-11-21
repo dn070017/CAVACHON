@@ -44,11 +44,7 @@ def test_make_swallows_unknown_kwargs(fakes):
     assert not hasattr(c, "save_x") and not hasattr(c, "save_z")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: Component.__init__ drops **kwargs, so Keras kwargs such as "
-    "trainable=False (as emitted by get_config) are silently ignored",
-)
 def test_keras_trainable_kwarg_is_honoured(fakes):
+    # regression: __init__ dropped **kwargs, so trainable=False was ignored
     c = make_component(name="c", trainable=False)
     assert c.trainable is False

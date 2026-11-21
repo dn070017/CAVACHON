@@ -207,6 +207,12 @@ class FakeDecoder(tf.keras.layers.Layer):
         self.n_layers = n_layers
         self.training_calls = []
         self.last_inputs = None
+        # like DecoderDataParameterizer: only some distributions scale by
+        # the library size (here the ones the fake preprocessor emits it for)
+        self.x_parameterizer = SimpleNamespace(
+            libsize_scaling=distribution_name
+            in {DISTRIBUTIONS[m] for m in LIBSIZE_MODALITIES}
+        )
         FakeDecoder.instances.append(self)
 
     def build(self, input_shape):
@@ -278,14 +284,24 @@ class FakeSampler(tf.keras.layers.Layer):
 
 
 class FakeScaler:
-    """Stand-in for ProgressiveScaler: weight(x) = scale * x."""
+    """Stand-in for ProgressiveScaler: weight(x) = factor * x, where factor
+    starts at scale. Like the real one, pin_to(0) leaves scale * 1e-16."""
 
     def __init__(self, total_iterations=1, scale=1.0, **kwargs):
         self.total_iterations = total_iterations
         self.scale = float(scale)
+        self.factor = float(scale)
+        self.pins = []
 
     def __call__(self, inputs):
-        return tf.constant(self.scale, tf.float32) * tf.cast(inputs, tf.float32)
+        return tf.constant(self.factor, tf.float32) * tf.cast(inputs, tf.float32)
+
+    def pin_to(self, value):
+        self.pins.append(float(value))
+        self.factor = float(value) if value > 0 else 1e-16 * self.scale
+
+    def assign(self, value):
+        self.pin_to(value)
 
 
 class FakeToDense:
@@ -548,19 +564,3 @@ def real_hierarchical_encoder_env(monkeypatch):
         he_module, "MultivariateNormalDiagParameterizerLayer", IdentityParameterizer
     )
     return SimpleNamespace(Scaler=IdentityScaler, Parameterizer=IdentityParameterizer)
-
-
-@pytest.fixture
-def metrics_shim(monkeypatch):
-    """Replaces the Keras-3 `compiled_metrics` backwards-compat shim (a
-    third-party property) on Component with a recorder, so train_step can be
-    exercised past the line that crashes on Keras 3 (see the xfail in
-    test_component_train_step.py). Records (y_true, y_pred) per call."""
-    calls = []
-    stub = SimpleNamespace(
-        update_state=lambda y_true, y_pred: calls.append((y_true, y_pred))
-    )
-    monkeypatch.setattr(
-        component_module.Component, "compiled_metrics", property(lambda self: stub)
-    )
-    return calls

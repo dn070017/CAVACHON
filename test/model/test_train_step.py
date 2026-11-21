@@ -102,11 +102,10 @@ class TestLossAggregation:
         out = _f(m.train_step(batch))
         weighted = {}
         for key, fn in m.loss.items():
-            # the first call of each loss is the one that enters the total
             y_true, y_pred = fn.calls[0]
             weighted[key] = float(fn.weight.factor * tf.reduce_sum(y_pred))
-            # loss evaluated twice: once for the total, once for metrics
-            assert len(fn.calls) == 2
+            # each loss is evaluated once, for both the total and its metric
+            assert len(fn.calls) == 1
         assert len(weighted) == 7  # 2x(std+gmm) + 3 NLL
         assert out["loss"] == pytest.approx(sum(weighted.values()))
 
@@ -308,3 +307,34 @@ class TestFitPath:
         kernel = m.components["a"].encoders["rna"].kernel.numpy()
         expected = 0.5 - 0.5 * 5 * np.repeat(x.sum(0)[:, None], 2, axis=1)
         np.testing.assert_allclose(kernel, expected, rtol=1e-6)
+
+
+class TestTestAndPredictStep:
+    def test_test_step_reports_train_losses_without_training(self, single):
+        # regression: Model had no test_step, so evaluate() and
+        # fit(validation_data=...) failed (Keras' default cannot match the
+        # loss dict)
+        m, batch, x, S = single
+        m.compile(optimizer=tf.keras.optimizers.SGD(0.5))
+        before = [v.numpy().copy() for v in m.trainable_variables]
+        logs = _f(m.test_step(batch))
+        for v, b in zip(m.trainable_variables, before):
+            np.testing.assert_array_equal(v.numpy(), b)
+        m2_logs = _f(m.train_step(batch))  # same losses before the update
+        assert logs == pytest.approx(m2_logs)
+
+    def test_steps_accept_keras_packed_batches(self, single):
+        m, batch, x, S = single
+        m.compile(optimizer=tf.keras.optimizers.SGD(0.0))
+        assert _f(m.test_step((batch,))) == pytest.approx(_f(m.test_step(batch)))
+        assert _f(m.train_step((batch, None, None))) == pytest.approx(
+            _f(m.test_step(batch))
+        )
+
+    def test_predict_step_ignores_extra_entries(self, single):
+        m, batch, x, S = single
+        full = dict(batch, atac_matrix=tf.zeros((3, 9)))
+        out_full = m.predict_step(full)
+        out = m.predict_step(batch)
+        for key in out:
+            np.testing.assert_allclose(out_full[key], out[key])
