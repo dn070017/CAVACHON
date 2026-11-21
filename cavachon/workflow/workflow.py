@@ -390,7 +390,10 @@ class Workflow:
                 f"{use_rep} of {modality_name} colored with {color} {embedding_method}"
             )
             extension = "html" if interactive else "png"
-            file_label = f"{title}.{extension}".lower().replace(" ", "_")
+            # color_by may be '<obsm_key>/<index>'; '/' must not reach the path
+            file_label = (
+                f"{title}.{extension}".lower().replace(" ", "_").replace("/", "_")
+            )
             InteractiveVisualization.embedding(
                 adata=adata,
                 title=title,
@@ -456,8 +459,11 @@ class Workflow:
                 # Single-pair mode: explicit group_a vs group_b
                 assert self.mdata is not None
                 obs = self.mdata[modality_name].obs
-                index_a = obs[obs[use_cluster] == analysis_config.group_a].index
-                index_b = obs[obs[use_cluster] == analysis_config.group_b].index
+                # group labels are strings (config); compare as strings so
+                # integer-coded annotations match too
+                labels = obs[use_cluster].astype(str)
+                index_a = obs.index[labels == analysis_config.group_a]
+                index_b = obs.index[labels == analysis_config.group_b]
                 result = analysis.between_two_groups(
                     group_a_index=index_a,
                     group_b_index=index_b,
@@ -659,8 +665,11 @@ class Workflow:
 
                 assert self.mdata is not None
                 obs = self.mdata[modality_name].obs
-                group_a_index = obs[obs[use_cluster] == group_a].index
-                group_b_index = obs[obs[use_cluster] == group_b].index
+                # group labels are str()-ed above; compare as strings so
+                # integer-coded annotations match too
+                labels = obs[use_cluster].astype(str)
+                group_a_index = obs.index[labels == group_a]
+                group_b_index = obs.index[labels == group_b]
 
                 attributed = analysis.from_deg_file(
                     deg_file=str(filename),

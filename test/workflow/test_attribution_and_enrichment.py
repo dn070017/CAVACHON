@@ -268,15 +268,11 @@ def test_attribution_only_uses_tables_of_configured_component(deps, tables, attr
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: str() group labels never match non-string cluster columns (empty groups)",
-)
 def test_attribution_non_string_cluster_labels(deps, tables, attributed):
-    # A DEG table read back from TSV has integer GroupA/GroupB when the
-    # annotation column holds integers. The workflow str()s the label but
-    # compares it to the raw obs column, so both group indices are empty and
-    # from_deg_file is still called.
+    # regression: W2 - a DEG table read back from TSV has integer
+    # GroupA/GroupB when the annotation column holds integers. The workflow
+    # str()-ed the label but compared it to the raw obs column, so both
+    # group indices were empty.
     tables(
         [
             (

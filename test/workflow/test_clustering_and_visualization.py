@@ -167,14 +167,11 @@ def test_visualize_embedding_nothing_configured_still_makes_dir(deps, makedirs):
     deps.InteractiveVisualization.embedding.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: color_by 'obsm_key/index' puts '/' into the embedding filename",
-)
 def test_visualize_embedding_obsm_color_stays_in_outdir(deps):
-    # InteractiveVisualization.embedding documents color='<obsm_key>/<index>'
-    # (colour by a column of an obsm matrix). The '/' ends up in file_label
-    # and turns the output into a non-existent subdirectory of outdir.
+    # regression: W7 - InteractiveVisualization.embedding documents
+    # color='<obsm_key>/<index>' (colour by a column of an obsm matrix). The
+    # '/' ended up in file_label and turned the output into a non-existent
+    # subdirectory of outdir.
     wf = embedding_workflow([embedding_cfg(True, color_by="z_comp/0")])
     wf.visualize_embedding()
 

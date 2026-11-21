@@ -162,6 +162,22 @@ def test_deg_single_pair_mode(deps, to_csv_calls):
     ]
 
 
+def test_deg_single_pair_integer_cluster_labels(deps):
+    # regression: W2 - config group labels are strings; an integer-coded
+    # annotation column never matched them, giving empty groups.
+    deps.DifferentialAnalysis.return_value.between_two_groups.return_value = deg_table()
+    wf = deg_workflow(
+        [deg_cfg(group_a="0", group_b="2")],
+        obs={"cluster_comp": [0, 0, 1, 1, 2, 2]},
+    )
+
+    wf.perform_differential_analysis()
+
+    call = deps.DifferentialAnalysis.return_value.between_two_groups.call_args
+    assert list(call.kwargs["group_a_index"]) == ["cell0", "cell1"]
+    assert list(call.kwargs["group_b_index"]) == ["cell4", "cell5"]
+
+
 @pytest.mark.parametrize(
     "keep, expected", [(True, ["gene0", "gene2"]), (False, ["gene0", "gene1", "gene2"])]
 )
