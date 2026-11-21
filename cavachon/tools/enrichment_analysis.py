@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import tempfile
+import warnings
 from typing import Dict, Iterator, List, Mapping, Optional, Union, cast
 
 import gseapy
@@ -8,6 +9,7 @@ import pandas as pd
 from gseapy.gsea import Prerank
 from plotly.graph_objs._figure import Figure
 
+from cavachon.environment.constants import Constants
 from cavachon.tools.interactive_visualization import InteractiveVisualization
 from cavachon.utils.dataframe_utils import (
     THRESHOLD_OPERATOR_SYMBOLS,
@@ -22,11 +24,19 @@ PathLike = Union[str, Path]
 class EnrichmentAnalysis:
     """Enrichment analysis and visualization.
 
-    Enrichment analysis is performed with ``gseapy.prerank``. The ranked
-    statistics can be obtained from :class:`DifferentialAnalysis`, for
-    example by passing ``degs["K(A>B|Z)"]`` to :meth:`run`.
+    Enrichment analysis is performed with ``gseapy.prerank`` on the full
+    ranking of a DEG/HDEG table (e.g. its ``K(A>B|Z)`` column). Which
+    features are significant is decided by the differential analysis
+    (the table's ``Significant`` column); here it only decides whether a
+    table has enough DEGs to be worth analysing (``min_num_degs``).
+    Pathways are selected with ``FDR q-val < 0.05``.
 
     """
+
+    # pathways selected for output and plots
+    TERM_METRIC = "FDR q-val"
+    TERM_THRESHOLD = 0.05
+    TERM_THRESHOLD_OPERATOR: ThresholdOperator = "lt"
 
     def __init__(
         self,
@@ -118,9 +128,6 @@ class EnrichmentAnalysis:
         prerank_result: Prerank,
         outdir: Union[str, Path],
         terms: Optional[List[str]] = None,
-        metric: str = "FDR q-val",
-        threshold: float = 0.05,
-        threshold_operator: ThresholdOperator = "leq",
     ) -> Dict[str, Figure]:
         """Create and save interactive enrichment visualizations.
 
@@ -139,18 +146,7 @@ class EnrichmentAnalysis:
 
         terms: List[str], optional
             Terms for which enrichment-score plots are created. If None,
-            all terms passing ``threshold`` are used.
-
-        metric: str, optional
-            Result metric used to select terms for the ring plot and the
-            default term list. Defaults to ``"FDR q-val"``.
-
-        threshold: float, optional
-            Metric value threshold for selected terms. Defaults to 0.05.
-
-        threshold_operator: ThresholdOperator, optional
-            Operator used to compare ``metric`` to ``threshold``. One of
-            ``leq``, ``geq``, ``lt``, ``gt``. Defaults to ``leq``.
+            all terms with ``FDR q-val < 0.05`` are used.
 
         Returns
         -------
@@ -163,8 +159,8 @@ class EnrichmentAnalysis:
         figures = {
             "ringplot": InteractiveVisualization.prerank_ringplot(
                 prerank_result,
-                metric=metric,
-                threshold=threshold,
+                metric=self.TERM_METRIC,
+                threshold=self.TERM_THRESHOLD,
                 filename=str(outdir / "enrichment_ringplot.html"),
             )
         }
@@ -178,13 +174,7 @@ class EnrichmentAnalysis:
         results = cast(Dict[str, object], raw_results)
 
         if terms is None:
-            selected_results = result_table.loc[
-                DataFrameUtils.filter_by_threshold(
-                    cast(pd.Series, result_table[metric]),
-                    threshold,
-                    threshold_operator,
-                )
-            ]
+            selected_results = self.significant_terms(result_table)
             if "Term" in selected_results.columns:
                 selected_terms = selected_results["Term"].astype(str).tolist()
             else:
@@ -212,19 +202,37 @@ class EnrichmentAnalysis:
         prerank_result: Prerank,
         outdir: Union[str, Path],
         terms: Optional[List[str]] = None,
-        metric: str = "FDR q-val",
-        threshold: float = 0.05,
-        threshold_operator: ThresholdOperator = "leq",
     ) -> Dict[str, Figure]:
         """Create visualizations for a completed enrichment analysis."""
         return self._visualize(
             prerank_result=prerank_result,
             outdir=outdir,
             terms=terms,
-            metric=metric,
-            threshold=threshold,
-            threshold_operator=threshold_operator,
         )
+
+    @classmethod
+    def significant_terms(cls, result_table: pd.DataFrame) -> pd.DataFrame:
+        """Rows of a gseapy result table with ``FDR q-val < 0.05``."""
+        if cls.TERM_METRIC not in result_table.columns:
+            raise ValueError(f"Result table does not contain metric: {cls.TERM_METRIC}")
+        return result_table.loc[
+            DataFrameUtils.filter_by_threshold(
+                cast(pd.Series, result_table[cls.TERM_METRIC]),
+                cls.TERM_THRESHOLD,
+                cls.TERM_THRESHOLD_OPERATOR,
+            )
+        ]
+
+    @staticmethod
+    def count_significant(deg_table: pd.DataFrame) -> Optional[int]:
+        """Number of features the differential analysis marked
+        significant (its ``Significant`` column), in either direction;
+        None when the table has no such column."""
+        column = Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN
+        if column not in deg_table.columns:
+            return None
+        significant = deg_table[column].astype(str).str.lower() == "true"
+        return int(significant.sum())
 
     def run(
         self,
@@ -232,13 +240,13 @@ class EnrichmentAnalysis:
         column: str,
         outdir: Union[str, Path],
         terms: Optional[List[str]] = None,
-        metric: str = "FDR q-val",
-        threshold: float = 0.05,
-        threshold_operator: ThresholdOperator = "leq",
         min_num_degs: int = 0,
         **kwargs,
     ) -> Optional[Prerank]:
         """Run enrichment analysis and create its visualizations.
+
+        The full ranking in ``column`` is passed to ``gseapy.prerank``;
+        pathways with ``FDR q-val < 0.05`` are written and plotted.
 
         Parameters
         ----------
@@ -254,22 +262,14 @@ class EnrichmentAnalysis:
 
         terms: List[str], optional
             Terms for which enrichment-score plots are created. If None,
-            all terms passing ``threshold`` are used.
-
-        metric: str, optional
-            Result metric used for term selection. Defaults to
-            ``"FDR q-val"``.
-
-        threshold: float, optional
-            Metric value threshold for selected terms. Defaults to 0.05.
-
-        threshold_operator: ThresholdOperator, optional
-            Operator used to compare ``metric`` to ``threshold``. One of
-            ``leq``, ``geq``, ``lt``, ``gt``. Defaults to ``leq``.
+            all terms with ``FDR q-val < 0.05`` are used.
 
         min_num_degs: int, optional
-            Minimum number of ranked genes required to run the analysis.
-            Defaults to 0.
+            Minimum number of significant features (the table's
+            ``Significant`` column, set by the differential analysis,
+            either direction) required to run the analysis; tables
+            with fewer, or without the column, are skipped. 0 runs every
+            table. Defaults to 0.
 
         **kwargs
             Additional keyword arguments passed to ``gseapy.prerank``.
@@ -279,29 +279,46 @@ class EnrichmentAnalysis:
         Optional[Prerank]
             The completed gseapy prerank result, or ``None`` if too few
             DEGs are present.
+
+        Warns
+        -----
+        RuntimeWarning
+            If every feature is marked significant: the table was probably
+            filtered with ``keep_only_significant``, so the ranking given
+            to prerank is truncated and the enrichment is biased.
         """
         if column not in deg_table.columns:
             raise ValueError(f"Column is not present in DEG table: {column}")
 
-        filtered_table = deg_table.loc[
-            DataFrameUtils.filter_by_threshold(
-                cast(pd.Series, deg_table[column]),
-                threshold,
-                threshold_operator,
-            )
-        ]
-        prerank = filtered_table[column].dropna()
+        prerank = deg_table[column].dropna()
         if prerank.empty:
             raise ValueError(f"Column contains no ranking values: {column}")
 
         output_path = Path(outdir)
-        if len(prerank) < min_num_degs:
+        n_significant = self.count_significant(deg_table)
+        if min_num_degs > 0 and n_significant is None:
             print(
-                f"Skipping enrichment: only {len(prerank)} DEGs "
+                "Skipping enrichment: the table has no "
+                f"{Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN} column "
+                "(rerun the differential analysis); "
+                f"skipping output directory: {output_path}"
+            )
+            return None
+        if n_significant is not None and n_significant < min_num_degs:
+            print(
+                f"Skipping enrichment: only {n_significant} DEGs "
                 f"(min_num_degs={min_num_degs}); "
                 f"skipping output directory: {output_path}"
             )
             return None
+        if n_significant is not None and n_significant == len(deg_table):
+            warnings.warn(
+                "Every feature of the table is marked significant: it was "
+                "probably filtered with keep_only_significant, so prerank "
+                "gets a truncated ranking and the enrichment is biased. "
+                f"Output directory: {output_path}",
+                RuntimeWarning,
+            )
 
         gene_sets = self.gene_sets
         if isinstance(gene_sets, str):
@@ -320,22 +337,14 @@ class EnrichmentAnalysis:
                 raise ValueError(
                     "The enrichment result does not contain a result table"
                 )
-            if metric not in result_table.columns:
-                raise ValueError(f"Result table does not contain metric: {metric}")
-
-            significant_results = result_table.loc[
-                DataFrameUtils.filter_by_threshold(
-                    cast(pd.Series, result_table[metric]),
-                    threshold,
-                    threshold_operator,
-                )
-            ]
-            operator_symbol = THRESHOLD_OPERATOR_SYMBOLS.get(
-                threshold_operator, threshold_operator
-            )
+            significant_results = self.significant_terms(result_table)
             if significant_results.empty:
+                operator_symbol = THRESHOLD_OPERATOR_SYMBOLS.get(
+                    self.TERM_THRESHOLD_OPERATOR, self.TERM_THRESHOLD_OPERATOR
+                )
                 print(
-                    f"No enrichment pathways passed {metric} {operator_symbol} {threshold}; "
+                    f"No enrichment pathways passed {self.TERM_METRIC} "
+                    f"{operator_symbol} {self.TERM_THRESHOLD}; "
                     f"skipping output directory: {output_path}"
                 )
                 return result
@@ -347,9 +356,6 @@ class EnrichmentAnalysis:
             prerank_result=result,
             outdir=output_path,
             terms=terms,
-            metric=metric,
-            threshold=threshold,
-            threshold_operator=threshold_operator,
         )
         return result
 
@@ -424,9 +430,6 @@ class EnrichmentAnalysis:
         column: str = "K(A>B|Z)",
         recursive: bool = True,
         terms: Optional[List[str]] = None,
-        metric: str = "FDR q-val",
-        threshold: float = 0.05,
-        threshold_operator: ThresholdOperator = "leq",
         min_num_degs: int = 0,
         **kwargs,
     ) -> Dict[Path, Optional[Prerank]]:
@@ -458,9 +461,6 @@ class EnrichmentAnalysis:
                 column=column,
                 outdir=table_output,
                 terms=terms,
-                metric=metric,
-                threshold=threshold,
-                threshold_operator=threshold_operator,
                 min_num_degs=min_num_degs,
                 **kwargs,
             )

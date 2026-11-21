@@ -513,13 +513,15 @@ class Workflow:
                     group_b_label=analysis_config.group_b,
                     use_cluster=use_cluster,
                     seed=analysis_config.seed,
+                    significance_threshold=analysis_config.significance_threshold,
                 )
                 if analysis_config.keep_only_significant:
-                    # signed K, as in DifferentialAnalysis.keep_significant:
-                    # equal means give both K ~ -16 (evidence of no
-                    # difference), which |K| would keep
+                    # the features the analysis marked significant, as in
+                    # DifferentialAnalysis.keep_significant
                     result = result.loc[
-                        (result["K(A>B|Z)"] >= 3.2) | (result["K(B>A|Z)"] >= 3.2)
+                        result[
+                            Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN
+                        ].astype(bool)
                     ]
                 # keyed like the pairwise mode, so comparisons on different
                 # annotations (use_cluster) do not overwrite each other.
@@ -539,6 +541,7 @@ class Workflow:
                     keep_only_significant=analysis_config.keep_only_significant,
                     sort_output=analysis_config.sort_output,
                     seed=analysis_config.seed,
+                    significance_threshold=analysis_config.significance_threshold,
                 )
                 # GroupA/GroupB are set by the analysis (labels may contain
                 # '/', so they are not parsed back from the "A/B" keys).
@@ -592,6 +595,7 @@ class Workflow:
                     batch_size=analysis_config.batch_size,
                     donor_components=analysis_config.donor_components,
                     sort_output=analysis_config.sort_output,
+                    significance_threshold=analysis_config.significance_threshold,
                 )
                 target: Tuple[str, ...] = (
                     analysis_config.modality,
@@ -617,6 +621,7 @@ class Workflow:
                     seed=analysis_config.seed,
                     batch_size=analysis_config.batch_size,
                     sort_output=analysis_config.sort_output,
+                    significance_threshold=analysis_config.significance_threshold,
                 )
                 target = (
                     analysis_config.modality,
@@ -668,7 +673,6 @@ class Workflow:
             deg_files = list(
                 EnrichmentAnalysis.find_deg_tables(
                     source_path,
-                    column=analysis_config.column,
                     recursive=analysis_config.recursive,
                 )
             )
@@ -752,10 +756,6 @@ class Workflow:
                     group_a_index=group_a_index,
                     group_b_index=group_b_index,
                     with_respect_to=analysis_config.with_respect_to,
-                    column=analysis_config.column,
-                    threshold=analysis_config.threshold,
-                    threshold_operator=analysis_config.threshold_operator,
-                    use_absolute=analysis_config.use_absolute,
                     min_num_degs=analysis_config.min_num_degs,
                     batch_size=self.config.dataset.batch_size,
                     n_steps=analysis_config.n_steps,
@@ -811,9 +811,6 @@ class Workflow:
                 column=enrichment_config.column,
                 recursive=enrichment_config.recursive,
                 terms=enrichment_config.terms,
-                metric=enrichment_config.metric,
-                threshold=enrichment_config.threshold,
-                threshold_operator=enrichment_config.threshold_operator,
                 min_num_degs=enrichment_config.min_num_degs,
                 permutation_num=enrichment_config.permutation_num,
                 min_size=enrichment_config.min_size,

@@ -124,7 +124,8 @@ differential_analysis:
 | `group_a` / `group_b` | Cluster labels for single-pair mode. Leave empty for pairwise. |
 | `z_sampling_size` / `x_sampling_size` | Sampling rounds (default `5`) / cells drawn from each group per round (default `1000`). |
 | `seed` | Random seed. |
-| `keep_only_significant` | Keep rows where `K(A>B|Z) >= 3.2` or `K(B>A|Z) >= 3.2` (default `false`). |
+| `significance_threshold` | A gene is marked `Significant` when `K(A>B|Z)` or `K(B>A|Z)` reaches it (default `3.2`). Enrichment and differential attribution use these genes. |
+| `keep_only_significant` | Keep only the `Significant` rows (default `false`). Leave it off for tables used by enrichment, which needs the full ranking. |
 | `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
 
 ### HDEG: hierarchical differential analysis between clusters
@@ -168,6 +169,7 @@ hierarchical_differential_analysis:
 | `z_sampling_size` | Number of sampling rounds (default `10`; `n_samples` is the deprecated name). |
 | `x_sampling_size` | Recipient cells drawn per round (default: the recipient group's size). |
 | `seed` | Random seed. |
+| `significance_threshold` | As in DEG (default `3.2`). |
 | `sort_output` | Sort by `max(K(A>B|Z), K(B>A|Z))` descending (default `true`). |
 
 ### Output files
@@ -186,7 +188,7 @@ rna_from_rna_substitute_atac_cd4_naive_to_cd8_naive.tsv
 
 When `donor_components` is omitted, the filename uses `all` in place of the component list.
 
-Both tables record the run on every row: `Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize` and `RandomSeed`, plus the groups compared (`GroupA`/`GroupB` for DEG, `DonorGroup`/`RecipientGroup` for HDEG). Differential attribution uses these columns to pick the tables of its component, modality and `use_cluster`.
+Both tables mark each gene `Significant` (or not) and record the run on every row: `Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed` and `SignificanceThreshold`, plus the groups compared (`GroupA`/`GroupB` for DEG, `DonorGroup`/`RecipientGroup` for HDEG). Differential attribution uses these columns to pick the tables of its component, modality and `use_cluster`.
 
 ## Tips
 

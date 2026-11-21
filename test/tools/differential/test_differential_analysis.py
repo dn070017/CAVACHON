@@ -31,9 +31,18 @@ GROUP_B = Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN
 COMPONENT = Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN
 MODALITY = Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN
 USE_CLUSTER = Constants.DIFFERENTIAL_ANALYSIS_USE_CLUSTER_COLUMN
-COLUMNS = ["Mean(A)", "Mean(B)", "P(A>B|Z)", "P(B>A|Z)", "K(A>B|Z)", "K(B>A|Z)"]
+SIGNIFICANT = Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN
+STATS = ["Mean(A)", "Mean(B)", "P(A>B|Z)", "P(B>A|Z)", "K(A>B|Z)", "K(B>A|Z)"]
+COLUMNS = STATS + [SIGNIFICANT]
 # the run's parameters, the same columns as in the HDEG tables
-RUN_COLUMNS = [COMPONENT, MODALITY, "ZSamplingSize", "XSamplingSize", "RandomSeed"]
+RUN_COLUMNS = [
+    COMPONENT,
+    MODALITY,
+    "ZSamplingSize",
+    "XSamplingSize",
+    "RandomSeed",
+    "SignificanceThreshold",
+]
 
 
 def make_analysis(mdata, model=None, **kwargs):
@@ -89,7 +98,7 @@ def test_compute_bayesian_factor_hand_computed():
     da = make_analysis(two_group_mdata())
     result = da.compute_bayesian_factor(a, b, pd.Index(["x", "y"]))
 
-    assert list(result.columns) == COLUMNS
+    assert list(result.columns) == STATS
     assert list(result.index) == ["x", "y"]
     np.testing.assert_allclose(result["Mean(A)"], [1.5, 1.25])
     np.testing.assert_allclose(result["Mean(B)"], [0.25, 1.0])
@@ -254,6 +263,9 @@ def test_between_two_groups_end_to_end_statistics():
     assert (result["ZSamplingSize"] == 2).all()
     assert (result["XSamplingSize"] == 5).all()
     assert result["RandomSeed"].isna().all()
+    assert (result["SignificanceThreshold"] == 3.2).all()
+    # g2 is equal in both groups (both K ~ -16): not significant
+    assert list(result[SIGNIFICANT]) == [True, True, False]
     np.testing.assert_allclose(result["Mean(A)"], [5, 0, 1])
     np.testing.assert_allclose(result["Mean(B)"], [0, 5, 1])
     np.testing.assert_allclose(result["P(A>B|Z)"], [1, 0, 0])
@@ -423,6 +435,8 @@ def test_bayes_factor_strength_is_signed():
     )
     strength = DifferentialAnalysis.bayes_factor_strength(table)
     np.testing.assert_allclose(strength, [K_MAX, K_MAX, k_min, k_weak, 1.0])
+    DifferentialAnalysis.mark_significant(table)
+    assert list(table[SIGNIFICANT]) == [True, True, False, False, False]
     assert list(DifferentialAnalysis.keep_significant(table).index) == ["g0", "g1"]
     # ties sort last, not first as with |K|
     assert list(DifferentialAnalysis.sort_by_bayes_factor(table).index) == [
@@ -434,10 +448,43 @@ def test_bayes_factor_strength_is_signed():
     ]
 
 
-def test_keep_significant_threshold_is_inclusive():
+def test_mark_significant_threshold_is_inclusive():
     table = k_table([3.2, 3.19, -5.0], [0.0, 0.0, 3.2])
+    assert list(table[SIGNIFICANT]) == [True, False, True]
+    DifferentialAnalysis.mark_significant(table, threshold=5)
+    assert not table[SIGNIFICANT].any()
+
+
+@pytest.mark.parametrize(
+    "values", [[True, False, True], ["True", "False", "True"]], ids=["bool", "str"]
+)
+def test_keep_significant_reads_the_column(values):
+    # the column decides, not the K values; tables read back from disk may
+    # hold strings
+    table = k_table([0.0, 9.0, 0.0], [0.0, 0.0, 0.0])
+    table[SIGNIFICANT] = values
     assert list(DifferentialAnalysis.keep_significant(table).index) == ["g0", "g2"]
-    assert list(DifferentialAnalysis.keep_significant(table, threshold=5).index) == []
+
+
+def test_between_two_groups_significance_threshold(monkeypatch):
+    da = make_analysis(two_group_mdata())
+    # g0: P(A>B) = 1 (K ~ 16); g1: P(A>B) = 0.75 (K ~ 1.1); g2: P(B>A) = 1
+    a = np.array([[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=float)
+    b = np.full((4, 3), 0.5)
+    for threshold, expected in ((3.2, {"g0", "g2"}), (1.0, {"g0", "g1", "g2"})):
+        draws = iter([a, b])
+        monkeypatch.setattr(da, "compute_x_means", lambda **kw: next(draws))
+        result = da.between_two_groups(
+            ["cell0"],
+            ["cell3"],
+            "comp",
+            "RNA",
+            z_sampling_size=1,
+            x_sampling_size=4,
+            significance_threshold=threshold,
+        )
+        assert set(result.index[result[SIGNIFICANT]]) == expected
+        assert (result["SignificanceThreshold"] == threshold).all()
 
 
 def test_between_two_groups_identical_groups_sort_last(monkeypatch):
@@ -455,9 +502,11 @@ def test_between_two_groups_identical_groups_sort_last(monkeypatch):
 
 
 def k_table(k_ab, k_ba):
-    return pd.DataFrame(
+    table = pd.DataFrame(
         {"K(A>B|Z)": k_ab, "K(B>A|Z)": k_ba}, index=[f"g{i}" for i in range(len(k_ab))]
     )
+    DifferentialAnalysis.mark_significant(table)
+    return table
 
 
 def three_cluster_mdata():

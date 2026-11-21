@@ -29,7 +29,7 @@ class DifferentialAnalysis:
 
     """
 
-    # |K| above which a difference counts as significant
+    # default K above which a difference counts as significant
     SIGNIFICANCE_THRESHOLD = 3.2
 
     def __init__(
@@ -87,6 +87,7 @@ class DifferentialAnalysis:
         keep_only_significant: bool = False,
         sort_output: bool = True,
         seed: Optional[int] = None,
+        significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between every groups of
         samples.
@@ -120,6 +121,10 @@ class DifferentialAnalysis:
         seed: Optional[int], optional
             NumPy random seed, applied at the start of every comparison.
             Defaults to None.
+
+        significance_threshold: float, optional
+            K above which a feature is marked ``Significant`` (see
+            ``between_two_groups``). Defaults to 3.2.
 
         Returns
         -------
@@ -157,6 +162,7 @@ class DifferentialAnalysis:
                 group_b_label=str(cluster_b),
                 use_cluster=use_cluster,
                 seed=seed,
+                significance_threshold=significance_threshold,
             )
             if keep_only_significant:
                 deg = self.keep_significant(deg)
@@ -176,6 +182,7 @@ class DifferentialAnalysis:
         keep_only_significant: bool = False,
         sort_output: bool = True,
         seed: Optional[int] = None,
+        significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform differential analysis between one specific group and
         the rest of the samples.
@@ -209,6 +216,10 @@ class DifferentialAnalysis:
         seed: Optional[int], optional
             NumPy random seed, applied at the start of every comparison.
             Defaults to None.
+
+        significance_threshold: float, optional
+            K above which a feature is marked ``Significant`` (see
+            ``between_two_groups``). Defaults to 3.2.
 
         Returns
         -------
@@ -244,6 +255,7 @@ class DifferentialAnalysis:
                 group_b_label="others",
                 use_cluster=use_cluster,
                 seed=seed,
+                significance_threshold=significance_threshold,
             )
             if keep_only_significant:
                 deg = self.keep_significant(deg)
@@ -267,6 +279,7 @@ class DifferentialAnalysis:
         group_b_label: Optional[str] = None,
         use_cluster: Optional[str] = None,
         seed: Optional[int] = None,
+        significance_threshold: float = SIGNIFICANCE_THRESHOLD,
     ) -> pd.DataFrame:
         """Perform the differential analysis between two groups.
 
@@ -320,17 +333,22 @@ class DifferentialAnalysis:
         seed: Optional[int], optional
             NumPy random seed, applied before sampling. Defaults to None.
 
+        significance_threshold: float, optional
+            a feature is marked ``Significant`` when ``K(A>B|Z)`` or
+            ``K(B>A|Z)`` reaches it (see ``mark_significant``). Defaults
+            to 3.2.
+
         Returns
         -------
         pd.DataFrame
             analysis result for differential analysis. The DataFrame
-            contains the original 6 columns, ``GroupA`` and ``GroupB``
-            when labels are provided, then the parameters of the run (see
-            ``record_run_parameters``): ``Component``, ``Modality``,
-            ``UseCluster`` (when provided), ``ZSamplingSize``,
-            ``XSamplingSize`` and ``RandomSeed``. The parameters let a
-            table read back from disk be matched to the analysis that
-            produced it.
+            contains the original 6 columns, ``Significant``, ``GroupA``
+            and ``GroupB`` when labels are provided, then the parameters
+            of the run (see ``record_run_parameters``): ``Component``,
+            ``Modality``, ``UseCluster`` (when provided),
+            ``ZSamplingSize``, ``XSamplingSize``, ``RandomSeed`` and
+            ``SignificanceThreshold``. The parameters let a table read
+            back from disk be matched to the analysis that produced it.
 
         """
         if seed is not None:
@@ -409,6 +427,7 @@ class DifferentialAnalysis:
         index = self.mdata.mod[modality].var.index
 
         result = self.compute_bayesian_factor(x_means_a, x_means_b, index)
+        self.mark_significant(result, significance_threshold)
         if sort_output:
             result = self.sort_by_bayes_factor(result)
 
@@ -424,6 +443,7 @@ class DifferentialAnalysis:
             z_sampling_size=z_sampling_size,
             x_sampling_size=x_sampling_size,
             seed=seed,
+            significance_threshold=significance_threshold,
         )
 
         return result
@@ -442,12 +462,29 @@ class DifferentialAnalysis:
         return result[["K(A>B|Z)", "K(B>A|Z)"]].max(axis=1)
 
     @classmethod
-    def keep_significant(
+    def mark_significant(
         cls, result: pd.DataFrame, threshold: float = SIGNIFICANCE_THRESHOLD
-    ) -> pd.DataFrame:
-        """Keep the features with ``K(A>B|Z) >= threshold`` or
-        ``K(B>A|Z) >= threshold`` (see ``bayes_factor_strength``)."""
-        return result.loc[cls.bayes_factor_strength(result) >= threshold]
+    ) -> None:
+        """Add the ``Significant`` column (in place): True when
+        ``K(A>B|Z) >= threshold`` or ``K(B>A|Z) >= threshold`` (see
+        ``bayes_factor_strength``).
+
+        This is the one definition of a significant feature; filters
+        (``keep_only_significant``) and later analyses (the enrichment's
+        ``min_num_degs``) read the column instead of applying their own
+        threshold.
+        """
+        result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN] = (
+            cls.bayes_factor_strength(result) >= threshold
+        )
+
+    @staticmethod
+    def keep_significant(result: pd.DataFrame) -> pd.DataFrame:
+        """Keep the features marked ``Significant`` (see
+        ``mark_significant``). Works on tables read back from disk too,
+        where the column may hold ``"True"``/``"False"`` strings."""
+        significant = result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN]
+        return result.loc[significant.astype(str).str.lower() == "true"]
 
     @classmethod
     def sort_by_bayes_factor(cls, result: pd.DataFrame) -> pd.DataFrame:
@@ -465,12 +502,13 @@ class DifferentialAnalysis:
         z_sampling_size: int,
         x_sampling_size: int,
         seed: Optional[int],
+        significance_threshold: float,
     ) -> None:
         """Record the parameters of a DEG/HDEG run on every row of its
         result (in place), with the same columns for both analyses:
         ``Component``, ``Modality``, ``UseCluster`` (skipped when None),
-        ``ZSamplingSize``, ``XSamplingSize`` and ``RandomSeed`` (empty
-        when None)."""
+        ``ZSamplingSize``, ``XSamplingSize``, ``RandomSeed`` (empty
+        when None) and ``SignificanceThreshold``."""
         result[Constants.DIFFERENTIAL_ANALYSIS_COMPONENT_COLUMN] = component
         result[Constants.DIFFERENTIAL_ANALYSIS_MODALITY_COLUMN] = modality
         if use_cluster is not None:
@@ -478,6 +516,9 @@ class DifferentialAnalysis:
         result[Constants.DIFFERENTIAL_ANALYSIS_Z_SAMPLING_SIZE_COLUMN] = z_sampling_size
         result[Constants.DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN] = x_sampling_size
         result[Constants.DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN] = seed
+        result[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANCE_THRESHOLD_COLUMN] = (
+            significance_threshold
+        )
 
     def sample_mdata_x(
         self, index: Union[pd.Index, Sequence[str]], x_sampling_size: int = 2500

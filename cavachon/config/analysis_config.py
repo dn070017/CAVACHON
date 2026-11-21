@@ -49,19 +49,17 @@ class AnalysisAttributionScoreConfig(AnalysisGenericConfig):
 class AnalysisDifferentialAttributionConfig(AnalysisGenericConfig):
     """Differential attribution analysis configuration.
 
-    Computes per-component Integrated-Gradients attributions for DEGs
-    produced by ``differential_analysis`` or
-    ``hierarchical_differential_analysis``.
+    Computes per-component Integrated-Gradients attributions for the
+    DEGs produced by ``differential_analysis`` or
+    ``hierarchical_differential_analysis``: the features those analyses
+    marked significant (their ``significance_threshold`` on K).
+    ``min_num_degs`` is the least number of them needed to run.
 
     """
 
     analysis_type: Literal["deg", "hdeg"] = "deg"
     with_respect_to: List[TensorflowCompatibleStr] = []
     use_cluster: str = ""
-    column: str = "K(A>B|Z)"
-    threshold: float = 3.2
-    threshold_operator: Literal["leq", "geq", "lt", "gt"] = "geq"
-    use_absolute: bool = True
     min_num_degs: int = 10
     n_steps: int = 32
     recursive: bool = True
@@ -115,6 +113,7 @@ class AnalysisDifferentialAnalysisConfig(AnalysisGenericConfig):
     z_sampling_size: int = 5
     x_sampling_size: int = 1000
     seed: Optional[int] = None
+    significance_threshold: float = 3.2
     batch_size: int = 128
     keep_only_significant: bool = False
     sort_output: bool = True
@@ -143,8 +142,8 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     The sampling parameters match the differential analysis:
     ``z_sampling_size`` sampling rounds, ``x_sampling_size`` recipient
     cells drawn per round (None: as many as the recipient group has) and
-    ``seed``. ``n_samples`` is the deprecated name of
-    ``z_sampling_size``.
+    ``seed``, and so is ``significance_threshold``. ``n_samples`` is the
+    deprecated name of ``z_sampling_size``.
 
     """
 
@@ -155,6 +154,7 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
     z_sampling_size: int = 10
     x_sampling_size: Optional[int] = None
     seed: Optional[int] = None
+    significance_threshold: float = 3.2
     batch_size: int = 128
     sort_output: bool = True
 
@@ -181,7 +181,14 @@ class AnalysisHierarchicalDifferentialAnalysisConfig(AnalysisGenericConfig):
 
 
 class AnalysisEnrichmentConfig(BaseConfigModel):
-    """Gene-set enrichment analysis configuration."""
+    """Gene-set enrichment analysis configuration.
+
+    Runs ``gseapy.prerank`` on the full ranking in ``column`` of every
+    DEG/HDEG table with at least ``min_num_degs`` features the
+    differential analysis marked significant (either direction).
+    Pathways with ``FDR q-val < 0.05`` are reported.
+
+    """
 
     analysis_type: Literal["deg", "hdeg"]
     gene_sets: str = "KEGG_2019_Mouse"
@@ -189,9 +196,6 @@ class AnalysisEnrichmentConfig(BaseConfigModel):
     column: str = "K(A>B|Z)"
     recursive: bool = True
     terms: Optional[List[str]] = None
-    metric: str = "FDR q-val"
-    threshold: float = 3.2
-    threshold_operator: Literal["leq", "geq", "lt", "gt"] = "geq"
     min_num_degs: int = 10
     permutation_num: int = 1000
     min_size: int = 15
@@ -225,3 +229,25 @@ class AnalysisConfig(BaseConfigModel):
         AnalysisHierarchicalDifferentialAnalysisConfig
     ] = []
     enrichment_analysis: List[AnalysisEnrichmentConfig] = []
+
+    @model_validator(mode="after")
+    def _warn_truncated_enrichment_ranking(self) -> "AnalysisConfig":
+        # enrichment ranks the whole DEG table; keep_only_significant
+        # leaves only the significant features in it
+        if not any(e.analysis_type == "deg" for e in self.enrichment_analysis):
+            return self
+        filtered = [
+            f"{d.component}/{d.modality}/{d.use_cluster}"
+            for d in self.differential_analysis
+            if d.keep_only_significant
+        ]
+        if filtered:
+            warnings.warn(
+                "enrichment_analysis runs on DEG tables written with "
+                f"keep_only_significant ({', '.join(filtered)}): prerank gets "
+                "only the significant features instead of the full ranking, "
+                "which biases the enrichment. Set keep_only_significant: false "
+                "for DEG tables used for enrichment.",
+                RuntimeWarning,
+            )
+        return self

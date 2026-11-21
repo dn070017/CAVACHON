@@ -15,7 +15,6 @@ where it is looked up:
                             ``obs["batch"]`` column of each modality)
 * ``ReflectionHandler``  -> ``MagicMock`` whose ``get_class_by_name``
                             returns ``FakeDistribution`` (mean = parameters)
-* ``DataFrameUtils``     -> ``MagicMock`` (set per test)
 
 The model is a ``FakeModel`` (passed in), deterministic and differentiable:
 

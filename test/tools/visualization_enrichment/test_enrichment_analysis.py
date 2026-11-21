@@ -113,15 +113,21 @@ class TestVisualize:
         }
         assert mkdir_paths(fs) == [Path("/viz")]
 
-    def test_threshold_operator_forwarded(self, ea_deps):
-        result = make_prerank_result()
-        figures = EnrichmentAnalysis().visualize(
-            result, "/viz", metric="NES", threshold=1.0, threshold_operator="geq"
+    def test_terms_selected_with_fdr_below_005(self, ea_deps):
+        # fixed rule: FDR q-val < 0.05 (strict)
+        res2d = pd.DataFrame(
+            {"Term": ["T1", "T2", "T3"], "FDR q-val": [0.049, 0.05, 0.01]}
         )
+        result = make_prerank_result(res2d=res2d)
+        figures = EnrichmentAnalysis().visualize(result, "/viz")
         call = ea_deps.DataFrameUtils.filter_by_threshold.call_args
-        pd.testing.assert_series_equal(call.args[0], result.res2d["NES"])
-        assert call.args[1:] == (1.0, "geq")
-        assert list(figures) == ["ringplot", "enrichment_score:T1"]
+        pd.testing.assert_series_equal(call.args[0], res2d["FDR q-val"])
+        assert call.args[1:] == (0.05, "lt")
+        assert list(figures) == [
+            "ringplot",
+            "enrichment_score:T1",
+            "enrichment_score:T3",
+        ]
 
     def test_explicit_terms_and_safe_filenames(self, ea_deps):
         result = make_prerank_result(results={"A/B c": {}, "T1": {}})
@@ -163,10 +169,14 @@ class TestVisualize:
 
 @pytest.fixture
 def degs():
-    # negative values pass the default "FDR q-val <= 0.05" threshold (see the
-    # xfail test below about this threshold being applied to the DEG table)
+    # two features the differential analysis marked significant (one per
+    # direction), as written by DifferentialAnalysis
     return pd.DataFrame(
-        {"K(A>B|Z)": [-1.0, -2.0, np.nan, -3.0], "other": [1, 2, 3, 4]},
+        {
+            "K(A>B|Z)": [5.0, -4.0, np.nan, 0.1],
+            "Significant": [True, True, False, False],
+            "other": [1, 2, 3, 4],
+        },
         index=["g1", "g2", "g3", "g4"],
     )
 
@@ -192,16 +202,17 @@ class TestRun:
         ea_deps.gseapy.prerank.assert_not_called()
 
     def test_too_few_degs_skips(self, degs, ea_deps, fs, capsys):
-        out = EnrichmentAnalysis().run(degs, "K(A>B|Z)", "/out", min_num_degs=4)
+        # min_num_degs counts the Significant features, both directions
+        out = EnrichmentAnalysis().run(degs, "K(A>B|Z)", "/out", min_num_degs=3)
         assert out is None
-        assert "only 3 DEGs" in capsys.readouterr().out
+        assert "only 2 DEGs (min_num_degs=3)" in capsys.readouterr().out
         ea_deps.gseapy.prerank.assert_not_called()
         ea_deps.gseapy.get_library.assert_not_called()
         assert fs.mkdir.calls == []
 
     def test_full_run(self, degs, ea_deps, fs, prerank):
         analysis = EnrichmentAnalysis(gene_sets="LIB", organism="Human")
-        out = analysis.run(degs, "K(A>B|Z)", "/out", min_num_degs=3, permutation_num=7)
+        out = analysis.run(degs, "K(A>B|Z)", "/out", min_num_degs=2, permutation_num=7)
 
         assert out is prerank
         ea_deps.gseapy.get_library.assert_called_once_with(name="LIB", organism="Human")
@@ -234,15 +245,16 @@ class TestRun:
         out = EnrichmentAnalysis().run(degs, "K(A>B|Z)", "/out")
         assert out is prerank
         assert (
-            "No enrichment pathways passed FDR q-val <= 0.05" in capsys.readouterr().out
+            "No enrichment pathways passed FDR q-val < 0.05" in capsys.readouterr().out
         )
         fs.copytree.assert_not_called()
         assert Path("/out") not in mkdir_paths(fs)
         ea_deps.InteractiveVisualization.prerank_ringplot.assert_not_called()
 
     def test_missing_metric_raises(self, degs, prerank):
-        with pytest.raises(ValueError, match="does not contain metric: nope"):
-            EnrichmentAnalysis().run(degs, "K(A>B|Z)", "/out", metric="nope")
+        prerank.res2d = prerank.res2d.drop(columns="FDR q-val")
+        with pytest.raises(ValueError, match="does not contain metric: FDR q-val"):
+            EnrichmentAnalysis().run(degs, "K(A>B|Z)", "/out")
 
     def test_missing_result_table_raises(self, degs, prerank):
         prerank.res2d = None
@@ -255,16 +267,62 @@ class TestRun:
             prerank, term="T3", filename="/out/enrichment_score_T3.html"
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: run() applies the term-metric threshold/operator (e.g. "
-        "FDR q-val <= 0.05) to the DEG ranking column, dropping ranked genes",
-    )
     def test_full_ranking_passed_to_prerank(self, ea_deps, prerank):
-        table = pd.DataFrame({"K(A>B|Z)": [5.0, 1.0, -2.0]}, index=["g1", "g2", "g3"])
-        EnrichmentAnalysis(gene_sets=LIBRARY).run(table, "K(A>B|Z)", "/out")
+        # regression: T12 - the term threshold (e.g. FDR q-val <= 0.05) was
+        # applied to the DEG ranking column, dropping most ranked genes
+        table = pd.DataFrame(
+            {"K(A>B|Z)": [5.0, 1.0, -2.0], "Significant": [True, False, False]},
+            index=["g1", "g2", "g3"],
+        )
+        EnrichmentAnalysis(gene_sets=LIBRARY).run(
+            table, "K(A>B|Z)", "/out", min_num_degs=1
+        )
         rnk = ea_deps.gseapy.prerank.call_args.kwargs["rnk"]
         assert list(rnk.index) == ["g1", "g2", "g3"]
+
+    def test_without_significant_column_skips_when_gated(self, ea_deps, fs, capsys):
+        table = pd.DataFrame({"K(A>B|Z)": [5.0, 1.0]}, index=["g1", "g2"])
+        assert (
+            EnrichmentAnalysis().run(table, "K(A>B|Z)", "/out", min_num_degs=1) is None
+        )
+        assert "has no Significant column" in capsys.readouterr().out
+        ea_deps.gseapy.prerank.assert_not_called()
+
+    def test_without_significant_column_runs_ungated(self, ea_deps, prerank):
+        # min_num_degs=0: any ranking can be analysed (SDK use)
+        table = pd.DataFrame({"K(A>B|Z)": [5.0, 1.0]}, index=["g1", "g2"])
+        assert EnrichmentAnalysis(gene_sets=LIBRARY).run(table, "K(A>B|Z)", "/out") is (
+            prerank
+        )
+
+    def test_truncated_ranking_warns(self, ea_deps, prerank):
+        # every feature significant: filtered with keep_only_significant
+        table = pd.DataFrame(
+            {"K(A>B|Z)": [5.0, -4.0], "Significant": [True, True]},
+            index=["g1", "g2"],
+        )
+        with pytest.warns(RuntimeWarning, match="truncated ranking"):
+            EnrichmentAnalysis(gene_sets=LIBRARY).run(
+                table, "K(A>B|Z)", "/out", min_num_degs=1
+            )
+        ea_deps.gseapy.prerank.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "values, expected",
+        [
+            ([True, False, True], 2),
+            (["True", "False", "true"], 2),
+            ([False, False, np.nan], 0),
+        ],
+        ids=["bool", "str", "none"],
+    )
+    def test_count_significant(self, values, expected):
+        table = pd.DataFrame({"Significant": values})
+        assert EnrichmentAnalysis.count_significant(table) == expected
+        assert (
+            EnrichmentAnalysis.count_significant(table.drop(columns="Significant"))
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +407,7 @@ class TestRunDirectory:
         run = mock.MagicMock(side_effect=["R1", None])
         monkeypatch.setattr(analysis, "run", run)
 
-        out = analysis.run_directory(
-            "/in", terms=["T"], threshold=0.1, min_num_degs=2, seed=3
-        )
+        out = analysis.run_directory("/in", terms=["T"], min_num_degs=2, seed=3)
 
         assert out == {Path("/in/a.tsv"): "R1", Path("/in/sub/c.txt"): None}
         assert mkdir_paths(fs) == [Path("/in/enrichment_analysis")]
@@ -363,10 +419,9 @@ class TestRunDirectory:
         kwargs = run.call_args_list[0].kwargs
         assert kwargs["column"] == "K(A>B|Z)"
         assert kwargs["terms"] == ["T"]
-        assert kwargs["threshold"] == 0.1
-        assert kwargs["threshold_operator"] == "leq"
-        assert kwargs["metric"] == "FDR q-val"
         assert kwargs["min_num_degs"] == 2
+        for removed in ("metric", "threshold", "threshold_operator"):
+            assert removed not in kwargs
         assert kwargs["seed"] == 3
         pd.testing.assert_frame_equal(
             kwargs["deg_table"], pd.DataFrame({"K(A>B|Z)": [1.0]}, index=["g"])

@@ -125,7 +125,7 @@ The config for gene-set enrichment analysis is specified under `analysis.enrichm
   * required: `False`.
   * defaults: `K(A>B|Z)`
   * type: `str`
-  * description: ranking column in the generated DEG/HDEG tables.
+  * description: ranking column in the generated DEG/HDEG tables. Its full ranking is passed to preranked GSEA; pathways with `FDR q-val < 0.05` are reported and plotted.
 * `recursive`:
   * required: `False`.
   * defaults: `True`
@@ -136,26 +136,11 @@ The config for gene-set enrichment analysis is specified under `analysis.enrichm
   * defaults: `None`
   * type: `List[str] | None`
   * description: terms for which enrichment-score plots are created.
-* `metric`:
-  * required: `False`.
-  * defaults: `FDR q-val`
-  * type: `str`
-  * description: result metric used for selecting terms to visualize.
-* `threshold`:
-  * required: `False`.
-  * defaults: `3.2`
-  * type: `float`
-  * description: metric value threshold for selected terms.
-* `threshold_operator`:
-  * required: `False`.
-  * defaults: `geq`
-  * type: `str`
-  * description: comparison operator for `metric` and `threshold`. Must be one of `leq`, `geq`, `lt`, or `gt`.
 * `min_num_degs`:
   * required: `False`.
   * defaults: `10`
   * type: `int`
-  * description: minimum number of ranked genes required to run enrichment for a DEG/HDEG table. Tables with fewer genes are skipped.
+  * description: minimum number of DEGs (features the differential analysis marked `Significant`, either direction) a DEG/HDEG table needs for enrichment to run on it. Tables with fewer are skipped.
 * `permutation_num`:
   * required: `False`.
   * defaults: `1000`
@@ -262,6 +247,11 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
   * defaults: `None`
   * type: `int | None`
   * description: random seed for reproducibility.
+* `significance_threshold`:
+  * required: `False`.
+  * defaults: `3.2`
+  * type: `float`
+  * description: a feature is marked `Significant` in the output when `K(A>B|Z)` or `K(B>A|Z)` reaches this value. Enrichment and differential attribution analyses use these features.
 * `batch_size`:
   * required: `False`.
   * defaults: `128`
@@ -271,7 +261,7 @@ Two modes are supported based on whether `group_a` and `group_b` are provided:
   * required: `False`.
   * defaults: `False`
   * type: `bool`
-  * description: keep only features with `K(A>B|Z) >= 3.2` or `K(B>A|Z) >= 3.2`.
+  * description: keep only the features marked `Significant`. Not recommended for tables used by enrichment analysis, which needs the full ranking (a warning is raised).
 * `sort_output`:
   * required: `False`.
   * defaults: `True`
@@ -333,6 +323,11 @@ The sampling parameters are the same as in [Differential Analysis](#differential
   * defaults: `None`
   * type: `int | None`
   * description: random seed for reproducibility.
+* `significance_threshold`:
+  * required: `False`.
+  * defaults: `3.2`
+  * type: `float`
+  * description: a feature is marked `Significant` in the output when `K(A>B|Z)` or `K(B>A|Z)` reaches this value. Enrichment and differential attribution analyses use these features.
 * `batch_size`:
   * required: `False`.
   * defaults: `128`
@@ -347,7 +342,7 @@ The sampling parameters are the same as in [Differential Analysis](#differential
 [back to top](#config-hierarchy)
 &nbsp;
 ## Differential Attribution Analysis
-The config for differential attribution analysis, which computes Integrated-Gradients attributions for DEGs/HDEGs.
+The config for differential attribution analysis, which computes Integrated-Gradients attributions for the DEGs/HDEGs the differential analysis marked `Significant` (see its `significance_threshold`).
 
 * `analysis_type`:
   * required: `False`.
@@ -371,31 +366,11 @@ The config for differential attribution analysis, which computes Integrated-Grad
   * defaults: `""`
   * type: `str`
   * description: cluster column used to define group A and group B.
-* `column`:
-  * required: `False`.
-  * defaults: `K(A>B|Z)`
-  * type: `str`
-  * description: ranking column in the generated DEG/HDEG tables.
-* `threshold`:
-  * required: `False`.
-  * defaults: `3.2`
-  * type: `float`
-  * description: threshold applied to `column`.
-* `threshold_operator`:
-  * required: `False`.
-  * defaults: `geq`
-  * type: `str`
-  * description: comparison operator for `column` and `threshold`. Must be one of `leq`, `geq`, `lt`, or `gt`.
-* `use_absolute`:
-  * required: `False`.
-  * defaults: `True`
-  * type: `bool`
-  * description: whether to compare `|column|` to `threshold`.
 * `min_num_degs`:
   * required: `False`.
   * defaults: `10`
   * type: `int`
-  * description: minimum number of DEGs required to compute attributions. Tables with fewer DEGs after threshold filtering are skipped.
+  * description: minimum number of DEGs (features the differential analysis marked `Significant`) required to compute attributions. Tables with fewer are skipped.
 * `n_steps`:
   * required: `False`.
   * defaults: `32`

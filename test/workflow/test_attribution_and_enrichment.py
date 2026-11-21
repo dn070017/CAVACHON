@@ -38,10 +38,6 @@ def attr_cfg(**overrides):
         component="comp",
         use_cluster="cluster_comp",
         with_respect_to=["parent", "comp"],
-        column="K(A>B|Z)",
-        threshold=2.5,
-        threshold_operator="gt",
-        use_absolute=False,
         min_num_degs=4,
         n_steps=16,
         recursive=False,
@@ -111,7 +107,7 @@ def test_attribution_searches_source_directory(deps, tables, analysis_type, sour
     wf.perform_differential_attribution_analysis()
 
     deps.EnrichmentAnalysis.find_deg_tables.assert_called_once_with(
-        f"/out/{source}", column="K(A>B|Z)", recursive=False
+        f"/out/{source}", recursive=False
     )
 
 
@@ -156,10 +152,6 @@ def test_attribution_deg_call_arguments(deps, tables, attributed):
         component="comp",
         modality="RNA",
         with_respect_to=["parent", "comp"],
-        column="K(A>B|Z)",
-        threshold=2.5,
-        threshold_operator="gt",
-        use_absolute=False,
         min_num_degs=4,
         batch_size=40,
         n_steps=16,
@@ -426,9 +418,6 @@ def enrich_cfg(analysis_type="deg", gene_sets="KEGG_2019_Mouse"):
         column="K(B>A|Z)",
         recursive=False,
         terms=["Apoptosis"],
-        metric="NOM p-val",
-        threshold=0.01,
-        threshold_operator="lt",
         min_num_degs=3,
         permutation_num=50,
         min_size=5,
@@ -455,9 +444,6 @@ def test_enrichment_arguments(deps, analysis_type, source):
         column="K(B>A|Z)",
         recursive=False,
         terms=["Apoptosis"],
-        metric="NOM p-val",
-        threshold=0.01,
-        threshold_operator="lt",
         min_num_degs=3,
         permutation_num=50,
         min_size=5,

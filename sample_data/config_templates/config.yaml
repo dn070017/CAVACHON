@@ -87,8 +87,6 @@ analysis:
       permutation_num: 1000
       min_size: 15
       max_size: 500
-      threshold: 3.2
-      threshold_operator: geq
       min_num_degs: 10
   differential_attribution_analysis:
     - analysis_type: deg
@@ -97,9 +95,5 @@ analysis:
       with_respect_to:
         - ATAC
       use_cluster: cluster_RNA
-      column: K(A>B|Z)
-      threshold: 3.2
-      threshold_operator: geq
-      use_absolute: true
       min_num_degs: 10
       n_steps: 32

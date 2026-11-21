@@ -36,6 +36,9 @@ class Constants:
     DIFFERENTIAL_ANALYSIS_Z_SAMPLING_SIZE_COLUMN = "ZSamplingSize"
     DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN = "XSamplingSize"
     DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN = "RandomSeed"
+    DIFFERENTIAL_ANALYSIS_SIGNIFICANCE_THRESHOLD_COLUMN = "SignificanceThreshold"
+    # per feature: the differential analysis found a significant difference
+    DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN = "Significant"
 
     MODULE_INPUTS_CONDITIONED_Z = "z_conditional"
     MODULE_INPUTS_CONDITIONED_Z_HAT = "z_hat_conditional"

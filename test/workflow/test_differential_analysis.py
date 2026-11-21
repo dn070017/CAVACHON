@@ -22,10 +22,15 @@ GROUP_B = Constants.DIFFERENTIAL_ANALYSIS_GROUP_B_COLUMN
 
 
 def deg_table(k_ab=(5.0, 0.1, -4.0), k_ba=(0.0, 0.2, 4.0)):
-    return pd.DataFrame(
+    # as written by DifferentialAnalysis: Significant at the default 3.2
+    table = pd.DataFrame(
         {"K(A>B|Z)": list(k_ab), "K(B>A|Z)": list(k_ba)},
         index=[f"gene{i}" for i in range(len(k_ab))],
     )
+    table[Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN] = (
+        table[["K(A>B|Z)", "K(B>A|Z)"]].max(axis=1) >= 3.2
+    )
+    return table
 
 
 def deg_cfg(**overrides):
@@ -38,6 +43,7 @@ def deg_cfg(**overrides):
         z_sampling_size=3,
         x_sampling_size=50,
         seed=5,
+        significance_threshold=2.5,
         batch_size=12,
         keep_only_significant=False,
         sort_output=True,
@@ -109,6 +115,7 @@ def test_deg_pairwise_mode(deps, to_csv_calls):
         keep_only_significant=True,
         sort_output=False,
         seed=5,
+        significance_threshold=2.5,
     )
     analysis.between_two_groups.assert_not_called()
     assert list(table[GROUP_A]) == ["a"] * 3
@@ -155,6 +162,7 @@ def test_deg_single_pair_mode(deps, to_csv_calls):
         group_b_label="c",
         use_cluster="cluster_comp",
         seed=5,
+        significance_threshold=2.5,
     )
     deps.DifferentialAnalysis.return_value.across_clusters_pairwise.assert_not_called()
     # keyed by (modality, component, use_cluster) like the pairwise mode
@@ -195,7 +203,8 @@ def test_deg_single_pair_keep_only_significant(deps, to_csv_calls, keep, expecte
 
 
 def test_deg_single_pair_keep_only_significant_drops_ties(deps, to_csv_calls):
-    # regression: T4 - equal means give both K ~ -16; |K| kept them
+    # regression: T4 - equal means give both K ~ -16; |K| kept them. The
+    # filter now reads the analysis' Significant column.
     deps.DifferentialAnalysis.return_value.between_two_groups.return_value = deg_table(
         k_ab=(5.0, -16.1), k_ba=(-5.0, -16.1)
     )
@@ -311,6 +320,7 @@ def hdeg_cfg(**overrides):
         z_sampling_size=4,
         x_sampling_size=None,
         seed=7,
+        significance_threshold=4.0,
         batch_size=21,
         sort_output=False,
     )
@@ -364,6 +374,7 @@ def test_hdeg_single_pair_mode(deps, to_csv_calls):
         batch_size=21,
         donor_components=["p1", "p2"],
         sort_output=False,
+        significance_threshold=4.0,
     )
     analysis.across_clusters_pairwise.assert_not_called()
     assert len(to_csv_calls) == 1
@@ -394,6 +405,7 @@ def test_hdeg_pairwise_mode(deps, to_csv_calls):
         seed=7,
         batch_size=21,
         sort_output=False,
+        significance_threshold=4.0,
     )
     analysis.between_groups.assert_not_called()
     prefix = (

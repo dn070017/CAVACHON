@@ -197,6 +197,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         donor_components: list[str] | None = None,
         desc: str = "",
         sort_output: bool = True,
+        significance_threshold: float = DifferentialAnalysis.SIGNIFICANCE_THRESHOLD,
     ) -> pd.DataFrame:
         """Compute differential expression between donor and recipient groups.
 
@@ -245,6 +246,10 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             Sort the result by the larger of the Bayesian factors
             ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order (see
             ``DifferentialAnalysis.bayes_factor_strength``). Default ``True``.
+        significance_threshold : float, optional
+            A feature is marked ``Significant`` when ``K(A>B|Z)`` or
+            ``K(B>A|Z)`` reaches it (see
+            ``DifferentialAnalysis.mark_significant``). Default ``3.2``.
 
         Returns
         -------
@@ -267,6 +272,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
               ``log(P(A>B|Z) + 1e-7) - log(1 - P(A>B|Z) + 1e-7)``, natural
               log; ``|K| >= 3.2`` is the usual significance threshold.
               ``K(B>A|Z)`` likewise;
+            - ``Significant``: ``K(A>B|Z)`` or ``K(B>A|Z)`` reaches
+              ``significance_threshold``;
             - ``MeanDelta(Substituted-Original)``: ``Mean(A) - Mean(B)``.
 
             Then the intervention: ``InterventionType``, ``DonorGroup``,
@@ -275,8 +282,9 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             the run, as in ``DifferentialAnalysis.between_two_groups``:
             ``Component``, ``Modality``, ``UseCluster``,
             ``ZSamplingSize``, ``XSamplingSize`` (the number actually
-            drawn) and ``RandomSeed``. The parameters let a table read back
-            from disk be matched to the analysis that produced it.
+            drawn), ``RandomSeed`` and ``SignificanceThreshold``. The
+            parameters let a table read back from disk be matched to the
+            analysis that produced it.
 
         Raises
         ------
@@ -357,6 +365,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         result = self.compute_bayesian_factor(
             x_means_substituted, x_means_original, var_index
         )
+        self.mark_significant(result, significance_threshold)
         result["MeanDelta(Substituted-Original)"] = (
             result["Mean(A)"] - result["Mean(B)"]
         )
@@ -377,6 +386,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             z_sampling_size=z_sampling_size,
             x_sampling_size=x_sampling_size,
             seed=seed,
+            significance_threshold=significance_threshold,
         )
 
         if sort_output:
@@ -395,6 +405,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         seed: int | None = None,
         batch_size: int = 128,
         sort_output: bool = True,
+        significance_threshold: float = DifferentialAnalysis.SIGNIFICANCE_THRESHOLD,
     ) -> Mapping[str, pd.DataFrame]:
         """Perform counterfactual intervention between every pair of clusters.
 
@@ -429,6 +440,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         sort_output : bool, optional
             Sort each result by the larger of the Bayesian factors
             ``K(A>B|Z)`` and ``K(B>A|Z)`` in descending order. Default ``True``.
+        significance_threshold : float, optional
+            K above which a feature is marked ``Significant``. Default ``3.2``.
 
         Returns
         -------
@@ -460,6 +473,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
                     batch_size=batch_size,
                     desc=key,
                     sort_output=sort_output,
+                    significance_threshold=significance_threshold,
                 )
 
         return results

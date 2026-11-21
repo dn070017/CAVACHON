@@ -1,6 +1,6 @@
 """Unit tests for cavachon.tools.differential_attribution_analysis.
 
-DataLoader / ReflectionHandler / DataFrameUtils are fakes (see conftest).
+DataLoader / ReflectionHandler are fakes (see conftest).
 pd.read_csv is mocked. The FakeModel has two components:
 
     z_a = X @ E_a   (reads g0, g1)       z_b = X @ E_b   (reads g2)
@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 import tensorflow as tf
 
+from cavachon.environment.constants import Constants
 from cavachon.tools.differential_analysis import DifferentialAnalysis
 from cavachon.tools.differential_attribution_analysis import (
     DifferentialAttributionAnalysis,
@@ -305,44 +306,30 @@ def read_csv(monkeypatch):
     return m
 
 
-@pytest.fixture
-def dataframe_utils(monkeypatch):
-    m = MagicMock(name="DataFrameUtils")
-    monkeypatch.setattr(f"{DAA_MODULE}.DataFrameUtils", m)
-    return m
+SIGNIFICANT = Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN
 
 
-def test_from_deg_file_filters_and_delegates(read_csv, dataframe_utils, monkeypatch):
-    table = pd.DataFrame({"K(B>A|Z)": [5.0, 1.0, -4.0]}, index=FEATURES)
-    read_csv.return_value = table
-    dataframe_utils.filter_by_threshold.return_value = pd.Series(
-        [True, False, True], index=FEATURES
+def deg_file_table(k, significant):
+    return pd.DataFrame(
+        {"K(A>B|Z)": k, SIGNIFICANT: significant}, index=FEATURES[: len(k)]
     )
+
+
+def test_from_deg_file_keeps_significant_and_delegates(read_csv, monkeypatch):
+    # the DEGs are the rows the differential analysis marked Significant;
+    # the K values themselves are not re-thresholded here
+    read_csv.return_value = deg_file_table([5.0, 9.0, -4.0], [True, False, True])
     daa, _ = make_daa()
     spy = MagicMock(return_value="result")
     monkeypatch.setattr(daa, "compute_differential_attribution", spy)
 
     out = daa.from_deg_file(
-        "/in/deg.tsv",
-        "a",
-        "RNA",
-        A_IDX,
-        B_IDX,
-        ["a"],
-        column="K(B>A|Z)",
-        threshold=2.0,
-        threshold_operator="gt",
-        use_absolute=False,
-        batch_size=8,
-        n_steps=5,
+        "/in/deg.tsv", "a", "RNA", A_IDX, B_IDX, ["a"], batch_size=8, n_steps=5
     )
     assert out == "result"
     read_csv.assert_called_once_with(
         "/in/deg.tsv", sep=None, engine="python", index_col=0
     )
-    args = dataframe_utils.filter_by_threshold.call_args.args
-    pd.testing.assert_series_equal(args[0], table["K(B>A|Z)"])
-    assert args[1:] == (2.0, "gt", False)
     kwargs = spy.call_args.kwargs
     assert list(kwargs["deg"].index) == ["g0", "g2"]
     assert kwargs["component"] == "a" and kwargs["modality"] == "RNA"
@@ -351,22 +338,18 @@ def test_from_deg_file_filters_and_delegates(read_csv, dataframe_utils, monkeypa
     assert kwargs["batch_size"] == 8 and kwargs["n_steps"] == 5
 
 
-def test_from_deg_file_default_filter_arguments(read_csv, dataframe_utils, monkeypatch):
+def test_from_deg_file_without_significant_column_skips(read_csv, monkeypatch, capsys):
     read_csv.return_value = pd.DataFrame({"K(A>B|Z)": [5.0]}, index=["g0"])
-    dataframe_utils.filter_by_threshold.return_value = pd.Series([True], index=["g0"])
     daa, _ = make_daa()
-    monkeypatch.setattr(daa, "compute_differential_attribution", MagicMock())
-    daa.from_deg_file("f", "a", "RNA", A_IDX, B_IDX, ["a"])
-    assert dataframe_utils.filter_by_threshold.call_args.args[1:] == (3.2, "geq", True)
+    spy = MagicMock()
+    monkeypatch.setattr(daa, "compute_differential_attribution", spy)
+    assert daa.from_deg_file("f", "a", "RNA", A_IDX, B_IDX, ["a"]) is None
+    spy.assert_not_called()
+    assert "has no Significant column" in capsys.readouterr().out
 
 
-def test_from_deg_file_too_few_degs_returns_none(
-    read_csv, dataframe_utils, monkeypatch, capsys
-):
-    read_csv.return_value = pd.DataFrame({"K(A>B|Z)": [5.0, 0.0]}, index=["g0", "g1"])
-    dataframe_utils.filter_by_threshold.return_value = pd.Series(
-        [True, False], index=["g0", "g1"]
-    )
+def test_from_deg_file_too_few_degs_returns_none(read_csv, monkeypatch, capsys):
+    read_csv.return_value = deg_file_table([5.0, 0.0], [True, False])
     daa, _ = make_daa()
     spy = MagicMock()
     monkeypatch.setattr(daa, "compute_differential_attribution", spy)
@@ -377,11 +360,8 @@ def test_from_deg_file_too_few_degs_returns_none(
     assert "only 1 DEGs (min_num_degs=2)" in capsys.readouterr().out
 
 
-def test_from_deg_file_end_to_end(read_csv, dataframe_utils):
-    read_csv.return_value = pd.DataFrame({"K(A>B|Z)": [5.0, 0.0, 4.0]}, index=FEATURES)
-    dataframe_utils.filter_by_threshold.return_value = pd.Series(
-        [True, False, True], index=FEATURES
-    )
+def test_from_deg_file_end_to_end(read_csv):
+    read_csv.return_value = deg_file_table([5.0, 0.0, 4.0], [True, False, True])
     daa, _ = make_daa()
     result = daa.from_deg_file("f", "a", "RNA", A_IDX, B_IDX, ["a", "b"], n_steps=2)
     _, _, d, _ = expected_terms()

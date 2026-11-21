@@ -326,9 +326,13 @@ def test_run_parameter_columns_match_differential_analysis(monkeypatch):
         Constants.DIFFERENTIAL_ANALYSIS_Z_SAMPLING_SIZE_COLUMN,
         Constants.DIFFERENTIAL_ANALYSIS_X_SAMPLING_SIZE_COLUMN,
         Constants.DIFFERENTIAL_ANALYSIS_RANDOM_SEED_COLUMN,
+        Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANCE_THRESHOLD_COLUMN,
     ]
-    assert list(hdeg.columns[-6:]) == run_columns
-    assert list(deg.columns[-6:]) == run_columns
+    assert list(hdeg.columns[-7:]) == run_columns
+    assert list(deg.columns[-7:]) == run_columns
+    # both mark significant features the same way
+    significant = Constants.DIFFERENTIAL_ANALYSIS_SIGNIFICANT_COLUMN
+    assert hdeg[significant].dtype == bool and deg[significant].dtype == bool
 
 
 @pytest.mark.parametrize(
@@ -404,6 +408,7 @@ def test_across_clusters_pairwise_runs_both_directions(monkeypatch):
         batch_size=16,
         desc="x->y",
         sort_output=False,
+        significance_threshold=3.2,
     )
 
 

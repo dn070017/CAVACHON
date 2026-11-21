@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 from pydantic import ValidationError
 
@@ -62,10 +64,10 @@ def test_attribution_defaults_and_sanitize():
 def test_differential_attribution_defaults():
     d = AnalysisDifferentialAttributionConfig()
     assert d.analysis_type == "deg"
-    assert d.column == "K(A>B|Z)"
-    assert d.threshold == 3.2
-    assert d.threshold_operator == "geq"
-    assert d.use_absolute is True
+    # DEGs are the rows the differential analysis marked Significant; the
+    # attribution has no threshold of its own
+    for removed in ("column", "threshold", "threshold_operator", "use_absolute"):
+        assert removed not in AnalysisDifferentialAttributionConfig.model_fields
     assert d.min_num_degs == 10
     assert d.n_steps == 32
     assert d.recursive is True
@@ -74,8 +76,6 @@ def test_differential_attribution_defaults():
 def test_differential_attribution_validation():
     with pytest.raises(ValidationError):
         AnalysisDifferentialAttributionConfig(analysis_type="xyz")
-    with pytest.raises(ValidationError):
-        AnalysisDifferentialAttributionConfig(threshold_operator="eq")
     with pytest.raises(ValidationError, match="n_steps"):
         AnalysisDifferentialAttributionConfig(n_steps=0)
     with pytest.raises(
@@ -153,6 +153,46 @@ def test_differential_analysis_seed_defaults_to_none():
     assert AnalysisDifferentialAnalysisConfig(seed=4).seed == 4
 
 
+@pytest.mark.parametrize(
+    "config_class",
+    [
+        AnalysisDifferentialAnalysisConfig,
+        AnalysisHierarchicalDifferentialAnalysisConfig,
+    ],
+)
+def test_significance_threshold(config_class):
+    assert config_class().significance_threshold == 3.2
+    assert config_class(significance_threshold=5).significance_threshold == 5.0
+
+
+def _analysis(deg_keep=False, enrichment_type="deg"):
+    return dict(
+        differential_analysis=[
+            {"modality": "RNA", "component": "RNA", "keep_only_significant": deg_keep}
+        ],
+        enrichment_analysis=[{"analysis_type": enrichment_type}],
+    )
+
+
+def test_keep_only_significant_with_deg_enrichment_warns():
+    # enrichment ranks the whole DEG table; keep_only_significant truncates it
+    with pytest.warns(
+        RuntimeWarning, match=r"keep_only_significant \(RNA/RNA/cluster_RNA\)"
+    ):
+        AnalysisConfig(**_analysis(deg_keep=True))
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [dict(deg_keep=False), dict(deg_keep=True, enrichment_type="hdeg")],
+    ids=["not-filtered", "hdeg-enrichment"],
+)
+def test_no_truncated_ranking_warning(kwargs):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        AnalysisConfig(**_analysis(**kwargs))
+
+
 # regression: hierarchical DA use_cluster defaults to cluster_<component>
 def test_hierarchical_use_cluster_default_matches_differential():
     h = AnalysisHierarchicalDifferentialAnalysisConfig(modality="RNA", component="RNA")
@@ -174,7 +214,10 @@ def test_enrichment_defaults():
     assert e.gene_sets == "KEGG_2019_Mouse"
     assert e.organism == "Mouse"
     assert e.terms is None
-    assert e.metric == "FDR q-val"
+    assert e.column == "K(A>B|Z)" and e.min_num_degs == 10
+    # pathways are always selected with FDR q-val < 0.05
+    for removed in ("metric", "threshold", "threshold_operator"):
+        assert removed not in AnalysisEnrichmentConfig.model_fields
     assert (e.permutation_num, e.min_size, e.max_size) == (1000, 15, 500)
 
 
