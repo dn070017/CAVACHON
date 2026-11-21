@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 86 passed, 0 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 86 passed, 5 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -43,7 +43,35 @@ Checked with real DEG/HDEG tables written to disk and read back: `Significant` p
 
 ## Open bugs (strict xfails)
 
-None.
+Found by the 2026-11-21 review of the differential and attribution tools. Nothing is fixed yet; T13 and T15 need a design decision first (which library size and batch effect to decode with: fixed, matched, or averaged over a reference set).
+
+### T13
+
+`differential_analysis.py:609-635` — **DEG compares sequencing depth along with expression.** `compute_x_means` decodes each sampled cell with its own matrix in `batch`, so for decoders with `libsize_scaling` (ZINB, the RNA default) the decoded mean is scaled by that cell's library size. The batch effect is marginalized (a random cell's batch), the library size is not.
+- Failing input: identical latent and decoded profile, group B sequenced 5× deeper (library size 10 vs 2) → every feature `Significant`.
+- **Impact: yes**: when two clusters differ in depth, most genes look up in the deeper one, and `Mean(A)`/`Mean(B)` are on each group's own depth. HDEG is not affected: both decodes of a pair use the same recipient cell's library size.
+
+### T14
+
+`hierarchical_differential_analysis.py:166` and `differential_analysis.py:620` — **the HDEG pairing is only half paired.** The substituted (A) and original (B) decodes use the same recipient cell, but each draws its own random batch effect. P(A>B|Z) mixes the substitution effect with batch-effect noise, which lowers power; the `between_groups` docstring calls the comparison paired.
+- Failing input: a donor component the decoder doesn't use, `obs["batch"]` varying → P(A>B|Z) > 0 for every feature (expected 0, a tie in every pair).
+- **Impact: yes**, with batch-effect columns.
+
+### T15
+
+`differential_attribution_analysis.py:248-261` — **differential attribution is computed at one arbitrary cell's batch effect and library size.** The "representative batch" is the first cell of the whole dataset (`batch_size=1`, first batch), which may belong to neither group.
+- Failing input: the same data with the cells in reverse order → different `Expected(A)` / `Expected(B)` / attributions.
+- **Impact: yes**: `Delta`, `Expected(A/B)` and every `attr_*` scale with that cell's library size and carry its batch effect.
+
+### T17
+
+`hierarchical_differential_analysis.py:302-314` — `between_groups` compares the labels as given, so integer-coded clusters (e.g. leiden stored as int) with `donor_group: "1"` from the YAML raise "Unknown donor group". DEG single-pair mode compares as strings (W2), so it works there.
+- **Impact:** single-pair HDEG on integer-coded cluster columns.
+
+### T18
+
+`differential_analysis.py:144-150`, `hierarchical_differential_analysis.py:454-461` — a NaN in `use_cluster` becomes its own "cluster" (`NaN == NaN` is False), whose index is empty: numpy's "'a' cannot be empty" in pairwise mode (DEG and HDEG).
+- **Impact:** any cells without a label in the cluster column.
 
 ## Fixed
 
@@ -57,7 +85,15 @@ None.
 
 ## Worth a look
 
-- A NaN cluster label, or `across_clusters` with a single cluster, crashes with numpy's "'a' cannot be empty".
+Design points from the 2026-11-21 review (working as written, but easy to misread):
+- **"Z sampling" doesn't sample z.** `encode(training=False)` returns the posterior mean, so `z_sampling_size` is the number of resampling rounds over cells, and P(A>B|Z) measures how much the decoded means of the two groups overlap across cells, not posterior uncertainty.
+- **`Delta` is not the DEG difference.** Differential attribution reports f(mean z_A) − f(mean z_B), the decoder at the group-mean latents; the DEG `Mean(A) − Mean(B)` averages the decoded output over cells, and the two differ when the decoder is nonlinear. With a subset of `with_respect_to`, `Expected(A)` keeps the other components at B's latent, so it is not group A's expected expression despite the name.
+- **HDEG attribution explains a different intervention than the table.** On HDEG tables the attribution moves components to the donor group's mean z, while HDEG substituted individual donor cells' z. If `with_respect_to` differs from the table's `DonorComponents` it attributes components HDEG never swapped; nothing checks or warns.
+- **`contrib_*` is unbounded**: when attributions cancel (+0.5 / −0.49), the signed `contrib_*` blows up (`abs_contrib_*` is fine).
+- **Saturated genes**: the ZINB decoder clips the log-mean at 7 (mean ≤ e⁷ − 1 ≈ 1096); above it the gradient is 0 (zero attribution) and DEG pairs tie. Model-level, but it shows up here.
+- **Repeated work** (time only): each comparison redoes a full-data pass to build the batch-effect pool; HDEG runs `hierarchical_encode` twice per batch and discards the result.
+- `seed` calls `np.random.seed`, NumPy's global generator, which other code shares.
+- `across_clusters` with a single cluster crashes with numpy's "'a' cannot be empty" (the rest group is empty).
 - `across_clusters` keys results by the raw cluster value, so int labels give int keys despite `Mapping[str, ...]`; `across_clusters_pairwise` uses f-string keys.
 - `compute_differential_attribution(n_steps=0)` silently returns NaN; `n_steps` is not validated.
 - `HierarchicalDifferentialAnalysis._normalize_donor_components(None, component)` doesn't check that `component` exists; an unknown one fails later with KeyError.

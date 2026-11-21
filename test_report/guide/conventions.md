@@ -33,7 +33,7 @@ pixi run pytest --runxfail
 | C1–C4 | `Component` training path, latent (not used in production) |
 | MD1–MD8 | `model` |
 | W1–W7 | `workflow` |
-| T1–T12 | `tools` |
+| T1–T18 | `tools` |
 
 Severity labels in the package pages:
 

@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `cluster_analysis.py`, `attribution_analysis.py`
-Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) — 57 passed, 0 open bugs.
+Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) — 57 passed, 1 open bug.
 
 **Mocked:**
 - cluster_analysis: `DataLoader` (MagicMock); the two distribution classes are fakes built on real tfp `MultivariateNormalDiag` / `MixtureSameFamily` that record their inputs.
@@ -18,9 +18,12 @@ Tests: [`test/tools/cluster_attribution`](../../../test/tools/cluster_attributio
 - Attribution target: parent → child conditional propagation, stopping at the requested component; `selected_variables` order; batch-size invariance.
 - Integrated gradients: completeness for linear and nonlinear decoders, and the baseline zeroing only `with_respect_to` (the other components keep their z).
 
-## Open bugs
+## Open bugs (strict xfails)
 
-None.
+### T16
+
+`attribution_analysis.py:167-176` — `compute_integrated_gradient` with a `with_respect_to` that is not upstream of `component` (e.g. decode the parent, attribute to the child, or a sibling): the target doesn't depend on that z, `tape.gradient` returns `None`, and `.numpy()` raises `AttributeError: 'NoneType' object has no attribute 'numpy'`. Config validation only checks that the name is a component. (`DifferentialAttributionAnalysis` gives 0 instead.)
+- **Impact:** a config error ends in an unclear crash. Found by the 2026-11-21 review.
 
 ## Fixed
 
@@ -31,6 +34,9 @@ None.
 - ✅ (2026-11-21) **T5**: the `None` defaults of `batch_effect_colnames` / `distribution_names` crashed `DataLoader`; they are now passed as empty mappings. See [differential](differential.md#t5).
 
 ## Worth a look
+
+- **Conditional attribution scores scale with depth and expression level** (2026-11-21 review). The plotted score is the mean |IG| over all genes, on the count scale, and the decoder multiplies by the cell's own library size (ZINB), so deeper clusters and highly expressed genes dominate the bar chart. The workflow also calls it one `with_respect_to` at a time, so the cross-component normalization in `attribution_score` never runs.
+- Integrated gradients make one gradient call per gene per step (`tape.gradient` on a selector), slow for many genes; a Jacobian would do it in one call.
 
 - `_merge_similar_gmm_components` returns early when `n_clusters <= max_k`, so with the default `max_k=100` the Bhattacharyya `bc_threshold` merge never runs, contradicting both docstrings. The agglomerative path can hit a ZeroDivisionError if `fcluster` returns fewer than `max_k` clusters.
 - `compute_integrated_gradient` / `compute_attribution_target_batch` are annotated `np.ndarray` but return `tf.Tensor`.
