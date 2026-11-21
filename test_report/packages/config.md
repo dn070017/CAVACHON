@@ -4,13 +4,15 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ✅ Clean | [`test/config`](../../test/config) | 204 | 0 | 99% | Moderate: depends on 2 packages, used by 4 |
+| ✅ Clean | [`test/config`](../../test/config) | 209 | 0 | 99% | Moderate: depends on 2 packages, used by 4 |
 
 - **Depends on:** environment, utils
 - **Used by:** io, model, scheduler, workflow
 - **Mocked in tests:** `GeneralUtils`, `ReflectionHandler`; `open`/`yaml.load`, `os.path` lookups.
 
 ## Fixed
+
+- ✅ (2026-11-21) Significance is set only in `differential_analysis` / `hierarchical_differential_analysis` (`significance_threshold`, default 3.2). `enrichment_analysis` lost `metric`/`threshold`/`threshold_operator` (pathways are always `FDR q-val < 0.05`; `min_num_degs` counts significant DEGs), and `differential_attribution_analysis` lost `column`/`threshold`/`threshold_operator`/`use_absolute`. `AnalysisConfig` warns when a DEG entry has `keep_only_significant` and enrichment runs on DEG tables (truncated ranking). See [tools: differential](tools/differential.md#significant-features).
 
 - ✅ (2026-11-21) `hierarchical_differential_analysis`: `donor_cluster`/`recipient_cluster` were renamed to `donor_group`/`recipient_group` (no alias; old names now only warn as unexpected fields), `n_samples` to `z_sampling_size` (still accepted with a DeprecationWarning), and `x_sampling_size` was added. `differential_analysis` gained `seed`. The sampling parameters now match between the two (see [tools: differential](tools/differential.md#provenance-columns)); the templates and `CONFIG_REFERENCE.md` were updated, which also removed a stale duplicate HDEG section and wrong descriptions of `z_sampling_size`/`x_sampling_size`.
 

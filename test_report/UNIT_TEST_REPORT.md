@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1776 passed, 19 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1793 passed, 17 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -17,7 +17,7 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [filter](packages/filter.md) | ✅ | 🟢 Low | 1 | 1 | 109 | 0 | 100% |
 | [io](packages/io.md) | ✅ | 🟢 Low | 1 | 1 | 33 | 0 | 100% |
 | [app](packages/app.md) | ✅ | 🟢 Low | 1 | 0 | 11 | 0 | 87% |
-| [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 204 | 0 | 99% |
+| [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 209 | 0 | 99% |
 | [layers](packages/layers.md) | ⏸️ | 🟡 Moderate | 2 | 6 | 153 | 1 | 99% |
 | [losses](packages/losses.md) | ⏸️ | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 198 | 4 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 243 | 6 | 100% |
+| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 255 | 4 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1776** | **19** | |
+| **Total** | | | | | **1793** | **17** | |
 
 **Status**
 - ✅ No open bugs.
@@ -85,7 +85,6 @@ Open bugs that silently change results on a normal run:
 | [T1](packages/tools/cluster_attribution.md#t1) | tools | Integrated gradients in `AttributionAnalysis` carry an extra factor of alpha, so every attribution score is shrunk. |
 | [T2](packages/tools/cluster_attribution.md#t2) | tools | Child z_hat cluster variance drops cross terms in `_recombine_gmm_parameters`. |
 | [T3](packages/tools/cluster_attribution.md#t3) | tools | Cluster labels can stop matching their `obsm` columns when a prior component wins no cells. |
-| [T12](packages/tools/visualization_enrichment.md#t12) | tools | `EnrichmentAnalysis.run()` filters the gene ranking with the gene-set threshold. Needs the author's call. |
 
 ## Layout
 

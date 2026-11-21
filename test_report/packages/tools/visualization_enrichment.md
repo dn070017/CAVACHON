@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `interactive_visualization.py`, `enrichment_analysis.py`
-Tests: [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) — 117 passed, 2 open bugs.
+Tests: [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) — 126 passed, 0 open bugs.
 
 **Mocked:** `AttributionAnalysis`, `ClusterAnalysis`, `DifferentialAnalysis` (in interactive_visualization); `InteractiveVisualization`, `DataFrameUtils` and **gseapy** (in enrichment_analysis). `Figure.show`/`write_html`/`write_image`, `Path.mkdir`, `TemporaryDirectory`, `copytree` and `pd.read_csv` are blocked/recorded. TSNE and UMAP are a deterministic fake; PCA is real.
 
@@ -11,19 +11,16 @@ Tests: [`test/tools/visualization_enrichment`](../../../test/tools/visualization
 
 ## Open bugs (strict xfails)
 
-### T8
-
-`interactive_visualization.py:200` — `adata.uns.get("cavachon", "").get("name", "")` raises `'str' object has no attribute 'get'` when uns has no `cavachon` entry, e.g. `embedding(adata_without_uns_cavachon, method="pca")`.
-- **Impact:** only for AnnData not produced by cavachon.
-
-### T12
-
-`enrichment_analysis.py:286-292` — `run()` applies the **term** threshold/operator ("Metric value threshold for selected terms", default FDR q-val <= 0.05) to the **DEG ranking** column, keeping only genes with K <= 0.05. K values `[5.0, 1.0, -2.0]` pass only `g3` to `gseapy.prerank`.
-- Added on purpose in commit a841a53 with `min_num_degs`, but one threshold can't serve both an FDR cutoff and a K cutoff. **Needs the author's call.**
-- **Impact: yes**, if unintended: most of the ranked list fed to prerank is discarded.
+None.
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t8"></a>**T8** (`embedding`): `adata.uns.get("cavachon", "").get("name", "")` raised AttributeError for an AnnData not produced by cavachon (no `uns['cavachon']`), e.g. a custom model's latent space. The name (the modality name cavachon stores) only built the default title `Z(<name>)`; the embedding itself always comes from `use_rep`. `uns` is no longer read: the default title is `use_rep` (the obsm key, e.g. `z`), or `Z` for an array. The workflow and `scripts/evaluate_embeddings.py` always pass their own title, so their output is unchanged.
+- ✅ (2026-11-21) <a id="t12"></a>**T12** (`EnrichmentAnalysis.run`): one `threshold`/`threshold_operator` pair filtered both the DEG ranking (`column`) and the pathways (`metric`), so one of the two was always wrong; with the template config (3.2, `geq`) no pathway could ever pass `FDR q-val >= 3.2`, so enrichment never wrote output. The threshold was meant to decide **which DEG tables are worth analysing** (author's call), so:
+  - significance is defined once, by the differential analysis (`Significant` column, see [differential](differential.md#significant-features)); `min_num_degs` counts those features (either direction) and skips tables with fewer, or without the column (when `min_num_degs > 0`);
+  - the **full ranking** in `column` goes to `gseapy.prerank` (GSEA expects the whole ranked list);
+  - pathways are always `FDR q-val < 0.05` (`TERM_METRIC` / `TERM_THRESHOLD`; strict, was `<=`); `metric`/`threshold`/`threshold_operator` were removed from `run`, `run_directory`, `visualize` and the config;
+  - a table where every feature is significant (filtered with `keep_only_significant`) gives a truncated ranking: `run` warns, and so does the config when a DEG entry has `keep_only_significant` and enrichment runs on DEG tables.
 - ✅ (2026-11-21) <a id="t7"></a>**T7** (`bar`): without a `group`, `**kwargs` (documented to go to `fig.update_layout`) were ignored, so titles were lost, e.g. in `neighbors_with_same_annotations(group_by_cluster=False)`. They are now applied in both branches.
 - ✅ (2026-11-21) <a id="t9"></a>**T9** (`attribution_score`): every `with_respect_to` figure was written to the same `filename`, so only the last survived. With 2+ variables, each is saved as `<name>_<wrt><ext>` (`a.html` → `a_z1.html`, `a_z2.html`; `/` in a name becomes `_`), via the new `InteractiveVisualization.attribution_score_filename`. A single variable keeps the filename as is, so the workflow (which calls it once per variable) writes the same files as before.
 - ✅ (2026-11-21) <a id="t10"></a>**T10** (`prerank_ringplot`): `float(x[:-2])` on gseapy's `"12.35%"` gave 12.3. Only the `%` (and surrounding spaces) is stripped now; numeric values also work.

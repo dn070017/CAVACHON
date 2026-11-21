@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 83 passed, 0 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 86 passed, 0 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -17,12 +17,12 @@ Tests: [`test/tools/differential`](../../../test/tools/differential) — 83 pass
 
 (2026-11-21) Every DEG/HDEG table records the analysis that produced it, on every row, so a table read back from disk can be matched to its analysis (used by the workflow's differential attribution, see [W1](../workflow.md#w1)). Both end with the **same run columns, in the same order**, written by `DifferentialAnalysis.record_run_parameters`:
 
-`Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`
+`Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`, `SignificanceThreshold`
 
 | Table | Before the run columns | Notes |
 |---|---|---|
-| DEG (`between_two_groups`, both `across_clusters*`) | the 6 statistics, `GroupA`, `GroupB` | `UseCluster` (new optional `use_cluster` argument) and the group labels are written when given; the `across_clusters*` methods and the workflow always pass them. |
-| HDEG (`between_groups`, `across_clusters_pairwise`) | the 6 statistics, `MeanDelta(Substituted-Original)`, `InterventionType`, `DonorGroup`, `RecipientGroup`, `SamplingStrategy`, `DonorComponents` | `XSamplingSize` is the number of recipient cells actually drawn per round. |
+| DEG (`between_two_groups`, both `across_clusters*`) | the 6 statistics, `Significant`, `GroupA`, `GroupB` | `UseCluster` (new optional `use_cluster` argument) and the group labels are written when given; the `across_clusters*` methods and the workflow always pass them. |
+| HDEG (`between_groups`, `across_clusters_pairwise`) | the 6 statistics, `Significant`, `MeanDelta(Substituted-Original)`, `InterventionType`, `DonorGroup`, `RecipientGroup`, `SamplingStrategy`, `DonorComponents` | `XSamplingSize` is the number of recipient cells actually drawn per round. |
 
 Column names are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN` and `Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_{DONOR,RECIPIENT}_GROUP_COLUMN`. Extra columns don't affect the consumers: attribution and enrichment read only their ranking column and the group columns. Checked with real DEG/HDEG tables written to disk and read back through `EnrichmentAnalysis.find_deg_tables`.
 
@@ -31,6 +31,15 @@ Column names are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN` and `Constants.HIERA
 - HDEG's `n_samples` became `z_sampling_size`, and it gained `x_sampling_size` (default `None`: the recipient group's size, the previous behaviour). The config still accepts `n_samples` with a DeprecationWarning.
 
 **Donor/recipient are "groups".** HDEG uses `donor_group`/`recipient_group` (`between_clusters` → `between_groups`, columns `DonorGroup`/`RecipientGroup`, config fields `donor_group`/`recipient_group`, error messages), since the labels come from any obs column, not only clusters. The old config names were renamed without an alias. `across_clusters_pairwise` keeps its name: it does iterate over the clusters of `use_cluster`. The `between_groups` docstring defines `Mean(A)`, `Mean(B)`, `P` and `K` for the substitution (A = substituted, B = original, paired per recipient cell).
+
+## Significant features
+
+(2026-11-21) DEG and HDEG are the one place that decides which features are significant: `mark_significant` writes a boolean `Significant` column (`K(A>B|Z)` or `K(B>A|Z)` ≥ `significance_threshold`, default 3.2, new in the tools and in both configs; recorded as `SignificanceThreshold`). Everything downstream reads that column instead of applying its own threshold:
+- `keep_only_significant` (tools and the workflow's single-pair mode) keeps the `Significant` rows (`keep_significant`, which also reads `"True"`/`"False"` strings from disk);
+- enrichment's `min_num_degs` counts them (see [T12](visualization_enrichment.md#t12));
+- differential attribution attributes exactly them: its `column`/`threshold`/`threshold_operator`/`use_absolute` options were removed (they defaulted to `|K| >= 3.2`, which kept tied features, as in T4). A table without the column is skipped with a message.
+
+Checked with real DEG/HDEG tables written to disk and read back: `Significant` parses as bool, and a feature equal in both groups is not significant.
 
 ## Open bugs (strict xfails)
 
