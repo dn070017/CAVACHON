@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 74 passed, 2 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 77 passed, 2 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -15,14 +15,22 @@ Tests: [`test/tools/differential`](../../../test/tools/differential) — 74 pass
 
 ## Provenance columns
 
-(2026-11-21) Every DEG/HDEG table records the analysis that produced it, on every row, so a table read back from disk can be matched to its analysis (used by the workflow's differential attribution, see [W1](../workflow.md#w1)):
+(2026-11-21) Every DEG/HDEG table records the analysis that produced it, on every row, so a table read back from disk can be matched to its analysis (used by the workflow's differential attribution, see [W1](../workflow.md#w1)). Both end with the **same run columns, in the same order**, written by `DifferentialAnalysis.record_run_parameters`:
 
-| Table | Columns added |
-|---|---|
-| DEG (`between_two_groups`, and both `across_clusters*`) | `Component`, `Modality`, `ZSamplingSize`, `XSamplingSize`, and `UseCluster` when given (new optional `use_cluster` argument; the `across_clusters*` methods pass it) |
-| HDEG (`between_clusters`, `across_clusters_pairwise`) | `Component`, `Modality`, `UseCluster`, `NSamples` (next to the existing `RandomSeed` and `DonorComponents`) |
+`Component`, `Modality`, `UseCluster`, `ZSamplingSize`, `XSamplingSize`, `RandomSeed`
 
-The column names of `Component`, `Modality` and `UseCluster` are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN`. Extra columns don't affect the consumers: attribution and enrichment read only their ranking column and the group columns. Checked with real DEG/HDEG tables written to disk and read back through `EnrichmentAnalysis.find_deg_tables`.
+| Table | Before the run columns | Notes |
+|---|---|---|
+| DEG (`between_two_groups`, both `across_clusters*`) | the 6 statistics, `GroupA`, `GroupB` | `UseCluster` (new optional `use_cluster` argument) and the group labels are written when given; the `across_clusters*` methods and the workflow always pass them. |
+| HDEG (`between_groups`, `across_clusters_pairwise`) | the 6 statistics, `MeanDelta(Substituted-Original)`, `InterventionType`, `DonorGroup`, `RecipientGroup`, `SamplingStrategy`, `DonorComponents` | `XSamplingSize` is the number of recipient cells actually drawn per round. |
+
+Column names are `Constants.DIFFERENTIAL_ANALYSIS_*_COLUMN` and `Constants.HIERARCHICAL_DIFFERENTIAL_ANALYSIS_{DONOR,RECIPIENT}_GROUP_COLUMN`. Extra columns don't affect the consumers: attribution and enrichment read only their ranking column and the group columns. Checked with real DEG/HDEG tables written to disk and read back through `EnrichmentAnalysis.find_deg_tables`.
+
+**Same sampling parameters** (2026-11-21). DEG and HDEG take `z_sampling_size` (sampling rounds), `x_sampling_size` (cells drawn per round) and `seed`, in the tools and in the config:
+- DEG gained `seed` (applied at the start of each comparison, as in HDEG), so its runs are reproducible and `RandomSeed` is recorded.
+- HDEG's `n_samples` became `z_sampling_size`, and it gained `x_sampling_size` (default `None`: the recipient group's size, the previous behaviour). The config still accepts `n_samples` with a DeprecationWarning.
+
+**Donor/recipient are "groups".** HDEG uses `donor_group`/`recipient_group` (`between_clusters` → `between_groups`, columns `DonorGroup`/`RecipientGroup`, config fields `donor_group`/`recipient_group`, error messages), since the labels come from any obs column, not only clusters. The old config names were renamed without an alias. `across_clusters_pairwise` keeps its name: it does iterate over the clusters of `use_cluster`. The `between_groups` docstring defines `Mean(A)`, `Mean(B)`, `P` and `K` for the substitution (A = substituted, B = original, paired per recipient cell).
 
 ## Open bugs (strict xfails)
 

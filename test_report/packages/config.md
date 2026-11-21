@@ -4,13 +4,15 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| ✅ Clean | [`test/config`](../../test/config) | 202 | 0 | 99% | Moderate: depends on 2 packages, used by 4 |
+| ✅ Clean | [`test/config`](../../test/config) | 204 | 0 | 99% | Moderate: depends on 2 packages, used by 4 |
 
 - **Depends on:** environment, utils
 - **Used by:** io, model, scheduler, workflow
 - **Mocked in tests:** `GeneralUtils`, `ReflectionHandler`; `open`/`yaml.load`, `os.path` lookups.
 
 ## Fixed
+
+- ✅ (2026-11-21) `hierarchical_differential_analysis`: `donor_cluster`/`recipient_cluster` were renamed to `donor_group`/`recipient_group` (no alias; old names now only warn as unexpected fields), `n_samples` to `z_sampling_size` (still accepted with a DeprecationWarning), and `x_sampling_size` was added. `differential_analysis` gained `seed`. The sampling parameters now match between the two (see [tools: differential](tools/differential.md#provenance-columns)); the templates and `CONFIG_REFERENCE.md` were updated, which also removed a stale duplicate HDEG section and wrong descriptions of `z_sampling_size`/`x_sampling_size`.
 
 - ✅ `analysis_config.py` (2026-11-20): `embedding_method` defaulted to `''`, which bypassed its validator: an explicit `''` was rejected but an omitted field was accepted, and the workflow then called `embedding(method="")`. It is now required. All 155 `visualize_embedding` entries in the repo's YAML configs already set it.
 

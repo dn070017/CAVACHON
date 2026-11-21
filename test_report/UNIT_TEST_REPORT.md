@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1753 passed, 27 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1758 passed, 27 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -17,7 +17,7 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [filter](packages/filter.md) | ✅ | 🟢 Low | 1 | 1 | 109 | 0 | 100% |
 | [io](packages/io.md) | ✅ | 🟢 Low | 1 | 1 | 33 | 0 | 100% |
 | [app](packages/app.md) | ✅ | 🟢 Low | 1 | 0 | 11 | 0 | 87% |
-| [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 202 | 0 | 99% |
+| [config](packages/config.md) | ✅ | 🟡 Moderate | 2 | 4 | 204 | 0 | 99% |
 | [layers](packages/layers.md) | ⏸️ | 🟡 Moderate | 2 | 6 | 153 | 1 | 99% |
 | [losses](packages/losses.md) | ⏸️ | 🟡 Moderate | 3 | 2 | 38 | 2 | 100% |
 | [dataloader](packages/dataloader.md) | ✅ | 🟡 Moderate | 3 | 4 | 86 | 0 | 100% |
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | 🟡 | 🟠 High | 4 | 2 | 198 | 4 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 223 | 14 | 100% |
+| [tools](packages/tools/README.md) | 🔴 | 🔴 Very high | 7 | 1 | 226 | 14 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 99 | 0 | 100% |
-| **Total** | | | | | **1753** | **27** | |
+| **Total** | | | | | **1758** | **27** | |
 
 **Status**
 - ✅ No open bugs.
