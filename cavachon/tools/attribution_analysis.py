@@ -127,6 +127,14 @@ class AttributionAnalysis:
         np.ndarray
             integrated gradients of ∂rho_m/∂z_m.
 
+        Raises
+        ------
+        ValueError
+            if the outputs of ``component`` don't depend on the latent of
+            ``with_respect_to``: it is not ``component`` or one of its
+            ancestors (through ``conditioned_on_z`` /
+            ``conditioned_on_z_hat``).
+
         """
         selected_indices: Sequence[int]
         if selected_variables is not None:
@@ -173,8 +181,17 @@ class AttributionAnalysis:
 
                         gradients_j_feature = tape.gradient(
                             tf.matmul(attribution_target, selector), z_variable
-                        ).numpy()
-                        gradients_tmp.append(gradients_j_feature)
+                        )
+                        if gradients_j_feature is None:
+                            # the target doesn't depend on this latent at all
+                            raise ValueError(
+                                f"'{with_respect_to}' (with_respect_to) is not "
+                                f"upstream of '{component}': the outputs of "
+                                f"'{component}' don't depend on its latent. Use "
+                                f"'{component}' or one of its ancestors "
+                                "(conditioned_on_z / conditioned_on_z_hat)."
+                            )
+                        gradients_tmp.append(gradients_j_feature.numpy())
 
                     gradients = tf.stack(gradients_tmp, axis=-1)
                     scaled_gradients = 1 / steps * tf.expand_dims(z, -1) * gradients

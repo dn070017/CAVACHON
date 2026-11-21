@@ -144,15 +144,14 @@ def test_attribution_target_unknown_component_raises(attr_fakes):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T16 with_respect_to that is not upstream of component has no "
-    "gradient; tape.gradient returns None and .numpy() raises AttributeError",
-)
+# regression: T16 with_respect_to that is not upstream of component has no
+# gradient; tape.gradient returned None and .numpy() raised AttributeError
 def test_integrated_gradient_with_respect_to_not_upstream_raises(attr_fakes):
     analysis, _, _ = two_component_setup(attr_fakes)
     # decode the parent, attribute to the child (downstream of the parent)
-    with pytest.raises(ValueError, match="with_respect_to"):
+    with pytest.raises(
+        ValueError, match=r"'c' \(with_respect_to\) is not upstream of 'p'"
+    ):
         analysis.compute_integrated_gradient("p", "rna", "c", steps=2)
 
 

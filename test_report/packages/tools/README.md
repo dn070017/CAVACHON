@@ -4,7 +4,7 @@
 
 | Status | Tests | Passed | Open bugs | Coverage | Coupling |
 |---|---|---|---|---|---|
-| 🟡 Open bugs, edge cases | [`test/tools`](../../../test/tools) | 289 | 1 | 100% | Very high: depends on 7 packages, used by 1 |
+| ✅ No open bugs | [`test/tools`](../../../test/tools) | 290 | 0 | 100% | Very high: depends on 7 packages, used by 1 |
 
 - **Depends on:** dataloader, distributions, environment, layers, model, modules, utils
 - **Used by:** workflow
@@ -12,7 +12,7 @@
 | Modules | Report | Tests | Passed | Open bugs |
 |---|---|---|---|---|
 | `differential_analysis`, `hierarchical_differential_analysis`, `differential_attribution_analysis` | [differential.md](differential.md) | [`test/tools/differential`](../../../test/tools/differential) | 106 | 0 |
-| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 57 | 1 |
+| `cluster_analysis`, `attribution_analysis` | [cluster_attribution.md](cluster_attribution.md) | [`test/tools/cluster_attribution`](../../../test/tools/cluster_attribution) | 58 | 0 |
 | `interactive_visualization`, `enrichment_analysis` | [visualization_enrichment.md](visualization_enrichment.md) | [`test/tools/visualization_enrichment`](../../../test/tools/visualization_enrichment) | 126 | 0 |
 
 ## Mocking
@@ -24,7 +24,7 @@
 
 ## Bugs affecting results
 
-None. T13–T15, T17 and T18 are fixed; the open T16 is an edge case (see [cluster_attribution](cluster_attribution.md#t16)).
+None. T1–T18 are fixed; see each module's page.
 
 ## Typing
 

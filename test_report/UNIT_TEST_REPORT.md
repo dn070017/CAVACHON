@@ -2,7 +2,7 @@
 
 Updated: 2026-11-21 · Branch: `feature/refactor-tests-attribution`
 
-**Whole suite: 1833 passed, 10 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
+**Whole suite: 1834 passed, 9 open bugs (strict xfails), 0 failures.** `ruff check`, `ruff format --check` and `mypy` are clean on the whole package.
 
 Every package has isolated unit tests: other cavachon packages are mocked, and there is no file, network or subprocess I/O. See [Isolation](guide/isolation.md) and [Conventions and commands](guide/conventions.md). How the suite got here: [History](guide/history.md).
 
@@ -25,9 +25,9 @@ Every package has isolated unit tests: other cavachon packages are mocked, and t
 | [scheduler](packages/scheduler.md) | ✅ | 🟠 High | 4 | 1 | 121 | 0 | 99% |
 | [modules](packages/modules.md) | ✅ | 🟠 High | 4 | 2 | 204 | 0 | 100% |
 | [model](packages/model.md) | ⏸️ | 🔴 Very high | 7 | 2 | 112 | 0 | 100% |
-| [tools](packages/tools/README.md) | 🟡 | 🔴 Very high | 7 | 1 | 289 | 1 | 100% |
+| [tools](packages/tools/README.md) | ✅ | 🔴 Very high | 7 | 1 | 290 | 0 | 100% |
 | [workflow](packages/workflow.md) | ✅ | 🔴 Very high | 10 | 1 | 100 | 0 | 100% |
-| **Total** | | | | | **1833** | **10** | |
+| **Total** | | | | | **1834** | **9** | |
 
 **Status**
 - ✅ No open bugs.
