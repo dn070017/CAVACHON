@@ -37,11 +37,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
     def _get_group_mdata(
         self, group: str, use_cluster: str, modality: str
     ) -> mu.MuData:
-        group_index = (
-            self.mdata[modality]
-            .obs[self.mdata[modality].obs[use_cluster] == group]
-            .index
-        )
+        obs = self.mdata[modality].obs
+        group_index = obs.index[self.group_labels(obs, use_cluster) == str(group)]
 
         adata_dict = dict()
         with warnings.catch_warnings():
@@ -207,7 +204,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
         ----------
         donor_group : str
             Label (in ``obs[use_cluster]``) of the group from which latent
-            representations are drawn.
+            representations are drawn. Labels are compared as strings, so
+            ``"1"`` selects an integer-coded cluster ``1``.
         recipient_group : str
             Label (in ``obs[use_cluster]``) of the group whose cells provide
             recipient encodings and baseline expression.
@@ -297,12 +295,15 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             If groups are unknown/empty or ``donor_components`` contains unknown
             names or resolves to an empty list.
         """
+        # labels are compared as strings: integer-coded clusters match the
+        # string labels of a config (as in the DEG single-pair mode)
+        donor_group, recipient_group = str(donor_group), str(recipient_group)
         obs = self.mdata[modality].obs
-        group_labels = obs[use_cluster]
-        if hasattr(group_labels, "cat"):
-            available_groups = group_labels.cat.categories
+        group_labels = self.group_labels(obs, use_cluster)
+        if hasattr(obs[use_cluster], "cat"):
+            available_groups = obs[use_cluster].cat.categories.astype(str)
         else:
-            available_groups = pd.Index(group_labels.unique())
+            available_groups = pd.Index(group_labels.dropna().unique())
 
         if donor_group not in available_groups:
             raise ValueError(f"Unknown donor group: {donor_group}")
@@ -317,7 +318,7 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             donor_components, component
         )
 
-        recipient_index = obs[obs[use_cluster] == recipient_group].index
+        recipient_index = obs.index[group_labels == recipient_group]
 
         if len(recipient_index) == 0:
             raise ValueError(f"Recipient group '{recipient_group}' is empty.")
@@ -466,7 +467,8 @@ class HierarchicalDifferentialAnalysis(DifferentialAnalysis):
             (same columns as ``between_groups``).
         """
         obs = self.mdata[modality].obs
-        unique_clusters = obs[use_cluster].unique()
+        # cells without a label (NaN) are left out of every intervention
+        unique_clusters = obs[use_cluster].dropna().unique()
         results = {}
 
         for cluster_a, cluster_b in tqdm(

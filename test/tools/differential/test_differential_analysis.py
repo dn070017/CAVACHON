@@ -758,11 +758,8 @@ def test_between_two_groups_without_libsize_scaling_has_no_column():
     assert Constants.DIFFERENTIAL_ANALYSIS_LIBSIZE_COLUMN not in result
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T18 a NaN cluster label becomes a group with an empty index: "
-    "numpy's 'a cannot be empty'",
-)
+# regression: T18 a NaN cluster label became a group with an empty index
+# (numpy's 'a cannot be empty')
 def test_across_clusters_pairwise_skips_missing_labels():
     mdata = make_mdata(np.zeros((5, 3)), clusters=["a", "a", "b", "b", np.nan])
     results = make_analysis(mdata).across_clusters_pairwise(
@@ -792,3 +789,29 @@ def test_between_two_groups_seed_reproduces_and_leaves_global_state():
     np.testing.assert_array_equal(np.random.get_state()[1], state)
     np.random.rand(100)
     pd.testing.assert_frame_equal(first, run())
+
+
+def test_across_clusters_leaves_unlabelled_cells_out_of_the_rest(monkeypatch):
+    mdata = make_mdata(np.zeros((5, 3)), clusters=["a", "a", "b", "b", np.nan])
+    da = make_analysis(mdata)
+    calls = []
+    monkeypatch.setattr(
+        da,
+        "between_two_groups",
+        lambda **kw: calls.append(kw) or k_table([0.0], [0.0]),
+    )
+    results = da.across_clusters("comp", "RNA", "cluster")
+    assert list(results) == ["a", "b"]
+    assert list(calls[0]["group_b_index"]) == ["cell2", "cell3"]
+    assert list(calls[1]["group_b_index"]) == ["cell0", "cell1"]
+
+
+def test_group_labels_are_strings_and_keep_missing():
+    obs = pd.DataFrame({"cl": [0, 1, None]}, index=["c0", "c1", "c2"])
+    labels = DifferentialAnalysis.group_labels(obs, "cl")
+    assert list(labels[:2]) == ["0.0", "1.0"]  # a float column with NaN
+    assert pd.isna(labels.iloc[2])
+    ints = pd.DataFrame({"cl": [0, 1]}, index=["c0", "c1"])
+    assert list(DifferentialAnalysis.group_labels(ints, "cl")) == ["0", "1"]
+    cat = pd.DataFrame({"cl": pd.Categorical([2, 3])}, index=["c0", "c1"])
+    assert list(DifferentialAnalysis.group_labels(cat, "cl")) == ["2", "3"]

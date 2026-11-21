@@ -145,7 +145,8 @@ class DifferentialAnalysis:
         """
         results: Dict[str, pd.DataFrame] = dict()
         obs = self.mdata[modality].obs
-        unique_clusters = obs[use_cluster].unique()
+        # cells without a label (NaN) are left out of every comparison
+        unique_clusters = obs[use_cluster].dropna().unique()
         for cluster_a, cluster_b in tqdm(
             combinations(unique_clusters, r=2),
             desc="Across clusters pairwise",
@@ -241,10 +242,12 @@ class DifferentialAnalysis:
         """
         results: Dict[str, pd.DataFrame] = dict()
         obs = self.mdata[modality].obs
-        unique_clusters = obs[use_cluster].unique()
+        # cells without a label (NaN) are left out of both groups
+        labelled = obs[use_cluster].notna()
+        unique_clusters = obs[use_cluster].dropna().unique()
         for cluster in tqdm(unique_clusters, desc="Across clusters"):
             index_a = obs[obs[use_cluster] == cluster].index
-            index_b = obs[obs[use_cluster] != cluster].index
+            index_b = obs[labelled & (obs[use_cluster] != cluster)].index
 
             deg = self.between_two_groups(
                 group_a_index=index_a,
@@ -543,6 +546,14 @@ class DifferentialAnalysis:
             modality_name: tf.fill((n_obs, 1), tf.constant(value, tf.float32))
             for modality_name, value in libsize.items()
         }
+
+    @staticmethod
+    def group_labels(obs: pd.DataFrame, use_cluster: str) -> pd.Series:
+        """The labels of ``obs[use_cluster]`` as strings, so that
+        integer-coded clusters (e.g. leiden stored as int) match the
+        string labels of a config; missing labels stay NaN."""
+        labels = obs[use_cluster]
+        return labels.astype(str).where(labels.notna())
 
     @staticmethod
     def bayes_factor_strength(result: pd.DataFrame) -> pd.Series:

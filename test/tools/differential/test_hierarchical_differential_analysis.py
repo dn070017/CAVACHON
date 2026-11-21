@@ -461,12 +461,8 @@ def test_between_groups_pairs_share_the_batch_effect():
     np.testing.assert_allclose(result["P(B>A|Z)"], 0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: T17 single-pair labels are compared as given, so integer-coded "
-    "clusters with string labels from the config raise 'Unknown donor group' "
-    "(DEG single-pair compares as strings)",
-)
+# regression: T17 single-pair labels were compared as given, so integer-coded
+# clusters with string labels from the config raised 'Unknown donor group'
 def test_between_groups_integer_coded_clusters_with_string_labels():
     X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2
     mdata = make_mdata(X, clusters=[0, 0, 0, 1, 1])
@@ -491,3 +487,24 @@ def test_between_groups_seed_reproduces_and_leaves_global_state():
     np.random.rand(100)
     pd.testing.assert_frame_equal(first, run())
     assert (first["RandomSeed"] == 42).all()
+
+
+def test_across_clusters_pairwise_skips_missing_labels():
+    X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2 + [[1, 1, 1]]
+    mdata = make_mdata(X, clusters=["d"] * 3 + ["r"] * 2 + [np.nan])
+    results = make_hda(mdata).across_clusters_pairwise(
+        "a", "RNA", "cluster", z_sampling_size=1
+    )
+    assert list(results) == ["d->r", "r->d"]
+
+
+def test_between_groups_integer_labels_from_pairwise_mode():
+    # pairwise mode passes the raw (int) labels; they are recorded as strings
+    X = [[5, 0, 1]] * 3 + [[0, 5, 1]] * 2
+    mdata = make_mdata(X, clusters=[0, 0, 0, 1, 1])
+    results = make_hda(mdata).across_clusters_pairwise(
+        "a", "RNA", "cluster", z_sampling_size=1
+    )
+    assert list(results) == ["0->1", "1->0"]
+    assert (results["0->1"][DONOR_COL] == "0").all()
+    np.testing.assert_allclose(results["0->1"]["Mean(A)"], [5, 0, 1])

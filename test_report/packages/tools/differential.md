@@ -3,7 +3,7 @@
 [← tools](README.md) · [← Overview](../../UNIT_TEST_REPORT.md)
 
 Modules: `differential_analysis.py`, `hierarchical_differential_analysis.py`, `differential_attribution_analysis.py`
-Tests: [`test/tools/differential`](../../../test/tools/differential) — 100 passed, 2 open bugs.
+Tests: [`test/tools/differential`](../../../test/tools/differential) — 106 passed, 0 open bugs.
 
 **Mocked:** `DataLoader` (a fake that builds a real `tf.data.Dataset` from dense X and `obs["batch"]`), `ReflectionHandler` (returns a fake distribution whose mean equals its parameters), and a deterministic differentiable `FakeModel`: `z[c] = X @ E[c]`, `z_hat = z`, `x = link(Σ z_hat[c] @ W[c]) + batch_effect`.
 
@@ -63,20 +63,12 @@ For **HDEG** the exact version needs every recipient cell × every donor cell (�
 
 ## Open bugs (strict xfails)
 
-Found by the 2026-11-21 review of the differential and attribution tools. T13, T14 and T15 are fixed (see below).
-
-### T17
-
-`hierarchical_differential_analysis.py:302-314` — `between_groups` compares the labels as given, so integer-coded clusters (e.g. leiden stored as int) with `donor_group: "1"` from the YAML raise "Unknown donor group". DEG single-pair mode compares as strings (W2), so it works there.
-- **Impact:** single-pair HDEG on integer-coded cluster columns.
-
-### T18
-
-`differential_analysis.py:144-150`, `hierarchical_differential_analysis.py:454-461` — a NaN in `use_cluster` becomes its own "cluster" (`NaN == NaN` is False), whose index is empty: numpy's "'a' cannot be empty" in pairwise mode (DEG and HDEG).
-- **Impact:** any cells without a label in the cluster column.
+None. T13–T15, T17 and T18, found by the 2026-11-21 review of the differential and attribution tools, are fixed (see below).
 
 ## Fixed
 
+- ✅ (2026-11-21) <a id="t17"></a>**T17** (`between_groups`): the labels were compared as given, so integer-coded clusters (e.g. leiden stored as int) with `donor_group: "1"` from the YAML raised "Unknown donor group". HDEG now compares labels as strings, as the DEG single-pair mode does (W2): `DifferentialAnalysis.group_labels(obs, use_cluster)` gives the column as strings (missing labels stay NaN), used by `between_groups` and `_get_group_mdata`. `DonorGroup`/`RecipientGroup` are always strings now (pairwise mode recorded the raw value before).
+- ✅ (2026-11-21) <a id="t18"></a>**T18** (pairwise / one-vs-rest): a NaN in `use_cluster` became its own "cluster" (`NaN == NaN` is False) with an empty index, and numpy raised "'a' cannot be empty". Cells without a label are now left out: `across_clusters_pairwise` (DEG and HDEG) and `across_clusters` loop over the non-missing labels only, and `across_clusters` leaves unlabelled cells out of "others" too.
 - ✅ (2026-11-21) <a id="t15"></a>**T15** (`compute_differential_attribution`): the decoder's other inputs came from a "representative batch", the first cell of the whole dataset (`batch_size=1`, first batch), which may belong to neither group. `Expected(A/B)`, `Delta` and every `attr_*` scaled with that cell's library size and carried its batch effect, and changed with the cell order.
   - The attribution is now evaluated at **the same reference as DEG/HDEG**: the median library size of all cells, and the batch effects of all cells. `compute_reference_batch` builds one row per distinct batch effect (all modalities' batch-effect tensors together) with the fraction of cells that have it as its weight; `compute_differential_attribution_target_batch` takes `libsize` and `weights`, decodes the same z on every row and returns the weighted mean.
   - Integrated gradients are linear in the explained function, so attributing the weighted mean of the rows is exactly the batch-averaged attribution: deterministic (no sampling), and the attributions still sum to `Delta` (up to the Riemann sum), now the batch-averaged `Delta`. Cost: one decode per distinct batch effect per step.
