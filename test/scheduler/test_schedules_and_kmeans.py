@@ -341,7 +341,7 @@ class TestInitialize:
         }
         s.prior_initializer.add_noise = False
         s.prior_initializer.initialize("B")
-        assert model.predict_extra_outputs == ["B_z_parameters"]
+        assert model.predict_output_keys == ["B_z", "B_z_parameters"]
         prior = model.components["B"].z_prior_parameterizer
         for loc, bias in zip(prior.loc_bias, prior.scale_diag_bias):
             members = z[np.sign(z[:, 0]) == np.sign(loc.numpy()[0, 0])]

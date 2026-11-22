@@ -124,14 +124,22 @@ class TestPredictMuData:
         } <= set(outputs)
         assert all(isinstance(v, np.ndarray) for v in outputs.values())
 
-    def test_extra_outputs_are_collected_but_not_stored(self, setup):
+    def test_output_keys_collects_only_those_and_stores_nothing(self, setup):
+        # regression: the k-means initialization predicted the latents
+        # with every save_x x_parameters collected (about 20 GB on a
+        # 9190-cell, 100k-peak data) and written to the obsm
         model, mdata, _ = setup
-        outputs = model.predict(mdata, batch_size=3, extra_outputs=["a_z_parameters"])
+        outputs = model.predict(
+            mdata, batch_size=3, output_keys=["a_z", "a_z_parameters"]
+        )
+        assert set(outputs) == {"a_z", "a_z_parameters"}
+        np.testing.assert_allclose(outputs["a_z"], _expected(mdata)["a_z"], rtol=1e-6)
         np.testing.assert_allclose(
             outputs["a_z_parameters"], 2 * _expected(mdata)["a_z"], rtol=1e-6
         )
-        assert "z_parameters_a" not in mdata.mod["rna"].obsm
-        assert "b_z_parameters" not in model.predict(mdata, batch_size=3)
+        assert len(mdata.mod["rna"].obsm.keys()) == 0
+        assert len(mdata.mod["atac"].obsm.keys()) == 0
+        assert "a_z_parameters" not in model.predict(mdata, batch_size=3)
 
     def test_inference_mode(self, setup):
         model, mdata, _ = setup

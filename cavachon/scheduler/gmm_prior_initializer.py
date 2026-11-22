@@ -519,7 +519,7 @@ class GMMPriorInitializer:
             self.mdata,
             batch_size=self.batch_size,
             verbose=0,
-            extra_outputs=[parameters_key],
+            output_keys=[f"{component_name}{suffix}", parameters_key],
         )
         z = outputs[f"{component_name}{suffix}"]
         parameters = outputs.get(parameters_key)

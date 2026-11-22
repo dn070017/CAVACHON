@@ -276,9 +276,9 @@ class FakeModel:
                 n_run = override
         return SimpleNamespace(epoch=list(range(n_run)))
 
-    def predict(self, mdata, batch_size=None, verbose=0, extra_outputs=()):
+    def predict(self, mdata, batch_size=None, verbose=0, output_keys=None):
         self.predict_args = (mdata, batch_size, verbose)
-        self.predict_extra_outputs = list(extra_outputs)
+        self.predict_output_keys = None if output_keys is None else list(output_keys)
         return self.predict_outputs
 
 

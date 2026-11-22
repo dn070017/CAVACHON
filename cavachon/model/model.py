@@ -352,7 +352,7 @@ class Model(tf.keras.Model):
         self,
         x: Union[Mapping[str, tf.Tensor], mu.MuData],
         batch_size: Optional[int] = None,
-        extra_outputs: Sequence[str] = (),
+        output_keys: Optional[Sequence[str]] = None,
         **kwargs,
     ):
         """Predict based on Mapping[str, tf.Tensor] (with the same
@@ -369,12 +369,15 @@ class Model(tf.keras.Model):
             batch size. If provided with None, will automatically set
             to 1. Defaults to None.
 
-        extra_outputs: Sequence[str], optional
-            with mu.MuData, more model outputs to collect besides the
-            z and z_hat of every component, e.g.
-            ``"{component}_z_parameters"`` (the loc and scale_diag of
-            the posterior). They are returned, not stored in the obsm.
-            Defaults to ().
+        output_keys: Sequence[str], optional
+            with mu.MuData, collect only these model outputs, e.g.
+            ``"{component}_z"`` and ``"{component}_z_parameters"`` (the
+            loc and scale_diag of the posterior), and return them
+            without storing anything in the obsm. The x_parameters are
+            then not collected unless listed, which keeps a prediction
+            for the latents small. Defaults to None: the z, z_hat and
+            the save_x x_parameters of every component, stored in the
+            obsm.
 
         kwargs: Mapping[str, Any]
             Additional parameters used to compile the model.
@@ -418,8 +421,8 @@ class Model(tf.keras.Model):
                             f"{component_name}_{modality_name}_x_parameters", list()
                         )
 
-            for key in extra_outputs:
-                outputs.setdefault(key, list())
+            if output_keys is not None:
+                outputs = {key: list() for key in output_keys}
 
             dataloader = DataLoader(mdata, batch_size=batch_size)
             for batch in tqdm(dataloader):
@@ -428,6 +431,9 @@ class Model(tf.keras.Model):
                     outputs[key].append(result.get(key))
             for key in outputs:
                 outputs[key] = np.vstack(outputs[key])
+
+            if output_keys is not None:
+                return outputs
 
             for modality_name, component_names in use_which_component.items():
                 for component_name in component_names:

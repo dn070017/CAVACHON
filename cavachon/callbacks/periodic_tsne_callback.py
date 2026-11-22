@@ -50,7 +50,12 @@ class PeriodicTSNECallback(tf.keras.callbacks.Callback):
         original_trainable_state = self.model.trainable
         self.model.trainable = False
 
-        outputs = self.model.predict(self.mdata, batch_size=self.batch_size, verbose=0)
+        outputs = self.model.predict(
+            self.mdata,
+            batch_size=self.batch_size,
+            verbose=0,
+            output_keys=[f"{self.component}_z"],
+        )
         z_full = outputs[f"{self.component}_z"]
 
         z_prior_parameterizer = self.model.components[component].z_prior_parameterizer
